@@ -1,0 +1,24 @@
+[server]
+host = "127.0.0.1"
+port = 8080
+
+[storage]
+data_dir = "./data"
+
+[google]
+client_id = ""
+client_secret = ""
+redirect_uri = "http://localhost:8080/auth/google/callback"
+calendar_sync_interval_secs = 300
+
+[bot]
+display_name = "AI Notetaker"
+chromium_path = "/usr/bin/google-chrome"
+join_lead_time_secs = 60
+admission_timeout_secs = 300
+ffmpeg_path = "ffmpeg"
+
+[groq]
+api_key_env = "GROQ_API_KEY"
+transcription_model = "whisper-large-v3-turbo"
+summarization_model = "qwen3-32b-131k"
