@@ -7,6 +7,8 @@ use sqlx::{
 
 use crate::config::Config;
 
+pub mod models;
+
 pub async fn connect(config: &Config) -> sqlx::Result<SqlitePool> {
     let options =
         SqliteConnectOptions::from_str(&format!("sqlite://{}", config.database_path().display()))?
@@ -21,4 +23,46 @@ pub async fn connect(config: &Config) -> sqlx::Result<SqlitePool> {
 
 pub async fn migrate(pool: &SqlitePool) -> Result<(), sqlx::migrate::MigrateError> {
     sqlx::migrate!("./migrations").run(pool).await
+}
+
+pub fn now_unix() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system time is before UNIX epoch")
+        .as_secs() as i64
+}
+
+pub async fn get_kv(pool: &SqlitePool, key: &str) -> sqlx::Result<Option<String>> {
+    sqlx::query_scalar("SELECT value FROM app_kv WHERE key = ?")
+        .bind(key)
+        .fetch_optional(pool)
+        .await
+}
+
+pub async fn set_kv(pool: &SqlitePool, key: &str, value: &str) -> sqlx::Result<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO app_kv (key, value, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET
+            value = excluded.value,
+            updated_at = excluded.updated_at
+        "#,
+    )
+    .bind(key)
+    .bind(value)
+    .bind(now_unix())
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn delete_kv(pool: &SqlitePool, key: &str) -> sqlx::Result<()> {
+    sqlx::query("DELETE FROM app_kv WHERE key = ?")
+        .bind(key)
+        .execute(pool)
+        .await?;
+
+    Ok(())
 }

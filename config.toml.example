@@ -14,6 +14,7 @@ calendar_sync_interval_secs = 300
 [bot]
 display_name = "AI Notetaker"
 chromium_path = "/usr/bin/google-chrome"
+chrome_user_data_dir = "./data/chrome-profile"
 join_lead_time_secs = 60
 admission_timeout_secs = 300
 ffmpeg_path = "ffmpeg"

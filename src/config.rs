@@ -38,6 +38,7 @@ pub struct GoogleConfig {
 pub struct BotConfig {
     pub display_name: String,
     pub chromium_path: PathBuf,
+    pub chrome_user_data_dir: PathBuf,
     pub join_lead_time_secs: u64,
     pub admission_timeout_secs: u64,
     pub ffmpeg_path: PathBuf,
@@ -69,6 +70,7 @@ impl Default for Config {
             bot: BotConfig {
                 display_name: "AI Notetaker".to_owned(),
                 chromium_path: PathBuf::from("/usr/bin/google-chrome"),
+                chrome_user_data_dir: PathBuf::from("./data/chrome-profile"),
                 join_lead_time_secs: 60,
                 admission_timeout_secs: 300,
                 ffmpeg_path: PathBuf::from("ffmpeg"),
