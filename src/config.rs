@@ -41,7 +41,6 @@ pub struct BotConfig {
     pub chrome_user_data_dir: PathBuf,
     pub join_lead_time_secs: u64,
     pub admission_timeout_secs: u64,
-    pub ffmpeg_path: PathBuf,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -73,7 +72,6 @@ impl Default for Config {
                 chrome_user_data_dir: PathBuf::from("./data/chrome-profile"),
                 join_lead_time_secs: 60,
                 admission_timeout_secs: 300,
-                ffmpeg_path: PathBuf::from("ffmpeg"),
             },
             groq: GroqConfig {
                 api_key_env: "GROQ_API_KEY".to_owned(),

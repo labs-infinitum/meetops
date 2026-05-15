@@ -23,6 +23,7 @@ async fn main() -> anyhow::Result<()> {
     if let Some(command) = CliCommand::parse(std::env::args().skip(1))? {
         return match command {
             CliCommand::Join { meet_url } => bot::runner::join(meet_url, &config).await,
+            CliCommand::Record { meet_url } => bot::runner::record(meet_url, &config).await,
             CliCommand::Profile => bot::runner::open_profile(&config).await,
             CliCommand::ProfileStatus => bot::runner::profile_status(&config),
         };
@@ -55,6 +56,7 @@ async fn main() -> anyhow::Result<()> {
 
 enum CliCommand {
     Join { meet_url: String },
+    Record { meet_url: String },
     Profile,
     ProfileStatus,
 }
@@ -75,6 +77,15 @@ impl CliCommand {
                 }
                 Ok(Some(Self::Join { meet_url }))
             }
+            "record" => {
+                let Some(meet_url) = args.next() else {
+                    anyhow::bail!("usage: cargo run -- record <meet_url>");
+                };
+                if args.next().is_some() {
+                    anyhow::bail!("usage: cargo run -- record <meet_url>");
+                }
+                Ok(Some(Self::Record { meet_url }))
+            }
             "profile" => {
                 if args.next().is_some() {
                     anyhow::bail!("usage: cargo run -- profile");
@@ -89,7 +100,7 @@ impl CliCommand {
             }
             "-h" | "--help" => {
                 println!(
-                    "usage:\n  google-meeting-recorder\n  google-meeting-recorder profile\n  google-meeting-recorder profile-status\n  google-meeting-recorder join <meet_url>"
+                    "usage:\n  google-meeting-recorder\n  google-meeting-recorder profile\n  google-meeting-recorder profile-status\n  google-meeting-recorder join <meet_url>\n  google-meeting-recorder record <meet_url>"
                 );
                 std::process::exit(0);
             }
@@ -144,6 +155,23 @@ mod tests {
             .expect("profile-status command should parse");
 
         assert!(matches!(command, Some(CliCommand::ProfileStatus)));
+    }
+
+    #[test]
+    fn parses_record_command() {
+        let command = CliCommand::parse(
+            ["record", "https://meet.google.com/abc-defg-hij"]
+                .into_iter()
+                .map(str::to_owned),
+        )
+        .expect("record command should parse");
+
+        match command {
+            Some(CliCommand::Record { meet_url }) => {
+                assert_eq!(meet_url, "https://meet.google.com/abc-defg-hij");
+            }
+            _ => panic!("expected record command"),
+        }
     }
 }
 

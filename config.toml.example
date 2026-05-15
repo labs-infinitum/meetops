@@ -17,7 +17,6 @@ chromium_path = "/usr/bin/google-chrome"
 chrome_user_data_dir = "./data/chrome-profile"
 join_lead_time_secs = 60
 admission_timeout_secs = 300
-ffmpeg_path = "ffmpeg"
 
 [groq]
 api_key_env = "GROQ_API_KEY"

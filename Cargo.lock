@@ -766,6 +766,7 @@ dependencies = [
  "anyhow",
  "axum",
  "base64",
+ "bytes",
  "chromiumoxide",
  "chrono",
  "dotenvy",

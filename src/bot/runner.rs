@@ -1,6 +1,9 @@
 use std::time::Duration;
 
-use crate::{bot::chromium, config::Config};
+use crate::{
+    bot::{chromium, recorder},
+    config::Config,
+};
 
 pub async fn join(meet_url: String, config: &Config) -> anyhow::Result<()> {
     validate_meet_url(&meet_url)?;
@@ -27,6 +30,10 @@ pub async fn open_profile(config: &Config) -> anyhow::Result<()> {
 
 pub fn profile_status(config: &Config) -> anyhow::Result<()> {
     chromium::profile_status(&config.bot.chrome_user_data_dir)
+}
+
+pub async fn record(meet_url: String, config: &Config) -> anyhow::Result<()> {
+    recorder::record(meet_url, config).await
 }
 
 fn validate_meet_url(meet_url: &str) -> anyhow::Result<()> {
