@@ -98,6 +98,7 @@ pub(super) fn spawn(
     linux_xdotool_display: Option<String>,
     allow_button_template_png: Option<PathBuf>,
     tab_capture_screenshot_dir: PathBuf,
+    launched_chrome_pid: Option<u32>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let x11_display_opt = linux_xdotool_display.as_deref();
@@ -112,6 +113,7 @@ pub(super) fn spawn(
             x11_display_explicit = ?x11_display_opt,
             process_display_env = ?std::env::var("DISPLAY").ok(),
             button_template_png = ?allow_button_template_png,
+            launched_chrome_pid = ?launched_chrome_pid,
             tab_capture_shots_dir = %tab_capture_screenshot_dir.display(),
             "Linux tab-share auto-accept: 3s pause after capture request — PNG color blob, optional template refinement, heuristic xdotool"
         );
@@ -135,6 +137,7 @@ pub(super) fn spawn(
                         x11_display_opt,
                         path.as_path(),
                         tab_capture_screenshot_dir.as_path(),
+                        launched_chrome_pid,
                     )
                     .await
                     {
@@ -168,6 +171,7 @@ pub(super) fn spawn(
                     x11_display_opt,
                     tab_capture_screenshot_dir.as_path(),
                     "chrome-tab-share-no-template",
+                    launched_chrome_pid,
                 )
                 .await
                 {
@@ -237,7 +241,9 @@ pub(super) fn spawn(
         }
 
         for attempt in 1..=48 {
-            if let Err(error) = linux_accept_tab_capture_prompt(x11_display_opt).await {
+            if let Err(error) =
+                linux_accept_tab_capture_prompt(x11_display_opt, launched_chrome_pid).await
+            {
                 tracing::warn!(attempt, %error, "could not auto-accept Chrome tab capture prompt");
             } else {
                 tracing::trace!(attempt, "heuristic tab-capture infra pass finished");
@@ -273,10 +279,15 @@ async fn attempt_click_allow_via_screenshot(
     display: Option<&str>,
     template_png: &Path,
     screenshot_dir: &Path,
+    launched_chrome_pid: Option<u32>,
 ) -> anyhow::Result<()> {
-    let (shot_path, wid_str) =
-        chrome_window_focus_and_capture_png(display, screenshot_dir, "chrome-tab-share-match")
-            .await?;
+    let (shot_path, wid_str) = chrome_window_focus_and_capture_png(
+        display,
+        screenshot_dir,
+        "chrome-tab-share-match",
+        launched_chrome_pid,
+    )
+    .await?;
 
     tracing::info!(
         screenshot_png = %shot_path.display(),
@@ -366,10 +377,11 @@ async fn chrome_window_focus_and_capture_png(
     display: Option<&str>,
     screenshot_dir: &Path,
     filename_stem: &str,
+    launched_chrome_pid: Option<u32>,
 ) -> anyhow::Result<(PathBuf, String)> {
     let wid = tokio::time::timeout(
         XDOTOOL_SUBPROCESS_TIMEOUT,
-        linux_find_largest_chromium_window(display),
+        linux_find_largest_chromium_window(display, launched_chrome_pid),
     )
     .await
     .map_err(|_| anyhow::anyhow!("xdotool search timed out"))??;

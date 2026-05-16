@@ -54,6 +54,19 @@ impl MeetingSession {
         &self.browser
     }
 
+    /// OS pid of the browser process chromiumoxide spawned (Linux: scope `xdotool` to this instance).
+    #[cfg(target_os = "linux")]
+    pub fn launched_chrome_pid(&mut self) -> Option<u32> {
+        self.browser
+            .get_mut_child()
+            .and_then(|child| child.as_mut_inner().id())
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    pub fn launched_chrome_pid(&mut self) -> Option<u32> {
+        None
+    }
+
     pub async fn close(mut self) {
         if tokio::time::timeout(Duration::from_secs(5), self.browser.close())
             .await
@@ -518,6 +531,7 @@ pub async fn start_tab_recording(
     linux_xdotool_display: Option<String>,
     allow_button_template_png: Option<PathBuf>,
     tab_capture_screenshot_dir: PathBuf,
+    launched_chrome_pid: Option<u32>,
 ) -> anyhow::Result<BrowserRecording> {
     activate_page(page).await?;
     let recording = install_recording_binding(page, raw_webm_path.as_ref()).await?;
@@ -528,6 +542,7 @@ pub async fn start_tab_recording(
         linux_xdotool_display,
         allow_button_template_png,
         tab_capture_screenshot_dir,
+        launched_chrome_pid,
     );
 
     match page.find_element("#gmr-start-recording").await {
@@ -572,12 +587,14 @@ fn spawn_tab_capture_prompt_acceptor_after_recorder_click(
     linux_xdotool_display: Option<String>,
     allow_button_template_png: Option<PathBuf>,
     tab_capture_screenshot_dir: PathBuf,
+    launched_chrome_pid: Option<u32>,
 ) -> JoinHandle<()> {
     tab_capture_allow::spawn(
         wait_for_click,
         linux_xdotool_display,
         allow_button_template_png,
         tab_capture_screenshot_dir,
+        launched_chrome_pid,
     )
 }
 
@@ -587,6 +604,7 @@ fn spawn_tab_capture_prompt_acceptor_after_recorder_click(
     linux_xdotool_display: Option<String>,
     #[allow(unused_variables)] allow_button_template_png: Option<PathBuf>,
     #[allow(unused_variables)] tab_capture_screenshot_dir: PathBuf,
+    #[allow(unused_variables)] launched_chrome_pid: Option<u32>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let xdot_disp = linux_xdotool_display.as_deref();
@@ -715,7 +733,10 @@ async fn linux_xdotool_move_click(
 }
 
 #[cfg(target_os = "linux")]
-pub(super) async fn linux_accept_tab_capture_prompt(display: Option<&str>) -> anyhow::Result<()> {
+pub(super) async fn linux_accept_tab_capture_prompt(
+    display: Option<&str>,
+    launched_chrome_pid: Option<u32>,
+) -> anyhow::Result<()> {
     const SUBPROCESS_TIMEOUT: Duration = Duration::from_secs(5);
 
     let which = tokio::time::timeout(
@@ -733,7 +754,7 @@ pub(super) async fn linux_accept_tab_capture_prompt(display: Option<&str>) -> an
 
     let wid = tokio::time::timeout(
         SUBPROCESS_TIMEOUT,
-        linux_find_largest_chromium_window(display),
+        linux_find_largest_chromium_window(display, launched_chrome_pid),
     )
     .await
     .map_err(|_| anyhow::anyhow!("xdotool search timed out"))??;
@@ -844,9 +865,93 @@ pub(super) async fn linux_accept_tab_capture_prompt(display: Option<&str>) -> an
 }
 
 #[cfg(target_os = "linux")]
+async fn xdotool_window_width_height_shell(display: Option<&str>, wid: u32) -> Option<(i32, i32)> {
+    let out = match tokio::time::timeout(Duration::from_secs(5), async {
+        let mut c = Command::new("xdotool");
+        linux_xdotool_apply_display(&mut c, display);
+        c.args(["getwindowgeometry", "--shell", &wid.to_string()])
+            .output()
+            .await
+    })
+    .await
+    {
+        Ok(Ok(o)) => o,
+        _ => return None,
+    };
+
+    if !out.status.success() {
+        return None;
+    }
+
+    let mut width: Option<i32> = None;
+    let mut height: Option<i32> = None;
+    for gline in String::from_utf8_lossy(&out.stdout).lines() {
+        if let Some(rest) = gline.strip_prefix("WIDTH=") {
+            width = rest.parse().ok();
+        } else if let Some(rest) = gline.strip_prefix("HEIGHT=") {
+            height = rest.parse().ok();
+        }
+    }
+    match (width, height) {
+        (Some(w), Some(h)) if w > 0 && h > 0 => Some((w, h)),
+        _ => None,
+    }
+}
+
+/// Prefer the largest pixel area among these window ids (visible stack order from `xdotool search`).
+#[cfg(target_os = "linux")]
+async fn linux_pick_largest_window_by_area(
+    display: Option<&str>,
+    wid_lines_stdout: &str,
+) -> Option<u32> {
+    let mut best: Option<(u32, u64)> = None;
+    for line in wid_lines_stdout.lines() {
+        let Ok(wid) = line.trim().parse::<u32>() else {
+            continue;
+        };
+        let Some((w, h)) = xdotool_window_width_height_shell(display, wid).await else {
+            continue;
+        };
+        let area = w as u64 * h as u64;
+        if best.map_or(true, |(_, a)| area > a) {
+            best = Some((wid, area));
+        }
+    }
+    best.map(|(w, _)| w)
+}
+
+#[cfg(target_os = "linux")]
 pub(super) async fn linux_find_largest_chromium_window(
     display: Option<&str>,
+    launched_chrome_pid: Option<u32>,
 ) -> anyhow::Result<u32> {
+    if let Some(pid) = launched_chrome_pid {
+        let output = {
+            let mut c = Command::new("xdotool");
+            linux_xdotool_apply_display(&mut c, display);
+            c.args(["search", "--onlyvisible", "--pid", &pid.to_string()])
+                .output()
+        }
+        .await?;
+
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if let Some(wid) = linux_pick_largest_window_by_area(display, stdout.as_ref()).await {
+                tracing::debug!(
+                    window_id = wid,
+                    chrome_pid = pid,
+                    "xdotool scoped to launched Chrome PID"
+                );
+                return Ok(wid);
+            }
+        }
+
+        tracing::warn!(
+            pid,
+            "xdotool found no usable visible window for launched Chrome PID — falling back to WM_CLASS search (another Chrome window may win)"
+        );
+    }
+
     const CLASSES: &[&str] = &[
         "brave-browser",
         "Brave-browser",
@@ -877,30 +982,10 @@ pub(super) async fn linux_find_largest_chromium_window(
             let Ok(wid) = line.trim().parse::<u32>() else {
                 continue;
             };
-            let geom = {
-                let mut c = Command::new("xdotool");
-                linux_xdotool_apply_display(&mut c, display);
-                c.args(["getwindowgeometry", "--shell", &wid.to_string()])
-                    .output()
-            }
-            .await?;
-
-            if !geom.status.success() {
+            let Some((width, height)) = xdotool_window_width_height_shell(display, wid).await
+            else {
                 continue;
-            }
-
-            let mut width: Option<i32> = None;
-            let mut height: Option<i32> = None;
-            for gline in String::from_utf8_lossy(&geom.stdout).lines() {
-                if let Some(rest) = gline.strip_prefix("WIDTH=") {
-                    width = rest.parse().ok();
-                } else if let Some(rest) = gline.strip_prefix("HEIGHT=") {
-                    height = rest.parse().ok();
-                }
-            }
-
-            let Some(width) = width else { continue };
-            let Some(height) = height else { continue };
+            };
             let area = width as u64 * height as u64;
             if best.map_or(true, |(_, a)| area > a) {
                 best = Some((wid, area));

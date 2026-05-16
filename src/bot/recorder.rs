@@ -30,7 +30,7 @@ pub async fn record(meet_url: String, config: &Config) -> anyhow::Result<()> {
         x11_display: config.bot.x11_display.clone(),
     };
 
-    let session = chromium::open_joined_meeting(join_options).await?;
+    let mut session = chromium::open_joined_meeting(join_options).await?;
 
     match chromium::grant_meet_capture_permissions(session.browser()).await {
         Ok(()) => {}
@@ -42,12 +42,19 @@ pub async fn record(meet_url: String, config: &Config) -> anyhow::Result<()> {
         }
     }
 
+    let chrome_pid = session.launched_chrome_pid();
+    tracing::info!(
+        chrome_pid = ?chrome_pid,
+        "xdotool tab-capture helper will prefer this Chrome PID when set"
+    );
+
     let browser_recording = match chromium::start_tab_recording(
         &session.page,
         &raw_webm_path,
         session.x11_display.clone(),
         config.bot.allow_button_template_png.clone(),
         tab_capture_screenshot_dir,
+        chrome_pid,
     )
     .await
     {
