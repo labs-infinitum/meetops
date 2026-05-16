@@ -115,14 +115,15 @@ pub async fn finish_callback(
         .refresh_token
         .ok_or(GoogleAuthError::MissingRefreshToken)?;
 
-    store_token(
-        pool,
-        &access_token,
-        &refresh_token,
-        token.expires_in.unwrap_or(3600),
-        token.scope.as_deref().unwrap_or(CALENDAR_SCOPE),
-    )
-    .await?;
+    let expires_in = token.expires_in.ok_or_else(|| {
+        GoogleAuthError::Token("missing expires_in in Google token response".to_owned())
+    })?;
+    let scope = token
+        .scope
+        .as_deref()
+        .ok_or_else(|| GoogleAuthError::Token("missing scope in Google token response".to_owned()))?;
+
+    store_token(pool, &access_token, &refresh_token, expires_in, scope).await?;
 
     db::delete_kv(pool, OAUTH_STATE_KEY).await?;
 
@@ -166,12 +167,15 @@ pub async fn valid_access_token(
     let access_token = token
         .access_token
         .ok_or_else(|| GoogleAuthError::Token("missing access_token".to_owned()))?;
+    let expires_in = token.expires_in.ok_or_else(|| {
+        GoogleAuthError::Token("missing expires_in in Google token response".to_owned())
+    })?;
     store_token(
         pool,
         &access_token,
         &stored.refresh_token,
-        token.expires_in.unwrap_or(3600),
-        token.scope.as_deref().unwrap_or(&stored.scope),
+        expires_in,
+        token.scope.as_deref().unwrap_or(stored.scope.as_str()),
     )
     .await?;
 

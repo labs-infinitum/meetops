@@ -68,17 +68,20 @@ impl MeetingSession {
     }
 
     pub async fn close(mut self) {
-        if tokio::time::timeout(Duration::from_secs(5), self.browser.close())
-            .await
-            .is_err()
-        {
-            tracing::warn!("timed out closing Chromium browser");
+        match tokio::time::timeout(Duration::from_secs(5), self.browser.close()).await {
+            Err(_) => tracing::warn!("timed out closing Chromium browser"),
+            Ok(Err(error)) => tracing::warn!(error = %error, "failed to close Chromium browser"),
+            Ok(Ok(_)) => {}
         }
-        if tokio::time::timeout(Duration::from_secs(5), self.browser.wait())
-            .await
-            .is_err()
-        {
-            tracing::warn!("timed out waiting for Chromium browser process to exit");
+        match tokio::time::timeout(Duration::from_secs(5), self.browser.wait()).await {
+            Err(_) => tracing::warn!("timed out waiting for Chromium browser process to exit"),
+            Ok(Err(error)) => tracing::warn!(
+                error = %error,
+                "failed awaiting Chromium browser process exit"
+            ),
+            Ok(Ok(status)) => {
+                tracing::debug!(exit_status = ?status, "Chromium browser process exited");
+            }
         }
 
         self.handler_task.abort();
@@ -190,8 +193,22 @@ pub async fn open_joined_meeting(options: JoinOptions) -> anyhow::Result<Meeting
             x11_display: options.x11_display.clone(),
         }),
         Err(error) => {
-            let _ = browser.close().await;
-            let _ = browser.wait().await;
+            match tokio::time::timeout(Duration::from_secs(5), browser.close()).await {
+                Err(_) => tracing::warn!("timed out closing Chromium after join failure"),
+                Ok(Err(close_err)) => tracing::warn!(
+                    error = %close_err,
+                    "failed closing Chromium after join failure"
+                ),
+                Ok(Ok(_)) => {}
+            }
+            match tokio::time::timeout(Duration::from_secs(5), browser.wait()).await {
+                Err(_) => tracing::warn!("timed out waiting for Chromium after join failure"),
+                Ok(Err(wait_err)) => tracing::warn!(
+                    error = %wait_err,
+                    "failed waiting for Chromium exit after join failure"
+                ),
+                Ok(Ok(_)) => {}
+            }
             handler_task.abort();
             Err(error)
         }

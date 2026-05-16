@@ -26,10 +26,7 @@ pub async fn migrate(pool: &SqlitePool) -> Result<(), sqlx::migrate::MigrateErro
 }
 
 pub fn now_unix() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("system time is before UNIX epoch")
-        .as_secs() as i64
+    chrono::Utc::now().timestamp()
 }
 
 pub async fn get_kv(pool: &SqlitePool, key: &str) -> sqlx::Result<Option<String>> {

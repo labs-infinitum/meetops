@@ -598,8 +598,16 @@ async fn run_optional_tool(mut cmd: Command) -> anyhow::Result<bool> {
 async fn ffmpeg_x11grab_window(wid: u32, display: Option<&str>, out: &Path) -> anyhow::Result<()> {
     let geo = grab_window_geom(wid, display).await?;
 
-    let x = geo.x.unwrap_or(0).max(0);
-    let y = geo.y.unwrap_or(0).max(0);
+    let x = geo
+        .x
+        .context(
+            "ffmpeg fallback needs X from xdotool getwindowgeometry — install magick/import/maim for -window grabs",
+        )?
+        .max(0);
+    let y = geo
+        .y
+        .context("ffmpeg fallback needs Y from xdotool getwindowgeometry")?
+        .max(0);
     let w = geo.width.and_then(|n| if n > 0 { Some(n as u32) } else { None }).context(
         "ffmpeg fallback needs WIDTH > 0 from xdotool getwindowgeometry — install magick/import/maim for -window grabs",
     )?;
