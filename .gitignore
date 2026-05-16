@@ -2,3 +2,6 @@
 /data
 /config.toml
 .env
+
+# Scratch tab-share window captures during local debugging (see scripts/focus-chrome-screenshot.sh)
+/chrome-window-*.png

@@ -13,8 +13,20 @@ calendar_sync_interval_secs = 300
 
 [bot]
 display_name = "AI Notetaker"
-chromium_path = "/usr/bin/google-chrome"
+# Use Google Chrome (not Chromium/Brave) for Meet + getDisplayMedia automation.
+# Optional Linux managed policies: copy contrib/google-chrome-managed-policy.json.example to
+#   /etc/opt/chrome/policies/managed/google-meeting-recorder.json
+# then verify at chrome://policy (may still need the tab-capture Allow prompt).
+chromium_path = "/usr/bin/google-chrome-stable"
 chrome_user_data_dir = "./data/chrome-profile"
+# Dummy/virtual X server (Xvfb, etc.): MUST match the display where Chrome renders (xdotool targets the same DISPLAY).
+# Env: GMR_BOT__X11_DISPLAY=:1
+# x11_display = ":1"
+# Linux: pale-blue chroma heuristic on PNG first (`allow_button_detect`); grayscale template refines pose if blob misses.
+allow_button_template_png = "./allow-button-template.png"
+# After getDisplayMedia: 3s wait, Grab Chrome PNG, blob + optional template correlates Allow, xdotool --window clicks.
+# Requires: xdotool + one of ImageMagick (magick/import), maim, or ffmpeg with x11grab.
+# Saves PNGs under data/recordings/<run>/tab-capture-screenshots/.
 join_lead_time_secs = 60
 admission_timeout_secs = 300
 

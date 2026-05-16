@@ -19,22 +19,43 @@ pub async fn record(meet_url: String, config: &Config) -> anyhow::Result<()> {
     let raw_webm_path = recording_dir.join("raw.webm");
     let _ = tokio::fs::remove_file(&raw_webm_path).await;
 
+    let tab_capture_screenshot_dir = recording_dir.join("tab-capture-screenshots");
+
     let join_options = chromium::JoinOptions {
         meet_url,
         display_name: config.bot.display_name.clone(),
         chromium_path: config.bot.chromium_path.clone(),
         user_data_dir: config.bot.chrome_user_data_dir.clone(),
         admission_timeout: std::time::Duration::from_secs(config.bot.admission_timeout_secs),
+        x11_display: config.bot.x11_display.clone(),
     };
 
     let session = chromium::open_joined_meeting(join_options).await?;
-    let browser_recording = match chromium::start_tab_recording(&session.page, &raw_webm_path).await
+
+    match chromium::grant_meet_capture_permissions(session.browser()).await {
+        Ok(()) => {}
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                "CDP Browser.setPermission failed; Meet may still show the capture prompt (policies alone are often insufficient)"
+            );
+        }
+    }
+
+    let browser_recording = match chromium::start_tab_recording(
+        &session.page,
+        &raw_webm_path,
+        session.x11_display.clone(),
+        config.bot.allow_button_template_png.clone(),
+        tab_capture_screenshot_dir,
+    )
+    .await
     {
         Ok(recording) => recording,
         Err(error) => {
             tracing::error!(
                 %error,
-                "failed to start browser recording; Chrome may need macOS Screen & System Audio Recording permission"
+                "failed to start browser recording; allow the tab-capture prompt (Linux: xdotool/Google Chrome), disable Brave blocks, or grant macOS Screen Recording if applicable"
             );
             session.close().await;
             return Err(error);

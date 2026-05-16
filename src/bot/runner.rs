@@ -14,6 +14,7 @@ pub async fn join(meet_url: String, config: &Config) -> anyhow::Result<()> {
         chromium_path: config.bot.chromium_path.clone(),
         user_data_dir: config.bot.chrome_user_data_dir.clone(),
         admission_timeout: Duration::from_secs(config.bot.admission_timeout_secs),
+        x11_display: config.bot.x11_display.clone(),
     };
 
     chromium::join_meeting(options).await
@@ -23,6 +24,7 @@ pub async fn open_profile(config: &Config) -> anyhow::Result<()> {
     let options = chromium::ProfileOptions {
         chromium_path: config.bot.chromium_path.clone(),
         user_data_dir: config.bot.chrome_user_data_dir.clone(),
+        x11_display: config.bot.x11_display.clone(),
     };
 
     chromium::open_profile(options).await

@@ -39,6 +39,13 @@ pub struct BotConfig {
     pub display_name: String,
     pub chromium_path: PathBuf,
     pub chrome_user_data_dir: PathBuf,
+    #[serde(default)]
+    /// Virtual / headless X server (xdotool target + Chrome DISPLAY), e.g. `":1"` for Xorg display `:1`.
+    pub x11_display: Option<String>,
+    #[serde(default)]
+    /// Small PNG crop of the blue Chrome tab-share Allow pill (`allow_button_detect` grayscale fallback when chroma misses).
+    /// Env: `GMR_BOT__ALLOW_BUTTON_TEMPLATE_PNG`
+    pub allow_button_template_png: Option<PathBuf>,
     pub join_lead_time_secs: u64,
     pub admission_timeout_secs: u64,
 }
@@ -70,6 +77,8 @@ impl Default for Config {
                 display_name: "AI Notetaker".to_owned(),
                 chromium_path: PathBuf::from("/usr/bin/google-chrome"),
                 chrome_user_data_dir: PathBuf::from("./data/chrome-profile"),
+                x11_display: None,
+                allow_button_template_png: None,
                 join_lead_time_secs: 60,
                 admission_timeout_secs: 300,
             },

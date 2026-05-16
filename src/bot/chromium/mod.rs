@@ -4,6 +4,9 @@ use std::{
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use chromiumoxide::cdp::browser_protocol::browser::{
+    PermissionDescriptor, PermissionSetting, SetPermissionParams,
+};
 use chromiumoxide::cdp::js_protocol::runtime::{AddBindingParams, EventBindingCalled};
 use chromiumoxide::{Browser, BrowserConfig, Page};
 use futures::StreamExt;
@@ -16,6 +19,9 @@ use tokio::time::Instant;
 const PROFILE_MARKER: &str = "google-meeting-recorder-bot-profile";
 const RECORDING_CHUNK_BINDING: &str = "__gmrRecordChunk";
 
+#[cfg(target_os = "linux")]
+mod tab_capture_allow;
+
 #[derive(Debug, Clone)]
 pub struct JoinOptions {
     pub meet_url: String,
@@ -23,21 +29,31 @@ pub struct JoinOptions {
     pub chromium_path: PathBuf,
     pub user_data_dir: PathBuf,
     pub admission_timeout: Duration,
+    /// When set on Linux (e.g. `":1"`), forwarded to Chrome and every `xdotool` subprocess as `DISPLAY`.
+    pub x11_display: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ProfileOptions {
     pub chromium_path: PathBuf,
     pub user_data_dir: PathBuf,
+    /// Same as [`JoinOptions.x11_display`]: virtual X/Xvfb/Xvnc display (`":1"`).
+    pub x11_display: Option<String>,
 }
 
 pub struct MeetingSession {
     browser: Browser,
     handler_task: JoinHandle<()>,
     pub page: Page,
+    /// Copy of configured display for [`start_tab_recording`] / xdotool.
+    pub x11_display: Option<String>,
 }
 
 impl MeetingSession {
+    pub fn browser(&self) -> &Browser {
+        &self.browser
+    }
+
     pub async fn close(mut self) {
         if tokio::time::timeout(Duration::from_secs(5), self.browser.close())
             .await
@@ -91,6 +107,35 @@ enum JoinState {
     Denied,
 }
 
+/// Applies [`Browser.setPermission`](https://chromedevtools.github.io/devtools-protocol/tot/Browser/#method-setPermission)
+/// for Meet so automated runs can bias permission state toward grant.
+///
+/// The `permission.name` field must match [Blink `PermissionName`](https://github.com/chromium/chromium/blob/main/third_party/blink/renderer/modules/permissions/permission_descriptor.idl)
+/// (`display-capture`), not chrome's separate [`PermissionType`](https://chromedevtools.github.io/devtools-protocol/tot/Browser/#type-PermissionType) strings (`displayCapture`).
+///
+/// Tab/screen capture audio is gated by [`getDisplayMedia`](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getDisplayMedia) together with capture; there is no separate Permissions-API `"audioCapture"` descriptor.
+///
+/// Enterprise policy / CLI flags (`--auto-accept-this-tab-capture`) may still be required for a silent picker; Wayland portals can block automation regardless.
+pub async fn grant_meet_capture_permissions(browser: &Browser) -> anyhow::Result<()> {
+    const MEET_ORIGIN: &str = "https://meet.google.com";
+    let mut params = SetPermissionParams::new(
+        PermissionDescriptor::new("display-capture".to_owned()),
+        PermissionSetting::Granted,
+    );
+    params.origin = Some(MEET_ORIGIN.to_owned());
+    browser.execute(params).await.map_err(|error| {
+        anyhow::anyhow!(
+            "Browser.setPermission(display-capture) [screen/tab capture] for Meet: {error}"
+        )
+    })?;
+    tracing::info!(
+        permission = "display-capture",
+        origin = MEET_ORIGIN,
+        "applied CDP Browser.setPermission"
+    );
+    Ok(())
+}
+
 pub async fn join_meeting(options: JoinOptions) -> anyhow::Result<()> {
     let session = open_joined_meeting(options).await?;
     tracing::info!("bot is in the meeting; press Ctrl+C to leave and close Chromium");
@@ -108,8 +153,12 @@ pub async fn open_joined_meeting(options: JoinOptions) -> anyhow::Result<Meeting
         "using bot Chrome profile"
     );
 
-    let (mut browser, mut handler) =
-        Browser::launch(browser_config(&options.chromium_path, &user_data_dir)?).await?;
+    let (mut browser, mut handler) = Browser::launch(browser_config(
+        &options.chromium_path,
+        &user_data_dir,
+        options.x11_display.as_deref(),
+    )?)
+    .await?;
     let handler_task = tokio::spawn(async move {
         while let Some(event) = handler.next().await {
             if let Err(error) = event {
@@ -125,6 +174,7 @@ pub async fn open_joined_meeting(options: JoinOptions) -> anyhow::Result<Meeting
             browser,
             handler_task,
             page,
+            x11_display: options.x11_display.clone(),
         }),
         Err(error) => {
             let _ = browser.close().await;
@@ -141,13 +191,19 @@ pub async fn open_profile(options: ProfileOptions) -> anyhow::Result<()> {
     let chrome_path = chrome_executable(&options.chromium_path)
         .ok_or_else(|| anyhow::anyhow!("Chrome/Chromium executable was not found"))?;
 
-    let mut child = Command::new(&chrome_path)
+    let mut child_cmd = Command::new(&chrome_path);
+    child_cmd
         .arg(format!("--user-data-dir={}", user_data_dir.display()))
         .arg("--profile-directory=Default")
         .arg("--new-window")
         .arg("--no-first-run")
-        .arg("https://accounts.google.com/")
-        .spawn()?;
+        .arg("https://accounts.google.com/");
+    if let Some(ref d) = options.x11_display {
+        let disp = normalize_x11_display(d);
+        child_cmd.env("DISPLAY", disp.clone());
+        tracing::info!(%disp, "Chrome profile subprocess DISPLAY");
+    }
+    let mut child = child_cmd.spawn()?;
 
     tracing::info!(
         chrome = %chrome_path.display(),
@@ -184,9 +240,15 @@ pub fn profile_status(configured_dir: &PathBuf) -> anyhow::Result<()> {
 fn browser_config(
     chromium_path: &PathBuf,
     user_data_dir: &PathBuf,
+    x11_display: Option<&str>,
 ) -> anyhow::Result<BrowserConfig> {
     let chrome_path = chrome_executable(chromium_path);
     ensure_profile_dir(user_data_dir)?;
+
+    if let Some(d) = x11_display {
+        let disp = normalize_x11_display(d);
+        tracing::info!(%disp, "Chrome browser process DISPLAY (dummy/virtual X)");
+    }
 
     let mut builder = BrowserConfig::builder()
         .disable_default_args()
@@ -205,10 +267,15 @@ fn browser_config(
         .arg("--disable-notifications")
         .arg("--use-fake-ui-for-media-stream")
         .arg("--auto-accept-this-tab-capture")
-        .arg("--auto-select-desktop-capture-source=Meet")
-        .arg("--auto-select-tab-capture-source-by-title=Meet")
+        .arg("--auto-select-desktop-capture-source=Google Meet")
+        // Tab titles look like "xxx-yyy-zzz · Google Meet"; Brave may ignore these switches.
+        .arg("--auto-select-tab-capture-source-by-title=Google Meet")
         .arg("--autoplay-policy=no-user-gesture-required")
         .arg("--mute-audio=false");
+
+    if let Some(d) = x11_display {
+        builder = builder.env("DISPLAY", normalize_x11_display(d));
+    }
 
     if let Some(chrome_path) = chrome_path {
         builder = builder.chrome_executable(chrome_path);
@@ -220,6 +287,26 @@ fn browser_config(
     }
 
     builder.build().map_err(anyhow::Error::msg)
+}
+
+/// Canonical `DISPLAY` for virtual X/Xvfb (e.g. `1` → `":1"`).
+fn normalize_x11_display(raw: &str) -> String {
+    let raw = raw.trim();
+    let raw = raw.strip_prefix("DISPLAY=").map(str::trim).unwrap_or(raw);
+    if raw.starts_with('/')
+        || raw.contains("-unix/")
+        || raw.starts_with('@')
+        || raw.contains("unix:")
+    {
+        return raw.to_owned();
+    }
+    if raw.contains(':') && !raw.starts_with(':') {
+        return raw.to_owned();
+    }
+    if raw.starts_with(':') {
+        return raw.to_owned();
+    }
+    format!(":{raw}")
 }
 
 fn ensure_profile_dir(user_data_dir: &PathBuf) -> anyhow::Result<()> {
@@ -428,16 +515,27 @@ async fn attempt_join(page: &Page, display_name: &str) -> anyhow::Result<JoinAtt
 pub async fn start_tab_recording(
     page: &Page,
     raw_webm_path: impl AsRef<Path>,
+    linux_xdotool_display: Option<String>,
+    allow_button_template_png: Option<PathBuf>,
+    tab_capture_screenshot_dir: PathBuf,
 ) -> anyhow::Result<BrowserRecording> {
     activate_page(page).await?;
     let recording = install_recording_binding(page, raw_webm_path.as_ref()).await?;
     install_recording_button(page).await?;
-    let prompt_acceptor = spawn_tab_capture_prompt_acceptor();
+    let (click_tx, click_rx) = tokio::sync::oneshot::channel();
+    let prompt_acceptor = spawn_tab_capture_prompt_acceptor_after_recorder_click(
+        click_rx,
+        linux_xdotool_display,
+        allow_button_template_png,
+        tab_capture_screenshot_dir,
+    );
 
     match page.find_element("#gmr-start-recording").await {
         Ok(button) => {
             if let Err(error) = button.click().await {
                 tracing::warn!(%error, "could not click recorder start trigger");
+            } else {
+                let _ = click_tx.send(());
             }
         }
         Err(error) => {
@@ -445,7 +543,8 @@ pub async fn start_tab_recording(
         }
     }
 
-    for _ in 0..120 {
+    // Poll quickly so we notice "recording" soon after the Allow click (500ms was very noticeable).
+    for _ in 0..400 {
         let status = recording_status(page).await?;
         match status.get("status").and_then(|status| status.as_str()) {
             Some("recording") => {
@@ -457,7 +556,7 @@ pub async fn start_tab_recording(
                 prompt_acceptor.abort();
                 anyhow::bail!("getDisplayMedia failed: {status}");
             }
-            _ => tokio::time::sleep(std::time::Duration::from_millis(500)).await,
+            _ => tokio::time::sleep(std::time::Duration::from_millis(150)).await,
         }
     }
 
@@ -467,24 +566,61 @@ pub async fn start_tab_recording(
     )
 }
 
-fn spawn_tab_capture_prompt_acceptor() -> JoinHandle<()> {
+#[cfg(target_os = "linux")]
+fn spawn_tab_capture_prompt_acceptor_after_recorder_click(
+    wait_for_click: tokio::sync::oneshot::Receiver<()>,
+    linux_xdotool_display: Option<String>,
+    allow_button_template_png: Option<PathBuf>,
+    tab_capture_screenshot_dir: PathBuf,
+) -> JoinHandle<()> {
+    tab_capture_allow::spawn(
+        wait_for_click,
+        linux_xdotool_display,
+        allow_button_template_png,
+        tab_capture_screenshot_dir,
+    )
+}
+
+#[cfg(not(target_os = "linux"))]
+fn spawn_tab_capture_prompt_acceptor_after_recorder_click(
+    wait_for_click: tokio::sync::oneshot::Receiver<()>,
+    linux_xdotool_display: Option<String>,
+    #[allow(unused_variables)] allow_button_template_png: Option<PathBuf>,
+    #[allow(unused_variables)] tab_capture_screenshot_dir: PathBuf,
+) -> JoinHandle<()> {
     tokio::spawn(async move {
-        for attempt in 1..=10 {
-            tokio::time::sleep(Duration::from_millis(500)).await;
-            if let Err(error) = accept_tab_capture_prompt().await {
+        let xdot_disp = linux_xdotool_display.as_deref();
+        if wait_for_click.await.is_err() {
+            tracing::debug!(
+                "tab capture auto-accept not started (recorder trigger click skipped or canceled)"
+            );
+            return;
+        }
+
+        tokio::time::sleep(Duration::from_millis(75)).await;
+
+        tracing::info!(
+            x11_display_explicit = ?xdot_disp,
+            process_display_env = ?std::env::var("DISPLAY").ok(),
+            "auto-accepting tab-capture sheet in the background (macOS/other; template image unused)"
+        );
+
+        for attempt in 1..=48 {
+            if let Err(error) = accept_tab_capture_prompt(xdot_disp).await {
                 tracing::warn!(attempt, %error, "could not auto-accept Chrome tab capture prompt");
             } else {
-                tracing::info!(
+                tracing::trace!(
                     attempt,
-                    "attempted to auto-accept Chrome tab capture prompt"
+                    "tab capture auto-accept infra pass finished (not proof the Allow sheet was dismissed)"
                 );
             }
+            tokio::time::sleep(Duration::from_millis(85)).await;
         }
     })
 }
 
 #[cfg(target_os = "macos")]
-async fn accept_tab_capture_prompt() -> anyhow::Result<()> {
+async fn accept_tab_capture_prompt(_linux_xdotool_display: Option<&str>) -> anyhow::Result<()> {
     let output = tokio::time::timeout(
         Duration::from_secs(2),
         Command::new("osascript")
@@ -530,9 +666,260 @@ end tell"#,
     Ok(())
 }
 
-#[cfg(not(target_os = "macos"))]
-async fn accept_tab_capture_prompt() -> anyhow::Result<()> {
-    anyhow::bail!("automatic tab-capture prompt acceptance is currently implemented only on macOS")
+#[cfg(target_os = "linux")]
+pub(super) fn linux_xdotool_apply_display(cmd: &mut Command, display: Option<&str>) {
+    if let Some(d) = display {
+        cmd.env("DISPLAY", normalize_x11_display(d));
+    }
+}
+
+/// Click `(origin + width * x_frac, origin + height * y_frac)`. Avoid `--sync`; it stalls on Wayland.
+#[cfg(target_os = "linux")]
+async fn linux_xdotool_move_click(
+    subprocess_timeout: Duration,
+    x_frac: f64,
+    y_frac: f64,
+    origin_x: i32,
+    origin_y: i32,
+    width: i32,
+    height: i32,
+    xdotool_display: Option<&str>,
+) -> bool {
+    let ax = origin_x + ((width as f64) * x_frac).round() as i32;
+    let ay = origin_y + ((height as f64) * y_frac).round() as i32;
+    let mut move_cmd = Command::new("xdotool");
+    linux_xdotool_apply_display(&mut move_cmd, xdotool_display);
+    let move_ok = tokio::time::timeout(
+        subprocess_timeout,
+        move_cmd
+            .args(["mousemove", &ax.to_string(), &ay.to_string()])
+            .status(),
+    )
+    .await;
+
+    if !matches!(move_ok, Ok(Ok(status)) if status.success()) {
+        return false;
+    }
+
+    tokio::time::sleep(Duration::from_millis(18)).await;
+    let mut click_cmd = Command::new("xdotool");
+    linux_xdotool_apply_display(&mut click_cmd, xdotool_display);
+    matches!(
+        tokio::time::timeout(
+            subprocess_timeout,
+            click_cmd.args(["click", "1"]).status(),
+        )
+        .await,
+        Ok(Ok(c)) if c.success(),
+    )
+}
+
+#[cfg(target_os = "linux")]
+pub(super) async fn linux_accept_tab_capture_prompt(display: Option<&str>) -> anyhow::Result<()> {
+    const SUBPROCESS_TIMEOUT: Duration = Duration::from_secs(5);
+
+    let which = tokio::time::timeout(
+        Duration::from_millis(500),
+        Command::new("which").arg("xdotool").output(),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("which xdotool timed out"))??;
+
+    if !which.status.success() {
+        anyhow::bail!(
+            "xdotool not found; install it (e.g. apt install xdotool) to auto-accept the tab-capture dialog on Linux, or use Google Chrome instead of Brave (Chromium devtools flags are more reliable)"
+        );
+    }
+
+    let wid = tokio::time::timeout(
+        SUBPROCESS_TIMEOUT,
+        linux_find_largest_chromium_window(display),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("xdotool search timed out"))??;
+
+    let wid_str = wid.to_string();
+
+    let activate = tokio::time::timeout(SUBPROCESS_TIMEOUT, {
+        let mut c = Command::new("xdotool");
+        linux_xdotool_apply_display(&mut c, display);
+        c.args(["windowactivate", &wid_str]).status()
+    })
+    .await
+    .map_err(|_| anyhow::anyhow!("xdotool windowactivate timed out"))??;
+
+    if !activate.success() {
+        anyhow::bail!("xdotool windowactivate failed with status {activate}");
+    }
+
+    tokio::time::sleep(Duration::from_millis(210)).await;
+
+    let geometry = tokio::time::timeout(SUBPROCESS_TIMEOUT, {
+        let mut c = Command::new("xdotool");
+        linux_xdotool_apply_display(&mut c, display);
+        c.args(["getwindowgeometry", "--shell", &wid_str]).output()
+    })
+    .await
+    .map_err(|_| anyhow::anyhow!("xdotool getwindowgeometry timed out"))??;
+
+    if !geometry.status.success() {
+        anyhow::bail!(
+            "xdotool getwindowgeometry failed: {}",
+            String::from_utf8_lossy(&geometry.stderr).trim()
+        );
+    }
+
+    let mut gx: Option<i32> = None;
+    let mut gy: Option<i32> = None;
+    let mut gwidth: Option<i32> = None;
+    let mut gheight: Option<i32> = None;
+    for line in String::from_utf8_lossy(&geometry.stdout).lines() {
+        if let Some(rest) = line.strip_prefix("X=") {
+            gx = rest.parse().ok();
+        } else if let Some(rest) = line.strip_prefix("Y=") {
+            gy = rest.parse().ok();
+        } else if let Some(rest) = line.strip_prefix("WIDTH=") {
+            gwidth = rest.parse().ok();
+        } else if let Some(rest) = line.strip_prefix("HEIGHT=") {
+            gheight = rest.parse().ok();
+        }
+    }
+
+    if let (Some(x), Some(y), Some(w), Some(h)) = (gx, gy, gwidth, gheight) {
+        // Chrome stacks the tab-audio toggle above the Cancel/Allow row. Clicks ~0.6y often hit that
+        // switch (kbd `Tab Return` activates whatever is focused — typically toggling audio off first).
+        for (xf, yf) in [(0.90, 0.88), (0.88, 0.91), (0.92, 0.87), (0.86, 0.93)] {
+            if linux_xdotool_move_click(SUBPROCESS_TIMEOUT, xf, yf, x, y, w, h, display).await {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_millis(38)).await;
+        }
+        // Inner-ish box biased to lower-right inside the viewport (dialogs sit mid-window).
+        let dx = ((w as f64) * 0.05).round() as i32;
+        let dy = ((h as f64) * 0.52).round() as i32;
+        let cw = ((w as f64) * 0.92).round() as i32;
+        let ch = ((h as f64) * 0.42).round() as i32;
+        for (xf, yf) in [(0.88, 0.90), (0.92, 0.88)] {
+            if linux_xdotool_move_click(SUBPROCESS_TIMEOUT, xf, yf, x + dx, y + dy, cw, ch, display)
+                .await
+            {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_millis(38)).await;
+        }
+    }
+
+    // Do not send `Tab` before `Return`: first Tab often focuses "Also share tab audio" and Return flips it off.
+    for spec in ["shift+Tab Return", "Right Return", "Right Right Return"] {
+        for use_window_flag in [false, true] {
+            let mut cmd = Command::new("xdotool");
+            linux_xdotool_apply_display(&mut cmd, display);
+            cmd.arg("key");
+            if use_window_flag {
+                cmd.arg("--window").arg(&wid_str);
+            }
+            for part in spec.split_whitespace() {
+                cmd.arg(part);
+            }
+
+            match tokio::time::timeout(SUBPROCESS_TIMEOUT, cmd.status()).await {
+                Ok(Ok(status)) if !status.success() => {
+                    tracing::debug!(?spec, window = use_window_flag, %status, "xdotool key failed");
+                }
+                Ok(Err(io)) => {
+                    tracing::warn!(?spec, window = use_window_flag, %io, "xdotool key spawn failed")
+                }
+                Err(_) => tracing::warn!(?spec, window = use_window_flag, "xdotool key timed out"),
+                _ => {}
+            }
+            tokio::time::sleep(Duration::from_millis(28)).await;
+        }
+    }
+
+    tracing::debug!(
+        "finished xdotool tab-capture pass; if Meet still prompts, enable Google Chrome automation flags or click Allow manually"
+    );
+
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+pub(super) async fn linux_find_largest_chromium_window(
+    display: Option<&str>,
+) -> anyhow::Result<u32> {
+    const CLASSES: &[&str] = &[
+        "brave-browser",
+        "Brave-browser",
+        "brave",
+        "Brave",
+        "google-chrome",
+        "Google-chrome",
+        "chromium",
+        "Chromium",
+        "Chromium-browser",
+    ];
+
+    let mut best: Option<(u32, u64)> = None;
+    for class in CLASSES {
+        let output = {
+            let mut c = Command::new("xdotool");
+            linux_xdotool_apply_display(&mut c, display);
+            c.args(["search", "--class", "--onlyvisible", class])
+                .output()
+        }
+        .await?;
+
+        if !output.status.success() {
+            continue;
+        }
+
+        for line in String::from_utf8_lossy(&output.stdout).lines() {
+            let Ok(wid) = line.trim().parse::<u32>() else {
+                continue;
+            };
+            let geom = {
+                let mut c = Command::new("xdotool");
+                linux_xdotool_apply_display(&mut c, display);
+                c.args(["getwindowgeometry", "--shell", &wid.to_string()])
+                    .output()
+            }
+            .await?;
+
+            if !geom.status.success() {
+                continue;
+            }
+
+            let mut width: Option<i32> = None;
+            let mut height: Option<i32> = None;
+            for gline in String::from_utf8_lossy(&geom.stdout).lines() {
+                if let Some(rest) = gline.strip_prefix("WIDTH=") {
+                    width = rest.parse().ok();
+                } else if let Some(rest) = gline.strip_prefix("HEIGHT=") {
+                    height = rest.parse().ok();
+                }
+            }
+
+            let Some(width) = width else { continue };
+            let Some(height) = height else { continue };
+            let area = width as u64 * height as u64;
+            if best.map_or(true, |(_, a)| area > a) {
+                best = Some((wid, area));
+            }
+        }
+    }
+
+    best.map(|(w, _)| w).ok_or_else(|| {
+        anyhow::anyhow!(
+            "xdotool found no visible Brave/Chrome/Chromium window; is the automation browser running?"
+        )
+    })
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+async fn accept_tab_capture_prompt(_linux_xdotool_display: Option<&str>) -> anyhow::Result<()> {
+    anyhow::bail!(
+        "automatic tab-capture prompt acceptance is not implemented on this OS; use macOS or Linux with xdotool, or click Allow manually when the prompt appears"
+    )
 }
 
 async fn install_recording_binding(
