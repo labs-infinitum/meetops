@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use axum::{
     Router,
-    extract::{Query, State},
+    extract::{Form, Query, State},
     response::{Html, IntoResponse, Redirect},
     routing::{get, post},
 };
@@ -12,7 +12,12 @@ use serde::Deserialize;
 use sqlx::SqlitePool;
 use tower_http::{compression::CompressionLayer, trace::TraceLayer};
 
-use crate::{config::Config, db::models::MeetingListItem, error::AppError, google};
+use crate::{
+    config::Config,
+    db::{bot_runs::BotRunListItem, models::MeetingListItem},
+    error::AppError,
+    google,
+};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -28,6 +33,7 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/google/start", get(auth_google_start))
         .route("/auth/google/callback", get(auth_google_callback))
         .route("/sync/calendar", post(sync_calendar))
+        .route("/meetings/auto_join", post(toggle_auto_join))
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -45,7 +51,15 @@ async fn index(State(state): State<AppState>) -> Result<Html<String>, AppError> 
     .fetch_all(&state.db)
     .await?;
 
-    Ok(Html(render_index(connected, &meetings)))
+    let bot_runs = crate::db::bot_runs::list_recent(&state.db, 25).await?;
+
+    Ok(Html(render_index(
+        connected,
+        state.config.bot.join_lead_time_secs,
+        state.config.bot.scheduler_poll_interval_secs,
+        &meetings,
+        &bot_runs,
+    )))
 }
 
 async fn healthz() -> &'static str {
@@ -109,7 +123,34 @@ async fn sync_calendar(State(state): State<AppState>) -> Result<impl IntoRespons
     )))
 }
 
-fn render_index(connected: bool, meetings: &[MeetingListItem]) -> String {
+#[derive(Debug, Deserialize)]
+struct ToggleAutoJoinForm {
+    meeting_id: String,
+    enabled: u8,
+}
+
+async fn toggle_auto_join(
+    State(state): State<AppState>,
+    Form(form): Form<ToggleAutoJoinForm>,
+) -> Result<Redirect, AppError> {
+    let auto_join = form.enabled != 0;
+    let rows =
+        crate::db::bot_runs::set_meeting_auto_join(&state.db, &form.meeting_id, auto_join).await?;
+
+    if rows == 0 {
+        tracing::warn!(meeting_id = %form.meeting_id, "auto_join toggle: meeting not found");
+    }
+
+    Ok(Redirect::to("/"))
+}
+
+fn render_index(
+    connected: bool,
+    join_lead_secs: u64,
+    scheduler_poll_secs: u64,
+    meetings: &[MeetingListItem],
+    bot_runs: &[BotRunListItem],
+) -> String {
     let rows = if meetings.is_empty() {
         "<p>No Google Meet events have been synced yet.</p>".to_owned()
     } else {
@@ -125,11 +166,39 @@ fn render_index(connected: bool, meetings: &[MeetingListItem]) -> String {
       <th>Meeting</th>
       <th>Start</th>
       <th>End</th>
-      <th>Auto Join</th>
+      <th>Auto-record</th>
     </tr>
   </thead>
   <tbody>
     {table_rows}
+  </tbody>
+</table>"#
+        )
+    };
+
+    let scheduler_note = format!(
+        "When <strong>Auto-record</strong> is on, the server opens Chrome and records the Meet tab under <code>data/recordings/</code> (each run is a <code>run-…</code> folder with <code>raw.webm</code>), starting up to <strong>{join_lead_secs}s before</strong> the calendar start until the calendar end time (poll every <strong>{scheduler_poll_secs}s</strong>). Only one Chrome session runs at a time.",
+    );
+
+    let bot_activity = 
+    if bot_runs.is_empty() {
+        "<p class=\"muted\">No bot runs yet. Scheduled recordings appear here with status (queued → joining → in_meeting → recording → completed).</p>".to_owned()
+    } else {
+        let run_rows = bot_runs.iter().map(render_bot_run_row).collect::<Vec<_>>().join("");
+        format!(
+            r#"<table>
+  <thead>
+    <tr>
+      <th>When</th>
+      <th>Meeting</th>
+      <th>Status</th>
+      <th>Recording</th>
+      <th>Meeting start</th>
+      <th>Started / ended</th>
+    </tr>
+  </thead>
+  <tbody>
+    {run_rows}
   </tbody>
 </table>"#
         )
@@ -171,10 +240,13 @@ fn render_index(connected: bool, meetings: &[MeetingListItem]) -> String {
       <div>
         <h1>Google Meeting Recorder</h1>
         <p class="muted">Upcoming Google Meet events synced from your primary calendar.</p>
+        <p class="muted">{scheduler_note}</p>
       </div>
       <div>{google_status}</div>
     </header>
     {rows}
+    <h2 style="margin-top:2.5rem;">Bot activity</h2>
+    {bot_activity}
   </main>
 </body>
 </html>"#
@@ -182,23 +254,76 @@ fn render_index(connected: bool, meetings: &[MeetingListItem]) -> String {
 }
 
 fn render_meeting_row(meeting: &MeetingListItem) -> String {
+    let (sel_on, sel_off) = if meeting.auto_join == 1 {
+        (" selected", "")
+    } else {
+        ("", " selected")
+    };
+
     format!(
         r#"<tr>
   <td><a href="{meet_url}">{title}</a><br><span class="muted">{id}</span></td>
   <td>{start}</td>
   <td>{end}</td>
-  <td>{auto_join}</td>
+  <td>
+    <form method="post" action="/meetings/auto_join" style="margin:0;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+      <input type="hidden" name="meeting_id" value="{id_attr}" />
+      <select name="enabled" aria-label="Auto-record">
+        <option value="1"{sel_on}>On</option>
+        <option value="0"{sel_off}>Off</option>
+      </select>
+      <button type="submit">Apply</button>
+    </form>
+  </td>
 </tr>"#,
         id = escape_html(&meeting.id),
+        id_attr = escape_html(&meeting.id),
         title = escape_html(&meeting.title),
         meet_url = escape_html(&meeting.meet_url),
         start = format_unix(meeting.start_at),
         end = format_unix(meeting.end_at),
-        auto_join = if meeting.auto_join == 1 {
-            "enabled"
-        } else {
-            "disabled"
-        }
+        sel_on = sel_on,
+        sel_off = sel_off,
+    )
+}
+
+fn render_bot_run_row(run: &BotRunListItem) -> String {
+    let err_cell = match &run.error {
+        Some(e) if !e.is_empty() => format!("<br><span class=\"muted\">{}</span>", escape_html(e)),
+        _ => String::new(),
+    };
+    let rec_cell = match &run.recording_path {
+        Some(p) if !p.is_empty() => format!("<code>{}</code>", escape_html(p)),
+        _ => "<span class=\"muted\">—</span>".to_owned(),
+    };
+    let started = run
+        .started_at
+        .map(format_unix)
+        .unwrap_or_else(|| "—".to_owned());
+    let ended = run
+        .ended_at
+        .map(format_unix)
+        .unwrap_or_else(|| "—".to_owned());
+
+    format!(
+        r#"<tr>
+  <td>{created}<br><span class="muted">Run #{rid}</span></td>
+  <td>{title}<br><span class="muted">{mid}</span></td>
+  <td><strong>{status}</strong>{err}</td>
+  <td>{rec}</td>
+  <td>{mstart}</td>
+  <td>{started}<br><span class="muted">{ended}</span></td>
+</tr>"#,
+        created = format_unix(run.created_at),
+        rid = run.id,
+        title = escape_html(&run.title),
+        mid = escape_html(&run.meeting_id),
+        status = escape_html(&run.status),
+        err = err_cell,
+        rec = rec_cell,
+        mstart = format_unix(run.meeting_start_at),
+        started = started,
+        ended = ended,
     )
 }
 

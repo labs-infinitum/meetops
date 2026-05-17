@@ -1,4 +1,7 @@
+use std::path::PathBuf;
 use std::time::Duration;
+
+use sqlx::SqlitePool;
 
 use crate::{
     bot::{chromium, recorder},
@@ -36,6 +39,31 @@ pub fn profile_status(config: &Config) -> anyhow::Result<()> {
 
 pub async fn record(meet_url: String, config: &Config) -> anyhow::Result<()> {
     recorder::record(meet_url, config).await
+}
+
+/// Scheduled capture: join, record tab to WebM, stop at calendar `end_at_unix` or Ctrl+C.
+pub async fn record_until_meeting_end<Fut>(
+    meet_url: String,
+    end_at_unix: i64,
+    config: &Config,
+    recording_id: String,
+    pool: &SqlitePool,
+    run_id: i64,
+    after_joined: Fut,
+) -> anyhow::Result<PathBuf>
+where
+    Fut: std::future::Future<Output = ()> + Send,
+{
+    recorder::record_scheduled(
+        meet_url,
+        config,
+        &recording_id,
+        end_at_unix,
+        pool,
+        run_id,
+        after_joined,
+    )
+    .await
 }
 
 fn validate_meet_url(meet_url: &str) -> anyhow::Result<()> {

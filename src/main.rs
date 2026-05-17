@@ -37,6 +37,13 @@ async fn main() -> anyhow::Result<()> {
 
     workers::calendar_sync::spawn(Arc::clone(&config), pool.clone(), http.clone());
 
+    let chrome_sessions = Arc::new(tokio::sync::Semaphore::new(1));
+    workers::scheduler::spawn(
+        Arc::clone(&config),
+        pool.clone(),
+        Arc::clone(&chrome_sessions),
+    );
+
     let addr = SocketAddr::from((config.server.host, config.server.port));
     let state = AppState {
         config,

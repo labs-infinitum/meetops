@@ -30,6 +30,8 @@ allow_button_template_png = "./allow-button-template.png"
 # Saves PNGs under data/recordings/<run>/tab-capture-screenshots/.
 join_lead_time_secs = 60
 admission_timeout_secs = 300
+# How often the server looks for meetings to auto-record (tab capture → data/recordings/run-<id>/).
+scheduler_poll_interval_secs = 15
 
 [groq]
 api_key_env = "GROQ_API_KEY"

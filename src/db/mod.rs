@@ -7,6 +7,7 @@ use sqlx::{
 
 use crate::config::Config;
 
+pub mod bot_runs;
 pub mod models;
 
 pub async fn connect(config: &Config) -> sqlx::Result<SqlitePool> {

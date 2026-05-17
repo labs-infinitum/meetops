@@ -48,6 +48,8 @@ pub struct BotConfig {
     pub allow_button_template_png: Option<PathBuf>,
     pub join_lead_time_secs: u64,
     pub admission_timeout_secs: u64,
+    /// How often the scheduler checks for meetings to auto-join.
+    pub scheduler_poll_interval_secs: u64,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -81,6 +83,7 @@ impl Default for Config {
                 allow_button_template_png: None,
                 join_lead_time_secs: 60,
                 admission_timeout_secs: 300,
+                scheduler_poll_interval_secs: 15,
             },
             groq: GroqConfig {
                 api_key_env: "GROQ_API_KEY".to_owned(),
