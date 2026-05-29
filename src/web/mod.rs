@@ -14,7 +14,7 @@ use tower_http::{compression::CompressionLayer, trace::TraceLayer};
 
 use crate::{
     config::Config,
-    db::{bot_runs::BotRunListItem, models::MeetingListItem},
+    db::models::{BotRunListItem, MeetingListItem},
     error::AppError,
     google,
 };

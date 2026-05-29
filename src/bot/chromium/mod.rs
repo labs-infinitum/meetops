@@ -16,6 +16,13 @@ use tokio::process::Command;
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
+use crate::{
+    bot::recording_status::{
+        RecordingBindingPayload, RecordingPhase, RecordingRuntimeStatus, RecordingStatus,
+    },
+    meet_url::MeetUrl,
+};
+
 const PROFILE_MARKER: &str = "google-meeting-recorder-bot-profile";
 const RECORDING_CHUNK_BINDING: &str = "__gmrRecordChunk";
 
@@ -26,9 +33,12 @@ const LINUX_CHROME_PASSWORD_STORE_ARG: &str = "--password-store=basic";
 #[cfg(target_os = "linux")]
 mod tab_capture_allow;
 
+#[cfg(target_os = "linux")]
+use crate::bot::xdotool_geom;
+
 #[derive(Debug, Clone)]
 pub struct JoinOptions {
-    pub meet_url: String,
+    pub meet_url: MeetUrl,
     pub display_name: String,
     pub chromium_path: PathBuf,
     pub user_data_dir: PathBuf,
@@ -37,12 +47,39 @@ pub struct JoinOptions {
     pub x11_display: Option<String>,
 }
 
+impl JoinOptions {
+    pub fn from_config(
+        meet_url: MeetUrl,
+        config: &crate::config::Config,
+        x11_display: Option<String>,
+    ) -> Self {
+        Self {
+            meet_url,
+            display_name: config.bot.display_name.clone(),
+            chromium_path: config.bot.chromium_path.clone(),
+            user_data_dir: config.bot.chrome_user_data_dir.clone(),
+            admission_timeout: Duration::from_secs(config.bot.admission_timeout_secs),
+            x11_display,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ProfileOptions {
     pub chromium_path: PathBuf,
     pub user_data_dir: PathBuf,
     /// Same as [`JoinOptions.x11_display`]: virtual X/Xvfb/Xvnc display (`":1"`).
     pub x11_display: Option<String>,
+}
+
+impl ProfileOptions {
+    pub fn from_config(config: &crate::config::Config, x11_display: Option<String>) -> Self {
+        Self {
+            chromium_path: config.bot.chromium_path.clone(),
+            user_data_dir: config.bot.chrome_user_data_dir.clone(),
+            x11_display,
+        }
+    }
 }
 
 pub struct MeetingSession {
@@ -72,24 +109,24 @@ impl MeetingSession {
     }
 
     pub async fn close(mut self) {
-        match tokio::time::timeout(Duration::from_secs(5), self.browser.close()).await {
-            Err(_) => tracing::warn!("timed out closing Chromium browser"),
-            Ok(Err(error)) => tracing::warn!(error = %error, "failed to close Chromium browser"),
-            Ok(Ok(_)) => {}
-        }
-        match tokio::time::timeout(Duration::from_secs(5), self.browser.wait()).await {
-            Err(_) => tracing::warn!("timed out waiting for Chromium browser process to exit"),
-            Ok(Err(error)) => tracing::warn!(
-                error = %error,
-                "failed awaiting Chromium browser process exit"
-            ),
-            Ok(Ok(status)) => {
-                tracing::debug!(exit_status = ?status, "Chromium browser process exited");
-            }
-        }
-
+        graceful_browser_shutdown(&mut self.browser, "browser").await;
         self.handler_task.abort();
         let _ = tokio::time::timeout(Duration::from_secs(1), self.handler_task).await;
+    }
+}
+
+async fn graceful_browser_shutdown(browser: &mut Browser, context: &str) {
+    match tokio::time::timeout(Duration::from_secs(5), browser.close()).await {
+        Err(_) => tracing::warn!(context, "timed out closing Chromium"),
+        Ok(Err(error)) => tracing::warn!(error = %error, context, "failed closing Chromium"),
+        Ok(Ok(_)) => {}
+    }
+    match tokio::time::timeout(Duration::from_secs(5), browser.wait()).await {
+        Err(_) => tracing::warn!(context, "timed out waiting for Chromium process exit"),
+        Ok(Err(error)) => tracing::warn!(error = %error, context, "failed awaiting Chromium exit"),
+        Ok(Ok(status)) => {
+            tracing::debug!(exit_status = ?status, context, "Chromium process exited");
+        }
     }
 }
 
@@ -197,22 +234,7 @@ pub async fn open_joined_meeting(options: JoinOptions) -> anyhow::Result<Meeting
             x11_display: options.x11_display.clone(),
         }),
         Err(error) => {
-            match tokio::time::timeout(Duration::from_secs(5), browser.close()).await {
-                Err(_) => tracing::warn!("timed out closing Chromium after join failure"),
-                Ok(Err(close_err)) => tracing::warn!(
-                    error = %close_err,
-                    "failed closing Chromium after join failure"
-                ),
-                Ok(Ok(_)) => {}
-            }
-            match tokio::time::timeout(Duration::from_secs(5), browser.wait()).await {
-                Err(_) => tracing::warn!("timed out waiting for Chromium after join failure"),
-                Ok(Err(wait_err)) => tracing::warn!(
-                    error = %wait_err,
-                    "failed waiting for Chromium exit after join failure"
-                ),
-                Ok(Ok(_)) => {}
-            }
+            graceful_browser_shutdown(&mut browser, "after join failure").await;
             handler_task.abort();
             Err(error)
         }
@@ -222,8 +244,7 @@ pub async fn open_joined_meeting(options: JoinOptions) -> anyhow::Result<Meeting
 pub async fn open_profile(options: ProfileOptions) -> anyhow::Result<()> {
     let user_data_dir = profile_dir(&options.user_data_dir)?;
     warn_if_profile_lock_exists(&user_data_dir);
-    let chrome_path = chrome_executable(&options.chromium_path)
-        .ok_or_else(|| anyhow::anyhow!("Chrome/Chromium executable was not found"))?;
+    let chrome_path = chrome_executable(&options.chromium_path)?;
 
     let mut child_cmd = Command::new(&chrome_path);
     child_cmd
@@ -282,7 +303,7 @@ fn browser_config(
     user_data_dir: &PathBuf,
     x11_display: Option<&str>,
 ) -> anyhow::Result<BrowserConfig> {
-    let chrome_path = chrome_executable(chromium_path);
+    let chrome_path = chrome_executable(chromium_path)?;
     ensure_profile_dir(user_data_dir)?;
 
     let mut builder = BrowserConfig::builder()
@@ -303,7 +324,6 @@ fn browser_config(
         .arg("--use-fake-ui-for-media-stream")
         .arg("--auto-accept-this-tab-capture")
         .arg("--auto-select-desktop-capture-source=Google Meet")
-        // Tab titles look like "xxx-yyy-zzz · Google Meet"; Brave may ignore these switches.
         .arg("--auto-select-tab-capture-source-by-title=Google Meet")
         .arg("--autoplay-policy=no-user-gesture-required")
         .arg("--mute-audio=false");
@@ -328,14 +348,7 @@ fn browser_config(
         builder = builder.env("DISPLAY", d);
     }
 
-    if let Some(chrome_path) = chrome_path {
-        builder = builder.chrome_executable(chrome_path);
-    } else {
-        tracing::warn!(
-            configured_path = %chromium_path.display(),
-            "configured Chromium path and common Chrome locations do not exist; falling back to chromiumoxide detection"
-        );
-    }
+    builder = builder.chrome_executable(chrome_path);
 
     builder.build().map_err(anyhow::Error::msg)
 }
@@ -382,7 +395,11 @@ fn profile_dir(configured_dir: &PathBuf) -> anyhow::Result<PathBuf> {
     } else {
         std::env::current_dir()?.join(configured_dir)
     };
-    Ok(absolute.canonicalize().unwrap_or(absolute))
+    match absolute.canonicalize() {
+        Ok(path) => Ok(path),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(absolute),
+        Err(error) => Err(error.into()),
+    }
 }
 
 fn warn_if_profile_lock_exists(user_data_dir: &PathBuf) {
@@ -395,18 +412,15 @@ fn warn_if_profile_lock_exists(user_data_dir: &PathBuf) {
     }
 }
 
-fn chrome_executable(configured_path: &PathBuf) -> Option<PathBuf> {
-    [
-        configured_path.as_path(),
-        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome".as_ref(),
-        "/Applications/Chromium.app/Contents/MacOS/Chromium".as_ref(),
-        "/usr/bin/google-chrome".as_ref(),
-        "/usr/bin/chromium".as_ref(),
-        "/usr/bin/chromium-browser".as_ref(),
-    ]
-    .into_iter()
-    .find(|path| path.exists())
-    .map(PathBuf::from)
+fn chrome_executable(configured_path: &PathBuf) -> anyhow::Result<PathBuf> {
+    if configured_path.is_file() {
+        Ok(configured_path.clone())
+    } else {
+        anyhow::bail!(
+            "Chrome executable not found at {}; set [bot].chromium_path in config.toml",
+            configured_path.display()
+        )
+    }
 }
 
 async fn run_join_flow(browser: &Browser, options: &JoinOptions) -> anyhow::Result<Page> {
@@ -461,12 +475,14 @@ async fn close_other_pages(browser: &Browser, keep_page: &Page) -> anyhow::Resul
             continue;
         }
 
-        let url = page
-            .url()
-            .await
-            .ok()
-            .flatten()
-            .unwrap_or_else(|| "<unknown>".to_string());
+        let url = match page.url().await {
+            Ok(Some(url)) => url,
+            Ok(None) => "<no url>".to_owned(),
+            Err(error) => {
+                tracing::warn!(%error, "failed to read Chrome tab URL before close");
+                "<unknown>".to_owned()
+            }
+        };
         tracing::info!(%url, "closing extra Chrome tab before capture");
         if let Err(error) = page.close().await {
             tracing::warn!(%error, "failed to close extra Chrome tab");
@@ -601,8 +617,8 @@ pub async fn start_tab_recording(
         Ok(button) => {
             if let Err(error) = button.click().await {
                 tracing::warn!(%error, "could not click recorder start trigger");
-            } else {
-                let _ = click_tx.send(());
+            } else if click_tx.send(()).is_err() {
+                tracing::warn!("tab-capture prompt acceptor exited before recorder click signal");
             }
         }
         Err(error) => {
@@ -613,15 +629,20 @@ pub async fn start_tab_recording(
     // Poll quickly so we notice "recording" soon after the Allow click (500ms was very noticeable).
     for _ in 0..400 {
         let status = recording_status(page).await?;
-        match status.get("status").and_then(|status| status.as_str()) {
-            Some("recording") => {
+        match status.phase() {
+            RecordingPhase::Recording => {
                 prompt_acceptor.abort();
-                tracing::info!(%status, "browser MediaRecorder started");
+                tracing::info!(?status, "browser MediaRecorder started");
                 return Ok(recording);
             }
-            Some("failed") => {
+            RecordingPhase::Failed => {
                 prompt_acceptor.abort();
-                anyhow::bail!("getDisplayMedia failed: {status}");
+                match status {
+                    RecordingStatus::Failed { name, message } => {
+                        anyhow::bail!("getDisplayMedia failed: {name}: {message}");
+                    }
+                    other => anyhow::bail!("getDisplayMedia failed: {other:?}"),
+                }
             }
             _ => tokio::time::sleep(std::time::Duration::from_millis(150)).await,
         }
@@ -836,7 +857,7 @@ pub(super) async fn linux_accept_tab_capture_prompt(
 
     if !which.status.success() {
         anyhow::bail!(
-            "xdotool not found; install it (e.g. apt install xdotool) to auto-accept the tab-capture dialog on Linux, or use Google Chrome instead of Brave (Chromium devtools flags are more reliable)"
+            "xdotool not found; install it (e.g. apt install xdotool) to auto-accept the tab-capture dialog on Linux"
         );
     }
 
@@ -868,23 +889,9 @@ pub(super) async fn linux_accept_tab_capture_prompt(
         );
     }
 
-    let mut gx: Option<i32> = None;
-    let mut gy: Option<i32> = None;
-    let mut gwidth: Option<i32> = None;
-    let mut gheight: Option<i32> = None;
-    for line in String::from_utf8_lossy(&geometry.stdout).lines() {
-        if let Some(rest) = line.strip_prefix("X=") {
-            gx = rest.parse().ok();
-        } else if let Some(rest) = line.strip_prefix("Y=") {
-            gy = rest.parse().ok();
-        } else if let Some(rest) = line.strip_prefix("WIDTH=") {
-            gwidth = rest.parse().ok();
-        } else if let Some(rest) = line.strip_prefix("HEIGHT=") {
-            gheight = rest.parse().ok();
-        }
-    }
+    let geo = xdotool_geom::parse_geom_shell_stdout(&String::from_utf8_lossy(&geometry.stdout));
 
-    if let (Some(x), Some(y), Some(w), Some(h)) = (gx, gy, gwidth, gheight) {
+    if let (Some(x), Some(y), Some(w), Some(h)) = (geo.x, geo.y, geo.width, geo.height) {
         // Chrome stacks the tab-audio toggle above the Cancel/Allow row. Clicks ~0.6y often hit that
         // switch (kbd `Tab Return` activates whatever is focused — typically toggling audio off first).
         for (xf, yf) in [(0.90, 0.88), (0.88, 0.91), (0.92, 0.87), (0.86, 0.93)] {
@@ -961,16 +968,9 @@ async fn xdotool_window_width_height_shell(display: Option<&str>, wid: u32) -> O
         return None;
     }
 
-    let mut width: Option<i32> = None;
-    let mut height: Option<i32> = None;
-    for gline in String::from_utf8_lossy(&out.stdout).lines() {
-        if let Some(rest) = gline.strip_prefix("WIDTH=") {
-            width = rest.parse().ok();
-        } else if let Some(rest) = gline.strip_prefix("HEIGHT=") {
-            height = rest.parse().ok();
-        }
-    }
-    match (width, height) {
+    let geom =
+        xdotool_geom::parse_geom_shell_stdout(&String::from_utf8_lossy(&out.stdout));
+    match (geom.width, geom.height) {
         (Some(w), Some(h)) if w > 0 && h > 0 => Some((w, h)),
         _ => None,
     }
@@ -981,7 +981,7 @@ async fn xdotool_window_width_height_shell(display: Option<&str>, wid: u32) -> O
 async fn linux_pick_largest_window_by_area(
     display: Option<&str>,
     wid_lines_stdout: &str,
-) -> Option<u32> {
+) -> Option<(u32, u64)> {
     let mut best: Option<(u32, u64)> = None;
     for line in wid_lines_stdout.lines() {
         let Ok(wid) = line.trim().parse::<u32>() else {
@@ -995,7 +995,7 @@ async fn linux_pick_largest_window_by_area(
             best = Some((wid, area));
         }
     }
-    best.map(|(w, _)| w)
+    best
 }
 
 #[cfg(target_os = "linux")]
@@ -1014,7 +1014,8 @@ pub(super) async fn linux_find_largest_chromium_window(
 
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
-            if let Some(wid) = linux_pick_largest_window_by_area(display, stdout.as_ref()).await {
+            if let Some((wid, _)) = linux_pick_largest_window_by_area(display, stdout.as_ref()).await
+            {
                 tracing::debug!(
                     window_id = wid,
                     chrome_pid = pid,
@@ -1030,17 +1031,7 @@ pub(super) async fn linux_find_largest_chromium_window(
         );
     }
 
-    const CLASSES: &[&str] = &[
-        "brave-browser",
-        "Brave-browser",
-        "brave",
-        "Brave",
-        "google-chrome",
-        "Google-chrome",
-        "chromium",
-        "Chromium",
-        "Chromium-browser",
-    ];
+    const CLASSES: &[&str] = &["google-chrome", "Google-chrome"];
 
     let mut best: Option<(u32, u64)> = None;
     for class in CLASSES {
@@ -1056,24 +1047,19 @@ pub(super) async fn linux_find_largest_chromium_window(
             continue;
         }
 
-        for line in String::from_utf8_lossy(&output.stdout).lines() {
-            let Ok(wid) = line.trim().parse::<u32>() else {
-                continue;
-            };
-            let Some((width, height)) = xdotool_window_width_height_shell(display, wid).await
-            else {
-                continue;
-            };
-            let area = width as u64 * height as u64;
-            if best.map_or(true, |(_, a)| area > a) {
-                best = Some((wid, area));
+        if let Some(candidate) =
+            linux_pick_largest_window_by_area(display, &String::from_utf8_lossy(&output.stdout))
+                .await
+        {
+            if best.map_or(true, |(_, a)| candidate.1 > a) {
+                best = Some(candidate);
             }
         }
     }
 
     best.map(|(w, _)| w).ok_or_else(|| {
         anyhow::anyhow!(
-            "xdotool found no visible Brave/Chrome/Chromium window; is the automation browser running?"
+            "xdotool found no visible Google Chrome window; is the automation browser running?"
         )
     })
 }
@@ -1108,7 +1094,7 @@ async fn install_recording_binding(
                 continue;
             }
 
-            let payload = match serde_json::from_str::<serde_json::Value>(&event.payload) {
+            let payload = match serde_json::from_str::<RecordingBindingPayload>(&event.payload) {
                 Ok(payload) => payload,
                 Err(error) => {
                     tracing::warn!(%error, "ignored malformed recording chunk payload");
@@ -1116,35 +1102,22 @@ async fn install_recording_binding(
                 }
             };
 
-            match payload.get("kind").and_then(|kind| kind.as_str()) {
-                Some("chunk") => {
-                    let Some(data) = payload.get("data").and_then(|data| data.as_str()) else {
-                        tracing::warn!("ignored recording chunk without data");
-                        continue;
-                    };
+            match payload {
+                RecordingBindingPayload::Chunk {
+                    size,
+                    data,
+                    participant_count,
+                    participant_source,
+                    ..
+                } => {
                     let decoded = BASE64.decode(data.as_bytes())?;
-                    let declared_size = payload
-                        .get("size")
-                        .and_then(|size| size.as_u64())
-                        .unwrap_or(decoded.len() as u64);
-                    if decoded.len() as u64 != declared_size {
+                    if decoded.len() as u64 != size {
                         tracing::warn!(
                             decoded_bytes = decoded.len(),
-                            declared_size,
+                            declared_size = size,
                             "recording chunk size mismatch"
                         );
                     }
-
-                    let participant_count = payload.get("participantCount").and_then(|v| {
-                        v.as_u64().or_else(|| {
-                            v.as_i64()
-                                .filter(|&i| i >= 0)
-                                .map(|i| i as u64)
-                        })
-                    });
-                    let participant_source = payload
-                        .get("participantSource")
-                        .and_then(|v| v.as_str());
 
                     file.write_all(&decoded).await?;
                     file.flush().await?;
@@ -1158,13 +1131,10 @@ async fn install_recording_binding(
                         "accepted recording chunk with Meet participant snapshot (best-effort)"
                     );
                 }
-                Some("done") => {
+                RecordingBindingPayload::Done => {
                     file.flush().await?;
                     tracing::info!(chunks, bytes, "recording chunk writer finished");
                     return Ok(());
-                }
-                other => {
-                    tracing::warn!(?other, "ignored unknown recording binding event");
                 }
             }
         }
@@ -1363,19 +1333,20 @@ async fn install_recording_button(page: &Page) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn recording_status(page: &Page) -> anyhow::Result<serde_json::Value> {
-    Ok(page
+async fn recording_status(page: &Page) -> anyhow::Result<RecordingStatus> {
+    let value: serde_json::Value = page
         .evaluate_function(
             r#"function() {
   return window.__gmrRecordingStatus || { status: 'not_installed' };
 }"#,
         )
         .await?
-        .into_value()?)
+        .into_value()?;
+    Ok(serde_json::from_value(value)?)
 }
 
-pub async fn recording_runtime_status(page: &Page) -> anyhow::Result<serde_json::Value> {
-    Ok(page
+pub async fn recording_runtime_status(page: &Page) -> anyhow::Result<RecordingRuntimeStatus> {
+    let value: serde_json::Value = page
         .evaluate_function(
             r#"function() {
   const base = window.__gmrRecordingStatus || { status: 'not_installed' };
@@ -1393,7 +1364,8 @@ pub async fn recording_runtime_status(page: &Page) -> anyhow::Result<serde_json:
 }"#,
         )
         .await?
-        .into_value()?)
+        .into_value()?;
+    Ok(serde_json::from_value(value)?)
 }
 
 pub async fn stop_tab_recording(page: &Page) -> anyhow::Result<()> {
@@ -1420,12 +1392,16 @@ pub async fn stop_tab_recording(page: &Page) -> anyhow::Result<()> {
   return { status: 'stopped', errors: window.__gmrUploadErrors || [] };
 }"#;
 
-    let result: serde_json::Value = page.evaluate_function(script).await?.into_value()?;
-    if let Some(errors) = result.get("errors").and_then(|errors| errors.as_array()) {
-        if !errors.is_empty() {
-            anyhow::bail!("browser upload errors: {errors:?}");
+    let result: RecordingStatus = page.evaluate_function(script).await?.into_value()?;
+    match result {
+        RecordingStatus::Stopped { errors } | RecordingStatus::NotStarted { errors } => {
+            if !errors.is_empty() {
+                anyhow::bail!("browser upload errors: {errors:?}");
+            }
+        }
+        other => {
+            tracing::info!(?other, "browser MediaRecorder stopped");
         }
     }
-    tracing::info!(%result, "browser MediaRecorder stopped");
     Ok(())
 }

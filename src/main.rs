@@ -8,6 +8,7 @@ mod config;
 mod db;
 mod error;
 mod google;
+mod meet_url;
 mod web;
 mod workers;
 

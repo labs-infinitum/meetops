@@ -7,3 +7,48 @@ pub struct MeetingListItem {
     pub end_at: i64,
     pub auto_join: i64,
 }
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct EligibleMeeting {
+    pub id: String,
+    pub meet_url: String,
+    pub start_at: i64,
+    pub end_at: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BotRunStatus {
+    Queued,
+    Joining,
+    InMeeting,
+    Recording,
+    Completed,
+    Failed,
+}
+
+impl BotRunStatus {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Joining => "joining",
+            Self::InMeeting => "in_meeting",
+            Self::Recording => "recording",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct BotRunListItem {
+    pub id: i64,
+    pub meeting_id: String,
+    pub title: String,
+    pub status: String,
+    pub error: Option<String>,
+    pub meeting_start_at: i64,
+    pub started_at: Option<i64>,
+    pub ended_at: Option<i64>,
+    pub created_at: i64,
+    pub recording_path: Option<String>,
+}

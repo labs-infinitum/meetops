@@ -4,9 +4,14 @@ use chrono::Utc;
 use sqlx::SqlitePool;
 use tokio::time::{Duration, Instant};
 
-use crate::{bot::chromium, bot::x11_display, config::Config, db::bot_runs};
+use crate::{
+    bot::{chromium, x11_display},
+    config::Config,
+    meet_url::MeetUrl,
+    db::bot_runs,
+};
 
-pub async fn record(meet_url: String, config: &Config) -> anyhow::Result<()> {
+pub async fn record(meet_url: MeetUrl, config: &Config) -> anyhow::Result<()> {
     let recording_id = format!("manual-{}", Utc::now().format("%Y%m%dT%H%M%SZ"));
     let raw = record_inner(
         meet_url,
@@ -23,7 +28,7 @@ pub async fn record(meet_url: String, config: &Config) -> anyhow::Result<()> {
 
 /// Join Meet, capture tab to `data/recordings/{recording_id}/raw.webm`, stop at `end_at_unix` or Ctrl+C.
 pub async fn record_scheduled<Fut>(
-    meet_url: String,
+    meet_url: MeetUrl,
     config: &Config,
     recording_id: &str,
     end_at_unix: i64,
@@ -51,7 +56,7 @@ enum RecordStop {
 }
 
 async fn record_inner<Fut>(
-    meet_url: String,
+    meet_url: MeetUrl,
     config: &Config,
     recording_id: &str,
     stop: RecordStop,
@@ -61,8 +66,6 @@ async fn record_inner<Fut>(
 where
     Fut: std::future::Future<Output = ()> + Send,
 {
-    validate_meet_url(&meet_url)?;
-
     let x11 = x11_display::prepare(&config.bot).await?;
     let x11_display = x11.as_ref().map(|s| s.display.clone());
 
@@ -75,18 +78,16 @@ where
     tracing::info!(recording_dir = %recording_dir.display(), "created recording directory");
 
     let raw_webm_path = recording_dir.join("raw.webm");
-    let _ = tokio::fs::remove_file(&raw_webm_path).await;
+    if let Err(error) = tokio::fs::remove_file(&raw_webm_path).await
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        return Err(error.into());
+    }
 
     let tab_capture_screenshot_dir = recording_dir.join("tab-capture-screenshots");
 
-    let join_options = chromium::JoinOptions {
-        meet_url,
-        display_name: config.bot.display_name.clone(),
-        chromium_path: config.bot.chromium_path.clone(),
-        user_data_dir: config.bot.chrome_user_data_dir.clone(),
-        admission_timeout: std::time::Duration::from_secs(config.bot.admission_timeout_secs),
-        x11_display: x11_display.clone(),
-    };
+    let join_options =
+        chromium::JoinOptions::from_config(meet_url, config, x11_display.clone());
 
     let mut session = chromium::open_joined_meeting(join_options).await?;
 
@@ -122,7 +123,7 @@ where
         Err(error) => {
             tracing::error!(
                 %error,
-                "failed to start browser recording; allow the tab-capture prompt (Linux: xdotool/Google Chrome), disable Brave blocks, or grant macOS Screen Recording if applicable"
+                "failed to start browser recording; allow the tab-capture prompt (Linux: xdotool/Google Chrome) or grant macOS Screen Recording if applicable"
             );
             session.close().await;
             return Err(error);
@@ -234,12 +235,4 @@ async fn ensure_recording_exists(raw_webm_path: &Path) -> anyhow::Result<()> {
     }
     tracing::info!(bytes = metadata.len(), "saved WebM recording");
     Ok(())
-}
-
-fn validate_meet_url(meet_url: &str) -> anyhow::Result<()> {
-    if meet_url.starts_with("https://meet.google.com/") {
-        Ok(())
-    } else {
-        anyhow::bail!("expected a Google Meet URL like https://meet.google.com/xxx-yyyy-zzz")
-    }
 }

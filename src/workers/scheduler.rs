@@ -8,7 +8,8 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use crate::{
     bot::runner,
     config::Config,
-    db::bot_runs,
+    db::{bot_runs, BotRunStatus},
+    meet_url::MeetUrl,
 };
 
 pub fn spawn(config: Arc<Config>, db: SqlitePool, chrome_sessions: Arc<Semaphore>) {
@@ -42,7 +43,18 @@ async fn run_tick(
 
         let cfg = Arc::clone(config);
         let pool = db.clone();
-        let meet_url = meeting.meet_url.clone();
+        let meet_url = match MeetUrl::parse(&meeting.meet_url) {
+            Ok(url) => url,
+            Err(error) => {
+                tracing::warn!(
+                    meeting_id = %meeting.id,
+                    meet_url = %meeting.meet_url,
+                    %error,
+                    "skipping scheduled recording for invalid Meet URL"
+                );
+                continue;
+            }
+        };
         let end_at = meeting.end_at;
         let sem = chrome_sessions.clone();
 
@@ -67,16 +79,16 @@ async fn run_claimed(
     pool: SqlitePool,
     chrome_sessions: Arc<Semaphore>,
     run_id: i64,
-    meet_url: String,
+    meet_url: MeetUrl,
     end_at: i64,
 ) {
     let _permit: OwnedSemaphorePermit = match chrome_sessions.acquire_owned().await {
         Ok(permit) => permit,
         Err(_) => {
-            let _ = bot_runs::finalize_run(
+            finalize_run_logged(
                 &pool,
                 run_id,
-                "failed",
+                BotRunStatus::Failed,
                 Some("scheduler semaphore closed"),
                 None,
             )
@@ -87,10 +99,10 @@ async fn run_claimed(
 
     let now = crate::db::now_unix();
     if now >= end_at {
-        let _ = bot_runs::finalize_run(
+        finalize_run_logged(
             &pool,
             run_id,
-            "failed",
+            BotRunStatus::Failed,
             Some("meeting already ended before join could start"),
             None,
         )
@@ -100,10 +112,10 @@ async fn run_claimed(
 
     if let Err(error) = bot_runs::mark_joining(&pool, run_id).await {
         tracing::error!(%error, run_id, "failed to mark bot run joining");
-        let _ = bot_runs::finalize_run(
+        finalize_run_logged(
             &pool,
             run_id,
-            "failed",
+            BotRunStatus::Failed,
             Some("could not update run status to joining"),
             None,
         )
@@ -131,19 +143,25 @@ async fn run_claimed(
     match result {
         Ok(raw_path) => {
             let rel = recording_path_for_db(&config, &raw_path);
-            if let Err(error) =
-                bot_runs::finalize_run(&pool, run_id, "completed", None, Some(rel.as_str())).await
-            {
-                tracing::error!(%error, run_id, "failed to finalize bot run as completed");
-            }
+            finalize_run_logged(&pool, run_id, BotRunStatus::Completed, None, Some(rel.as_str())).await;
         }
         Err(error) => {
             let message = error.to_string();
-            if let Err(err) =
-                bot_runs::finalize_run(&pool, run_id, "failed", Some(&message), None).await
-            {
-                tracing::error!(%err, run_id, "failed to finalize bot run as failed");
-            }
+            finalize_run_logged(&pool, run_id, BotRunStatus::Failed, Some(&message), None).await;
         }
+    }
+}
+
+async fn finalize_run_logged(
+    pool: &SqlitePool,
+    run_id: i64,
+    status: BotRunStatus,
+    error: Option<&str>,
+    recording_path: Option<&str>,
+) {
+    if let Err(err) =
+        bot_runs::finalize_run(pool, run_id, status, error, recording_path).await
+    {
+        tracing::error!(%err, run_id, status = status.as_str(), "failed to finalize bot run");
     }
 }

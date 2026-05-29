@@ -1,12 +1,12 @@
-//! Linux-only: wait after `getDisplayMedia`, screenshot the Chrome window via X11 tooling, then locate
-//! the pale-blue \"Allow\" pill with [`allow_button_detect`] on that PNG and click; optionally fall back
-//! to `allow_button_template_png` grayscale template correlation when the blob misses, then heuristic `xdotool`.
+//! Linux-only: wait after `getDisplayMedia`, screenshot the Chrome window via X11 tooling, locate
+//! the pale-blue \"Allow\" pill with [`allow_button_detect`], optionally refine with
+//! `allow_button_template_png`, then fall back to heuristic `xdotool`.
 
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use crate::bot::allow_button_detect;
+use crate::bot::{allow_button_detect, xdotool_geom};
 use anyhow::Context;
 use image::GrayImage;
 use tokio::process::Command;
@@ -73,22 +73,6 @@ async fn maybe_click_allow_from_color_blob_png(
         "Allow pose from PNG chroma+flood-fill (window-relative for xdotool --window)",
     );
 
-    println!(
-        "[gmr-tab-capture] Allow from color blob (window-relative):\n\
-  png: {}\n\
-  window: {}\n\
-  bbox x=[{}…{}] y=[{}…{}]\n\
-  click_center=({}, {})",
-        shot_path.display(),
-        wid_str,
-        button.min_x,
-        button.max_x,
-        button.min_y,
-        button.max_y,
-        cx,
-        cy,
-    );
-
     xdot_mousemove_click_window_relative(wid_str, cx, cy, display).await?;
     Ok(true)
 }
@@ -129,115 +113,43 @@ pub(super) fn spawn(
         }
 
         let template_path = resolve_template_path_with_warning(allow_button_template_png.as_ref());
+        let screenshot_attempts = if template_path.is_some() {
+            TEMPLATE_ATTEMPTS
+        } else {
+            1
+        };
 
-        match template_path {
-            Some(ref path) => {
-                for attempt in 1..=TEMPLATE_ATTEMPTS {
-                    match attempt_click_allow_via_screenshot(
-                        x11_display_opt,
-                        path.as_path(),
-                        tab_capture_screenshot_dir.as_path(),
-                        launched_chrome_pid,
-                    )
-                    .await
-                    {
-                        Ok(()) => {
-                            tracing::info!(
-                                attempt,
-                                template = %path.display(),
-                                "Allow click attempted (screenshot + blob or template refinement)"
-                            );
-                        }
-                        Err(error) => {
-                            tracing::warn!(
-                                attempt,
-                                %error,
-                                "screenshot/template Allow click attempt failed"
-                            );
-                        }
-                    }
-                    tokio::time::sleep(TEMPLATE_RETRY_INTERVAL).await;
+        for attempt in 1..=screenshot_attempts {
+            match attempt_click_allow_via_screenshot(
+                x11_display_opt,
+                template_path.as_deref(),
+                tab_capture_screenshot_dir.as_path(),
+                launched_chrome_pid,
+            )
+            .await
+            {
+                Ok(()) => {
+                    tracing::info!(
+                        attempt,
+                        template = ?template_path.as_ref().map(|p| p.display().to_string()),
+                        "Allow click attempted (screenshot + color blob, optional template)"
+                    );
                 }
-
-                tracing::warn!(
-                    "template-assisted Allow retries exhausted; falling back to heuristic xdotool"
-                );
-            }
-            None => {
-                tracing::info!(
-                    "allow_button_template_png not set — capturing one Chrome window PNG (color blob only), then heuristic xdotool; set template path for grayscale fallback",
-                );
-                match chrome_window_focus_and_capture_png(
-                    x11_display_opt,
-                    tab_capture_screenshot_dir.as_path(),
-                    "chrome-tab-share-no-template",
-                    launched_chrome_pid,
-                )
-                .await
-                {
-                    Ok((path, wid)) => {
-                        match maybe_click_allow_from_color_blob_png(
-                            path.as_path(),
-                            &wid,
-                            x11_display_opt,
-                        )
-                        .await
-                        {
-                            Ok(true) => {
-                                tracing::info!(
-                                    screenshot_png = %path.display(),
-                                    window_id = %wid,
-                                    "clicked Allow via color blob (allow_button_template_png not set)",
-                                );
-                                println!(
-                                    "[gmr-tab-capture] Allow clicked via color blob; png={} window={}",
-                                    path.display(),
-                                    wid,
-                                );
-                            }
-                            Ok(false) => {
-                                tracing::info!(
-                                    screenshot_png = %path.display(),
-                                    dir = %tab_capture_screenshot_dir.display(),
-                                    window_id = %wid,
-                                    "saved debug Chrome screenshot — color blob did not find Allow pill",
-                                );
-                                println!(
-                                    "[gmr-tab-capture] screenshot saved — Allow not auto-clicked (blob miss). png={} window={} — set allow_button_template_png or run: cargo run --bin find-chrome-tab-allow-click -- <png> --window-id <id>",
-                                    path.display(),
-                                    wid,
-                                );
-                            }
-                            Err(error) => {
-                                tracing::warn!(
-                                    screenshot_png = %path.display(),
-                                    window_id = %wid,
-                                    %error,
-                                    "color blob detector or xdotool click failed — saved screenshot under recording dir",
-                                );
-                                tracing::info!(
-                                    screenshot_png = %path.display(),
-                                    dir = %tab_capture_screenshot_dir.display(),
-                                    window_id = %wid,
-                                    "saved debug Chrome screenshot after failed blob click attempt",
-                                );
-                                println!(
-                                    "[gmr-tab-capture] screenshot saved — blob click attempt failed (see logs). png={} window={}",
-                                    path.display(),
-                                    wid,
-                                );
-                            }
-                        }
-                    }
-                    Err(error) => {
-                        tracing::warn!(
-                            %error,
-                            dir = %tab_capture_screenshot_dir.display(),
-                            "could not capture debug Chrome PNG; verify xdotool, DISPLAY=:1 matching Chrome, imagemagick import/maim or ffmpeg x11grab"
-                        );
-                    }
+                Err(error) => {
+                    tracing::warn!(
+                        attempt,
+                        %error,
+                        "screenshot Allow click attempt failed"
+                    );
                 }
             }
+            tokio::time::sleep(TEMPLATE_RETRY_INTERVAL).await;
+        }
+
+        if template_path.is_some() {
+            tracing::warn!(
+                "template-assisted Allow retries exhausted; falling back to heuristic xdotool"
+            );
         }
 
         for attempt in 1..=48 {
@@ -277,7 +189,7 @@ struct TemplateMatch {
 
 async fn attempt_click_allow_via_screenshot(
     display: Option<&str>,
-    template_png: &Path,
+    template_png_path: Option<&Path>,
     screenshot_dir: &Path,
     launched_chrome_pid: Option<u32>,
 ) -> anyhow::Result<()> {
@@ -299,11 +211,18 @@ async fn attempt_click_allow_via_screenshot(
         tracing::info!(
             screenshot_png = %shot_path.display(),
             xdotool_window_id = %wid_str,
-            skipped = "template_png",
             "Allow dismissed via color blob detector on screenshot",
         );
         return Ok(());
     }
+
+    let Some(template_png) = template_png_path else {
+        tracing::debug!(
+            screenshot_png = %shot_path.display(),
+            "color blob missed and allow_button_template_png is not configured"
+        );
+        return Ok(());
+    };
 
     tracing::debug!(
         screenshot_png = %shot_path.display(),
@@ -350,29 +269,12 @@ async fn attempt_click_allow_via_screenshot(
         "Allow button pose from screenshot + template (window-relative coords; pass to xdotool --window)",
     );
 
-    println!(
-        "[gmr-tab-capture] Allow button pose after screenshot:\n\
-  png: {}\n\
-  window: {} — use coords with `xdotool mousemove --window <id> x y`\n\
-  bbox top_left=({}, {}) size {}x{}\n\
-  click_center=({}, {})  template_corr={:.5}",
-        shot_path.display(),
-        wid_str,
-        m.x,
-        m.y,
-        m.tw,
-        m.th,
-        cx,
-        cy,
-        m.score,
-    );
-
     xdot_mousemove_click_window_relative(&wid_str, cx, cy, display).await?;
 
     Ok(())
 }
 
-/// Focus Chrome/Chromium/Brave via `xdotool`, then save the window pixmap as PNG.
+/// Focus Google Chrome via `xdotool`, then save the window pixmap as PNG.
 async fn chrome_window_focus_and_capture_png(
     display: Option<&str>,
     screenshot_dir: &Path,
@@ -407,7 +309,10 @@ fn unique_timestamp_suffix() -> String {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| format!("{}", d.as_nanos()))
-        .unwrap_or_else(|_| "0".into())
+        .unwrap_or_else(|error| {
+            tracing::warn!(%error, "system clock before UNIX epoch; using fallback screenshot suffix");
+            "0".into()
+        })
 }
 
 fn match_template_ncc(scene: &GrayImage, tpl: &GrayImage) -> anyhow::Result<TemplateMatch> {
@@ -606,10 +511,7 @@ async fn ffmpeg_x11grab_window(wid: u32, display: Option<&str>, out: &Path) -> a
 
     let mut ff_disp = display
         .map(str::to_string)
-        .or_else(|| std::env::var("DISPLAY").ok())
-        .context(
-            "DISPLAY is unset; pass [bot].x11_display or export DISPLAY for ffmpeg fallback",
-        )?;
+        .context("DISPLAY is unset; x11_display::prepare should set it before tab capture")?;
 
     // Simple ":N" → ":N.0" style for ffmpeg x11grab single-screen notation.
     if ff_disp.starts_with(':')
@@ -652,38 +554,7 @@ async fn ffmpeg_x11grab_window(wid: u32, display: Option<&str>, out: &Path) -> a
     }
 }
 
-#[derive(Default)]
-struct ShellGeom {
-    x: Option<i32>,
-    y: Option<i32>,
-    width: Option<i32>,
-    height: Option<i32>,
-}
-
-fn parse_geom_shell_stdout(text: &str) -> ShellGeom {
-    let mut g = ShellGeom::default();
-    for line in text.lines() {
-        let line = line.trim();
-        if let Some(v) = line.strip_prefix("X=") {
-            g.x = v.trim().parse().ok();
-            continue;
-        }
-        if let Some(v) = line.strip_prefix("Y=") {
-            g.y = v.trim().parse().ok();
-            continue;
-        }
-        if let Some(v) = line.strip_prefix("WIDTH=") {
-            g.width = v.trim().parse().ok();
-            continue;
-        }
-        if let Some(v) = line.strip_prefix("HEIGHT=") {
-            g.height = v.trim().parse().ok();
-        }
-    }
-    g
-}
-
-async fn grab_window_geom(wid: u32, display: Option<&str>) -> anyhow::Result<ShellGeom> {
+async fn grab_window_geom(wid: u32, display: Option<&str>) -> anyhow::Result<xdotool_geom::ShellGeom> {
     let wid_s = wid.to_string();
     let out = tokio::time::timeout(XDOTOOL_SUBPROCESS_TIMEOUT, {
         let mut c = Command::new("xdotool");
@@ -693,7 +564,7 @@ async fn grab_window_geom(wid: u32, display: Option<&str>) -> anyhow::Result<She
     .await??;
 
     anyhow::ensure!(out.status.success(), "getwindowgeometry failed");
-    Ok(parse_geom_shell_stdout(&String::from_utf8_lossy(
+    Ok(xdotool_geom::parse_geom_shell_stdout(&String::from_utf8_lossy(
         &out.stdout,
     )))
 }

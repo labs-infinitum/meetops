@@ -12,36 +12,8 @@ use std::process::Command;
 #[path = "../bot/allow_button_detect.rs"]
 mod allow_button_detect;
 
-#[derive(Default, Debug)]
-struct ShellGeom {
-    x: Option<i32>,
-    y: Option<i32>,
-    width: Option<i32>,
-    height: Option<i32>,
-}
-
-fn parse_geom_shell_stdout(text: &str) -> ShellGeom {
-    let mut g = ShellGeom::default();
-    for line in text.lines() {
-        let line = line.trim();
-        if let Some(v) = line.strip_prefix("X=") {
-            g.x = v.trim().parse().ok();
-            continue;
-        }
-        if let Some(v) = line.strip_prefix("Y=") {
-            g.y = v.trim().parse().ok();
-            continue;
-        }
-        if let Some(v) = line.strip_prefix("WIDTH=") {
-            g.width = v.trim().parse().ok();
-            continue;
-        }
-        if let Some(v) = line.strip_prefix("HEIGHT=") {
-            g.height = v.trim().parse().ok();
-        }
-    }
-    g
-}
+#[path = "../bot/xdotool_geom.rs"]
+mod xdotool_geom;
 
 fn apply_display(cmd: &mut Command, display: Option<&str>) {
     if let Some(d) = display {
@@ -49,7 +21,7 @@ fn apply_display(cmd: &mut Command, display: Option<&str>) {
     }
 }
 
-fn xdot_window_geometry_shell(wid: u32, display: Option<&str>) -> Result<ShellGeom> {
+fn xdot_window_geometry_shell(wid: u32, display: Option<&str>) -> Result<xdotool_geom::ShellGeom> {
     let wid_s = wid.to_string();
     let mut cmd = Command::new("xdotool");
     cmd.args(["getwindowgeometry", "--shell", &wid_s]);
@@ -64,7 +36,7 @@ fn xdot_window_geometry_shell(wid: u32, display: Option<&str>) -> Result<ShellGe
         out.status.code()
     );
 
-    Ok(parse_geom_shell_stdout(&String::from_utf8_lossy(
+    Ok(xdotool_geom::parse_geom_shell_stdout(&String::from_utf8_lossy(
         &out.stdout,
     )))
 }

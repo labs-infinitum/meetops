@@ -50,7 +50,7 @@ pub struct BotConfig {
     /// After resolving or starting a display, spawn `openbox` when missing (xdotool `windowactivate`).
     pub x11_start_openbox: bool,
     #[serde(default)]
-    /// Small PNG crop of the blue Chrome tab-share Allow pill (`allow_button_detect` grayscale fallback when chroma misses).
+    /// Small PNG crop of the blue Chrome tab-share Allow pill for grayscale template correlation when color-blob detection misses.
     /// Env: `GMR_BOT__ALLOW_BUTTON_TEMPLATE_PNG`
     pub allow_button_template_png: Option<PathBuf>,
     pub join_lead_time_secs: u64,

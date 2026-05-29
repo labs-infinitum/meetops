@@ -1,9 +1,9 @@
 use chrono::{DateTime, Duration, Utc};
 use reqwest::Client;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
-use crate::{config::Config, db, google::oauth};
+use crate::{config::Config, db, google::oauth, meet_url::MeetUrl};
 
 const CALENDAR_EVENTS_URL: &str = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
 const CALENDAR_SYNC_TOKEN_KEY: &str = "google_calendar_sync_token";
@@ -45,6 +45,14 @@ struct GoogleApiError {
     message: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CalendarAttendee {
+    email: Option<String>,
+    display_name: Option<String>,
+    response_status: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GoogleEvent {
@@ -57,7 +65,7 @@ struct GoogleEvent {
     conference_data: Option<ConferenceData>,
     start: EventDateTime,
     end: EventDateTime,
-    attendees: Option<serde_json::Value>,
+    attendees: Option<Vec<CalendarAttendee>>,
     etag: Option<String>,
 }
 
@@ -190,7 +198,7 @@ async fn sync_with_token(
 async fn upsert_meeting(
     pool: &SqlitePool,
     event: &GoogleEvent,
-    meet_url: &str,
+    meet_url: &MeetUrl,
 ) -> Result<(), CalendarError> {
     let now = db::now_unix();
     let start_at = parse_event_time(&event.id, &event.start)?;
@@ -230,7 +238,7 @@ async fn upsert_meeting(
             .as_ref()
             .and_then(|organizer| organizer.email.as_deref()),
     )
-    .bind(meet_url)
+    .bind(meet_url.as_str())
     .bind(start_at)
     .bind(end_at)
     .bind(attendees_json.as_deref())
@@ -251,13 +259,13 @@ async fn delete_meeting(pool: &SqlitePool, event_id: &str) -> Result<usize, sqlx
     Ok(result.rows_affected() as usize)
 }
 
-fn meet_url(event: &GoogleEvent) -> Option<String> {
+fn meet_url(event: &GoogleEvent) -> Option<MeetUrl> {
     if let Some(link) = event
         .hangout_link
         .as_deref()
         .filter(|link| link.contains("meet.google.com"))
     {
-        return Some(link.to_owned());
+        return MeetUrl::parse(link).ok();
     }
 
     if let Some(entry_points) = event
@@ -272,7 +280,7 @@ fn meet_url(event: &GoogleEvent) -> Option<String> {
                 .as_deref()
                 .filter(|uri| is_video && uri.contains("meet.google.com"))
             {
-                return Some(uri.to_owned());
+                return MeetUrl::parse(uri).ok();
             }
         }
     }
@@ -281,6 +289,7 @@ fn meet_url(event: &GoogleEvent) -> Option<String> {
         .description
         .as_deref()
         .and_then(extract_meet_url_from_text)
+        .and_then(|url| MeetUrl::parse(&url).ok())
 }
 
 fn extract_meet_url_from_text(text: &str) -> Option<String> {

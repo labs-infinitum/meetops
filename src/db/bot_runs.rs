@@ -1,30 +1,10 @@
-//! Persisted state for scheduled auto-record (M4) and UI lifecycle.
+//! Scheduled auto-record runs and UI lifecycle.
 
 use sqlx::SqlitePool;
 
 use super::now_unix;
 
-#[derive(Debug, Clone, sqlx::FromRow)]
-pub struct EligibleMeeting {
-    pub id: String,
-    pub meet_url: String,
-    pub start_at: i64,
-    pub end_at: i64,
-}
-
-#[derive(Debug, Clone, sqlx::FromRow)]
-pub struct BotRunListItem {
-    pub id: i64,
-    pub meeting_id: String,
-    pub title: String,
-    pub status: String,
-    pub error: Option<String>,
-    pub meeting_start_at: i64,
-    pub started_at: Option<i64>,
-    pub ended_at: Option<i64>,
-    pub created_at: i64,
-    pub recording_path: Option<String>,
-}
+pub use super::models::{BotRunListItem, BotRunStatus, EligibleMeeting};
 
 /// Meetings that should auto-record: inside the trigger window, no `bot_runs` row yet for this occurrence.
 pub async fn list_eligible_meetings(
@@ -68,11 +48,12 @@ pub async fn try_claim_run(
             meeting_id, meeting_start_at, status, error, trigger_after,
             started_at, ended_at, created_at, updated_at
         )
-        VALUES (?, ?, 'queued', NULL, ?, NULL, NULL, ?, ?)
+        VALUES (?, ?, ?, NULL, ?, NULL, NULL, ?, ?)
         "#,
     )
     .bind(meeting_id)
     .bind(meeting_start_at)
+    .bind(BotRunStatus::Queued.as_str())
     .bind(trigger_after)
     .bind(now)
     .bind(now)
@@ -102,10 +83,11 @@ pub async fn mark_joining(pool: &SqlitePool, run_id: i64) -> sqlx::Result<()> {
     sqlx::query(
         r#"
         UPDATE bot_runs
-        SET status = 'joining', started_at = ?, updated_at = ?
+        SET status = ?, started_at = ?, updated_at = ?
         WHERE id = ?
         "#,
     )
+    .bind(BotRunStatus::Joining.as_str())
     .bind(now)
     .bind(now)
     .bind(run_id)
@@ -119,10 +101,11 @@ pub async fn mark_in_meeting(pool: &SqlitePool, run_id: i64) -> sqlx::Result<()>
     sqlx::query(
         r#"
         UPDATE bot_runs
-        SET status = 'in_meeting', updated_at = ?
+        SET status = ?, updated_at = ?
         WHERE id = ?
         "#,
     )
+    .bind(BotRunStatus::InMeeting.as_str())
     .bind(now)
     .bind(run_id)
     .execute(pool)
@@ -135,10 +118,11 @@ pub async fn mark_recording(pool: &SqlitePool, run_id: i64) -> sqlx::Result<()> 
     sqlx::query(
         r#"
         UPDATE bot_runs
-        SET status = 'recording', updated_at = ?
+        SET status = ?, updated_at = ?
         WHERE id = ?
         "#,
     )
+    .bind(BotRunStatus::Recording.as_str())
     .bind(now)
     .bind(run_id)
     .execute(pool)
@@ -149,7 +133,7 @@ pub async fn mark_recording(pool: &SqlitePool, run_id: i64) -> sqlx::Result<()> 
 pub async fn finalize_run(
     pool: &SqlitePool,
     run_id: i64,
-    status: &str,
+    status: BotRunStatus,
     error: Option<&str>,
     recording_path: Option<&str>,
 ) -> sqlx::Result<()> {
@@ -161,7 +145,7 @@ pub async fn finalize_run(
         WHERE id = ?
         "#,
     )
-    .bind(status)
+    .bind(status.as_str())
     .bind(error)
     .bind(now)
     .bind(now)

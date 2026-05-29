@@ -10,6 +10,8 @@ use crate::config::Config;
 pub mod bot_runs;
 pub mod models;
 
+pub use models::BotRunStatus;
+
 pub async fn connect(config: &Config) -> sqlx::Result<SqlitePool> {
     let options =
         SqliteConnectOptions::from_str(&format!("sqlite://{}", config.database_path().display()))?

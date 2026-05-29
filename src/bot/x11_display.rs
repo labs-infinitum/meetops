@@ -4,7 +4,6 @@
 //! high-numbered virtual displays (`:10+`), and starts `Xvfb` (+ optional `openbox`) if needed.
 
 use std::{
-    path::Path,
     process::{Child, Stdio},
     time::Duration,
 };
@@ -347,7 +346,9 @@ fn read_child_stderr(child: &mut Child) -> String {
     use std::io::Read;
     let mut buf = String::new();
     if let Some(stderr) = child.stderr.take() {
-        let _ = std::io::BufReader::new(stderr).read_to_string(&mut buf);
+        if let Err(error) = std::io::BufReader::new(stderr).read_to_string(&mut buf) {
+            tracing::debug!(%error, "could not read child stderr for error context");
+        }
     }
     if buf.trim().is_empty() {
         String::new()
@@ -358,6 +359,8 @@ fn read_child_stderr(child: &mut Child) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
 
     #[test]
