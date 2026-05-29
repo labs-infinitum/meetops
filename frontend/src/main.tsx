@@ -1,0 +1,18 @@
+import { StrictMode } from "react"
+import { createRoot } from "react-dom/client"
+import { TooltipProvider } from "@/components/ui/tooltip"
+import { Toaster } from "@/components/ui/sonner"
+import { AuthProvider } from "@/lib/auth-context"
+import "./index.css"
+import App from "./App.tsx"
+
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <AuthProvider>
+      <TooltipProvider>
+        <App />
+        <Toaster richColors position="top-right" />
+      </TooltipProvider>
+    </AuthProvider>
+  </StrictMode>,
+)
