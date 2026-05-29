@@ -19,6 +19,10 @@ use tokio::time::Instant;
 const PROFILE_MARKER: &str = "google-meeting-recorder-bot-profile";
 const RECORDING_CHUNK_BINDING: &str = "__gmrRecordChunk";
 
+/// Linux: store cookies on disk without GNOME Keyring (survives Xvfb / desktop logout).
+#[cfg(target_os = "linux")]
+const LINUX_CHROME_PASSWORD_STORE_ARG: &str = "--password-store=basic";
+
 #[cfg(target_os = "linux")]
 mod tab_capture_allow;
 
@@ -226,12 +230,18 @@ pub async fn open_profile(options: ProfileOptions) -> anyhow::Result<()> {
         .arg(format!("--user-data-dir={}", user_data_dir.display()))
         .arg("--profile-directory=Default")
         .arg("--new-window")
-        .arg("--no-first-run")
-        .arg("https://accounts.google.com/");
-    if let Some(ref d) = options.x11_display {
-        let disp = normalize_x11_display(d);
-        child_cmd.env("DISPLAY", disp.clone());
-        tracing::info!(%disp, "Chrome profile subprocess DISPLAY");
+        .arg("--no-first-run");
+    #[cfg(target_os = "linux")]
+    {
+        child_cmd.arg(LINUX_CHROME_PASSWORD_STORE_ARG);
+        tracing::info!(
+            flag = LINUX_CHROME_PASSWORD_STORE_ARG,
+            "Chrome profile uses on-disk cookie encryption (not session keyring)"
+        );
+    }
+    child_cmd.arg("https://accounts.google.com/");
+    if let Some(disp) = resolved_chrome_display(options.x11_display.as_deref())? {
+        child_cmd.env("DISPLAY", disp);
     }
     let mut child = child_cmd.spawn()?;
 
@@ -275,11 +285,6 @@ fn browser_config(
     let chrome_path = chrome_executable(chromium_path);
     ensure_profile_dir(user_data_dir)?;
 
-    if let Some(d) = x11_display {
-        let disp = normalize_x11_display(d);
-        tracing::info!(%disp, "Chrome browser process DISPLAY (dummy/virtual X)");
-    }
-
     let mut builder = BrowserConfig::builder()
         .disable_default_args()
         .with_head()
@@ -302,9 +307,25 @@ fn browser_config(
         .arg("--auto-select-tab-capture-source-by-title=Google Meet")
         .arg("--autoplay-policy=no-user-gesture-required")
         .arg("--mute-audio=false");
+    #[cfg(target_os = "linux")]
+    {
+        builder = builder.arg(LINUX_CHROME_PASSWORD_STORE_ARG);
+        tracing::info!(
+            flag = LINUX_CHROME_PASSWORD_STORE_ARG,
+            profile_dir = %user_data_dir.display(),
+            "Chrome bot launches use on-disk cookie encryption (not session keyring)"
+        );
+    }
 
-    if let Some(d) = x11_display {
-        builder = builder.env("DISPLAY", normalize_x11_display(d));
+    // `chromiumoxide` forwards `process_envs` with `Command::envs`. Setting only `DISPLAY` would
+    // supply an explicit env block without `XAUTHORITY` / `HOME` / etc., so Chrome still reports
+    // "Missing X server or $DISPLAY". Seed from the current process, then force `DISPLAY`.
+    let display = resolved_chrome_display(x11_display)?;
+    for (k, v) in std::env::vars() {
+        builder = builder.env(k, v);
+    }
+    if let Some(d) = display {
+        builder = builder.env("DISPLAY", d);
     }
 
     if let Some(chrome_path) = chrome_path {
@@ -319,24 +340,33 @@ fn browser_config(
     builder.build().map_err(anyhow::Error::msg)
 }
 
-/// Canonical `DISPLAY` for virtual X/Xvfb (e.g. `1` → `":1"`).
-fn normalize_x11_display(raw: &str) -> String {
-    let raw = raw.trim();
-    let raw = raw.strip_prefix("DISPLAY=").map(str::trim).unwrap_or(raw);
-    if raw.starts_with('/')
-        || raw.contains("-unix/")
-        || raw.starts_with('@')
-        || raw.contains("unix:")
+/// Value for the Chrome child `DISPLAY` env var.
+///
+/// On Linux, uses explicit `x11_display` or `$DISPLAY` (set by [`crate::bot::x11_display::prepare`]).
+fn resolved_chrome_display(x11_display: Option<&str>) -> anyhow::Result<Option<String>> {
+    use crate::bot::x11_display::normalize_x11_display;
+
+    #[cfg(target_os = "linux")]
     {
-        return raw.to_owned();
+        if let Some(d) = x11_display {
+            let disp = normalize_x11_display(d);
+            tracing::info!(%disp, "Chrome DISPLAY");
+            return Ok(Some(disp));
+        }
+        Err(anyhow::anyhow!(
+            "Linux: no X11 DISPLAY after prepare; this is an internal error"
+        ))
     }
-    if raw.contains(':') && !raw.starts_with(':') {
-        return raw.to_owned();
+    #[cfg(not(target_os = "linux"))]
+    {
+        if let Some(d) = x11_display {
+            let disp = normalize_x11_display(d);
+            tracing::info!(%disp, "Chrome DISPLAY");
+            Ok(Some(disp))
+        } else {
+            Ok(None)
+        }
     }
-    if raw.starts_with(':') {
-        return raw.to_owned();
-    }
-    format!(":{raw}")
 }
 
 fn ensure_profile_dir(user_data_dir: &PathBuf) -> anyhow::Result<()> {
@@ -347,7 +377,12 @@ fn ensure_profile_dir(user_data_dir: &PathBuf) -> anyhow::Result<()> {
 
 fn profile_dir(configured_dir: &PathBuf) -> anyhow::Result<PathBuf> {
     ensure_profile_dir(configured_dir)?;
-    Ok(configured_dir.canonicalize()?)
+    let absolute = if configured_dir.is_absolute() {
+        configured_dir.clone()
+    } else {
+        std::env::current_dir()?.join(configured_dir)
+    };
+    Ok(absolute.canonicalize().unwrap_or(absolute))
 }
 
 fn warn_if_profile_lock_exists(user_data_dir: &PathBuf) {
@@ -703,9 +738,45 @@ end tell"#,
 
 #[cfg(target_os = "linux")]
 pub(super) fn linux_xdotool_apply_display(cmd: &mut Command, display: Option<&str>) {
+    use crate::bot::x11_display::normalize_x11_display;
     if let Some(d) = display {
         cmd.env("DISPLAY", normalize_x11_display(d));
     }
+}
+
+/// Focus a window for screenshots/clicks. Uses `windowfocus` when `windowactivate` fails (Xvfb).
+#[cfg(target_os = "linux")]
+pub(super) async fn linux_xdotool_activate_window(
+    timeout: Duration,
+    display: Option<&str>,
+    wid: &str,
+) -> anyhow::Result<()> {
+    let activate = tokio::time::timeout(timeout, {
+        let mut c = Command::new("xdotool");
+        linux_xdotool_apply_display(&mut c, display);
+        c.args(["windowactivate", wid]).status()
+    })
+    .await
+    .map_err(|_| anyhow::anyhow!("xdotool windowactivate timed out"))??;
+
+    if activate.success() {
+        return Ok(());
+    }
+
+    let focus = tokio::time::timeout(timeout, {
+        let mut c = Command::new("xdotool");
+        linux_xdotool_apply_display(&mut c, display);
+        c.args(["windowfocus", wid]).status()
+    })
+    .await
+    .map_err(|_| anyhow::anyhow!("xdotool windowfocus timed out"))??;
+
+    if focus.success() {
+        tracing::debug!(window_id = %wid, "xdotool windowactivate failed; used windowfocus");
+        return Ok(());
+    }
+
+    anyhow::bail!("xdotool windowactivate and windowfocus failed for window {wid}")
 }
 
 /// Click `(origin + width * x_frac, origin + height * y_frac)`. Avoid `--sync`; it stalls on Wayland.
@@ -778,17 +849,7 @@ pub(super) async fn linux_accept_tab_capture_prompt(
 
     let wid_str = wid.to_string();
 
-    let activate = tokio::time::timeout(SUBPROCESS_TIMEOUT, {
-        let mut c = Command::new("xdotool");
-        linux_xdotool_apply_display(&mut c, display);
-        c.args(["windowactivate", &wid_str]).status()
-    })
-    .await
-    .map_err(|_| anyhow::anyhow!("xdotool windowactivate timed out"))??;
-
-    if !activate.success() {
-        anyhow::bail!("xdotool windowactivate failed with status {activate}");
-    }
+    linux_xdotool_activate_window(SUBPROCESS_TIMEOUT, display, &wid_str).await?;
 
     tokio::time::sleep(Duration::from_millis(210)).await;
 
@@ -1074,11 +1135,28 @@ async fn install_recording_binding(
                         );
                     }
 
+                    let participant_count = payload.get("participantCount").and_then(|v| {
+                        v.as_u64().or_else(|| {
+                            v.as_i64()
+                                .filter(|&i| i >= 0)
+                                .map(|i| i as u64)
+                        })
+                    });
+                    let participant_source = payload
+                        .get("participantSource")
+                        .and_then(|v| v.as_str());
+
                     file.write_all(&decoded).await?;
                     file.flush().await?;
                     chunks += 1;
                     bytes += decoded.len();
-                    tracing::info!(chunks, bytes, "accepted recording chunk");
+                    tracing::info!(
+                        chunks,
+                        bytes,
+                        participants = participant_count,
+                        participant_source,
+                        "accepted recording chunk with Meet participant snapshot (best-effort)"
+                    );
                 }
                 Some("done") => {
                     file.flush().await?;
@@ -1101,6 +1179,42 @@ async fn install_recording_binding(
 
 async fn install_recording_button(page: &Page) -> anyhow::Result<()> {
     let script = r#"async function() {
+  function gmrMeetParticipantCount() {
+    const out = { count: null, source: null, raw: null };
+    try {
+      const withLabels = document.querySelectorAll('[aria-label]');
+      for (let i = 0; i < withLabels.length; i++) {
+        const label = (withLabels[i].getAttribute('aria-label') || '').trim();
+        if (!label) continue;
+        let m = label.match(/(\d+)\s+(people|participants)/i);
+        if (m) { out.count = parseInt(m[1], 10); out.source = 'aria_people'; out.raw = label; return out; }
+        m = label.match(/(?:people|participants)\s*[-–—:]\s*(\d+)/i);
+        if (m) { out.count = parseInt(m[1], 10); out.source = 'aria_dash'; out.raw = label; return out; }
+        m = label.match(/(\d+)\s+joined/i);
+        if (m) { out.count = parseInt(m[1], 10); out.source = 'aria_joined'; out.raw = label; return out; }
+      }
+      const body = document.body && document.body.innerText ? document.body.innerText : '';
+      if (body) {
+        const m = body.match(/\b(\d+)\s+people\s+in\s+this\s+call\b/i);
+        if (m) { out.count = parseInt(m[1], 10); out.source = 'body_text'; return out; }
+      }
+      const tiles = document.querySelectorAll('[data-participant-id], [data-requested-participant-id]');
+      if (tiles.length) {
+        const seen = {};
+        for (let i = 0; i < tiles.length; i++) {
+          const t = tiles[i];
+          const id = t.getAttribute('data-participant-id') || t.getAttribute('data-requested-participant-id');
+          if (id) seen[id] = true;
+        }
+        const n = Object.keys(seen).length;
+        if (n > 0) { out.count = n; out.source = 'tiles'; return out; }
+      }
+    } catch (e) {
+      out.source = 'error';
+      out.raw = String(e && e.message ? e.message : e);
+    }
+    return out;
+  }
   window.__gmrRecordingStatus = { status: 'waiting_for_click' };
   if (window.__gmrRecorder && window.__gmrRecorder.state === 'recording') {
     window.__gmrRecordingStatus = { status: 'recording', mimeType: window.__gmrRecorder.mimeType || '' };
@@ -1215,11 +1329,18 @@ async fn install_recording_button(page: &Page) -> anyhow::Result<()> {
           throw new Error('recording DevTools binding is unavailable');
         }
         const data = await blobToBase64(chunk);
+        const pc = gmrMeetParticipantCount();
+        if (typeof pc.count === 'number' && !Number.isNaN(pc.count)) {
+          window.__gmrLastParticipantCount = pc.count;
+          window.__gmrLastParticipantSource = pc.source || null;
+        }
         window.__gmrRecordChunk(JSON.stringify({
           kind: 'chunk',
           sequence: window.__gmrChunkCount,
           size: chunk.size,
-          data
+          data,
+          participantCount: pc.count,
+          participantSource: pc.source
         }));
         window.__gmrAcceptedChunks += 1;
         window.__gmrUploadedBytes += chunk.size;
@@ -1265,7 +1386,9 @@ pub async fn recording_runtime_status(page: &Page) -> anyhow::Result<serde_json:
     acceptedChunks: window.__gmrAcceptedChunks || 0,
     uploadErrors: window.__gmrUploadErrors || [],
     bindingAvailable: !!window.__gmrChunkBindingAvailable,
-    streamInfo: window.__gmrStreamInfo || null
+    streamInfo: window.__gmrStreamInfo || null,
+    lastParticipantCount: typeof window.__gmrLastParticipantCount === 'number' ? window.__gmrLastParticipantCount : null,
+    lastParticipantSource: window.__gmrLastParticipantSource || null
   };
 }"#,
         )

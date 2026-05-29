@@ -40,8 +40,15 @@ pub struct BotConfig {
     pub chromium_path: PathBuf,
     pub chrome_user_data_dir: PathBuf,
     #[serde(default)]
-    /// Virtual / headless X server (xdotool target + Chrome DISPLAY), e.g. `":1"` for Xorg display `:1`.
+    /// Optional fixed X11 display (e.g. `":1"`). When unset on Linux, the bot discovers a working
+    /// display or starts Xvfb automatically (see `x11_auto_virtual`).
     pub x11_display: Option<String>,
+    #[serde(default = "default_true")]
+    /// On Linux, probe `/tmp/.X11-unix` and start Xvfb on a free `:10+` display when needed.
+    pub x11_auto_virtual: bool,
+    #[serde(default = "default_true")]
+    /// After resolving or starting a display, spawn `openbox` when missing (xdotool `windowactivate`).
+    pub x11_start_openbox: bool,
     #[serde(default)]
     /// Small PNG crop of the blue Chrome tab-share Allow pill (`allow_button_detect` grayscale fallback when chroma misses).
     /// Env: `GMR_BOT__ALLOW_BUTTON_TEMPLATE_PNG`
@@ -57,6 +64,10 @@ pub struct GroqConfig {
     pub api_key_env: String,
     pub transcription_model: String,
     pub summarization_model: String,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for Config {
@@ -80,6 +91,8 @@ impl Default for Config {
                 chromium_path: PathBuf::from("/usr/bin/google-chrome"),
                 chrome_user_data_dir: PathBuf::from("./data/chrome-profile"),
                 x11_display: None,
+                x11_auto_virtual: true,
+                x11_start_openbox: true,
                 allow_button_template_png: None,
                 join_lead_time_secs: 60,
                 admission_timeout_secs: 300,

@@ -15,7 +15,7 @@ use tokio::task::JoinHandle;
 
 use super::{
     linux_accept_tab_capture_prompt, linux_find_largest_chromium_window,
-    linux_xdotool_apply_display,
+    linux_xdotool_activate_window, linux_xdotool_apply_display,
 };
 
 const WAIT_AFTER_CAPTURE_REQUEST: Duration = Duration::from_secs(3);
@@ -387,19 +387,7 @@ async fn chrome_window_focus_and_capture_png(
     .map_err(|_| anyhow::anyhow!("xdotool search timed out"))??;
     let wid_str = wid.to_string();
 
-    let activate = tokio::time::timeout(XDOTOOL_SUBPROCESS_TIMEOUT, {
-        let mut c = Command::new("xdotool");
-        linux_xdotool_apply_display(&mut c, display);
-        c.args(["windowactivate", &wid_str]).status()
-    })
-    .await;
-
-    match activate {
-        Ok(Ok(status)) if status.success() => {}
-        Ok(Ok(status)) => anyhow::bail!("xdotool windowactivate failed ({status})"),
-        Ok(Err(io)) => return Err(io.into()),
-        Err(_) => anyhow::bail!("xdotool windowactivate timed out"),
-    }
+    linux_xdotool_activate_window(XDOTOOL_SUBPROCESS_TIMEOUT, display, &wid_str).await?;
 
     tokio::time::sleep(Duration::from_millis(220)).await;
 

@@ -4,7 +4,7 @@ use chrono::Utc;
 use sqlx::SqlitePool;
 use tokio::time::{Duration, Instant};
 
-use crate::{bot::chromium, config::Config, db::bot_runs};
+use crate::{bot::chromium, bot::x11_display, config::Config, db::bot_runs};
 
 pub async fn record(meet_url: String, config: &Config) -> anyhow::Result<()> {
     let recording_id = format!("manual-{}", Utc::now().format("%Y%m%dT%H%M%SZ"));
@@ -63,6 +63,9 @@ where
 {
     validate_meet_url(&meet_url)?;
 
+    let x11 = x11_display::prepare(&config.bot).await?;
+    let x11_display = x11.as_ref().map(|s| s.display.clone());
+
     let recording_dir = config
         .storage
         .data_dir
@@ -82,7 +85,7 @@ where
         chromium_path: config.bot.chromium_path.clone(),
         user_data_dir: config.bot.chrome_user_data_dir.clone(),
         admission_timeout: std::time::Duration::from_secs(config.bot.admission_timeout_secs),
-        x11_display: config.bot.x11_display.clone(),
+        x11_display: x11_display.clone(),
     };
 
     let mut session = chromium::open_joined_meeting(join_options).await?;

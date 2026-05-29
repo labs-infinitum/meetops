@@ -4,12 +4,14 @@ use std::time::Duration;
 use sqlx::SqlitePool;
 
 use crate::{
-    bot::{chromium, recorder},
+    bot::{chromium, recorder, x11_display},
     config::Config,
 };
 
 pub async fn join(meet_url: String, config: &Config) -> anyhow::Result<()> {
     validate_meet_url(&meet_url)?;
+    let x11 = x11_display::prepare(&config.bot).await?;
+    let x11_display = x11.as_ref().map(|s| s.display.clone());
 
     let options = chromium::JoinOptions {
         meet_url,
@@ -17,17 +19,20 @@ pub async fn join(meet_url: String, config: &Config) -> anyhow::Result<()> {
         chromium_path: config.bot.chromium_path.clone(),
         user_data_dir: config.bot.chrome_user_data_dir.clone(),
         admission_timeout: Duration::from_secs(config.bot.admission_timeout_secs),
-        x11_display: config.bot.x11_display.clone(),
+        x11_display,
     };
 
     chromium::join_meeting(options).await
 }
 
 pub async fn open_profile(config: &Config) -> anyhow::Result<()> {
+    let x11 = x11_display::prepare(&config.bot).await?;
+    let x11_display = x11.as_ref().map(|s| s.display.clone());
+
     let options = chromium::ProfileOptions {
         chromium_path: config.bot.chromium_path.clone(),
         user_data_dir: config.bot.chrome_user_data_dir.clone(),
-        x11_display: config.bot.x11_display.clone(),
+        x11_display,
     };
 
     chromium::open_profile(options).await
