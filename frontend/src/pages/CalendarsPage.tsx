@@ -1,5 +1,5 @@
-import { useState } from "react"
-import { Link2, Plus } from "lucide-react"
+import { useEffect, useState } from "react"
+import { Link2, Loader2, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { PageHeader } from "@/components/shared/PageHeader"
@@ -13,7 +13,14 @@ import {
   ConnectionErrorAlert,
   ConnectionErrorDialog,
 } from "@/components/errors/ConnectionError"
-import { mockCalendars } from "@/lib/mock-data"
+import {
+  apiDisconnectCalendar,
+  apiListConnections,
+  apiSyncCalendar,
+  CalendarApiError,
+  calendarErrorMessage,
+  parseOAuthCallbackParams,
+} from "@/lib/calendar-api"
 import { groupCalendarsByProvider } from "@/lib/calendar-connect"
 import { useAuth } from "@/lib/auth-context"
 import type { CalendarConnectError, CalendarConnection, CalendarProvider } from "@/types"
@@ -31,7 +38,8 @@ function providerSectionTitle(provider: CalendarProvider, count: number) {
 
 export function CalendarsPage() {
   const { session } = useAuth()
-  const [calendars, setCalendars] = useState(mockCalendars)
+  const [calendars, setCalendars] = useState<CalendarConnection[]>([])
+  const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState<string | null>(null)
   const [connectProvider, setConnectProvider] = useState<CalendarProvider | null>(null)
   const [dialogError, setDialogError] = useState<CalendarConnectError | null>(null)
@@ -41,16 +49,55 @@ export function CalendarsPage() {
   const grouped = groupCalendarsByProvider(calendars)
   const connectedCount = calendars.filter((c) => c.connected).length
 
+  async function reloadCalendars() {
+    if (!session?.token) return
+    setLoading(true)
+    try {
+      const list = await apiListConnections(session.token)
+      setCalendars(list)
+    } catch (error) {
+      setPageError(
+        error instanceof CalendarApiError
+          ? error.toConnectError()
+          : {
+              code: "oauth_failed",
+              provider: "google",
+              title: "Could not load calendars",
+              message: calendarErrorMessage(error),
+            },
+      )
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void reloadCalendars()
+  }, [session?.token])
+
+  useEffect(() => {
+    const oauthError = parseOAuthCallbackParams(window.location.search)
+    const params = new URLSearchParams(window.location.search)
+    if (!params.has("oauth")) return
+
+    if (oauthError) {
+      handleConnectError(oauthError)
+      setPageError(oauthError)
+    } else {
+      toast.success("Google account connected", {
+        description: "Your calendar is syncing. Meetings will appear shortly.",
+      })
+      void reloadCalendars()
+    }
+
+    const url = new URL(window.location.href)
+    url.search = ""
+    window.history.replaceState({}, "", url.pathname)
+  }, [])
+
   function openConnect(provider: CalendarProvider) {
     setPageError(null)
     setConnectProvider(provider)
-  }
-
-  function handleConnectSuccess(connection: CalendarConnection) {
-    setCalendars((prev) => [...prev, connection])
-    toast.success(`${connection.email} connected`, {
-      description: "Meetings from this calendar will appear alongside your other calendars.",
-    })
   }
 
   function handleConnectError(error: CalendarConnectError) {
@@ -60,24 +107,56 @@ export function CalendarsPage() {
     ) {
       setDialogError(error)
       setErrorDialogOpen(true)
+    } else {
+      setPageError(error)
     }
   }
 
   async function handleSync(id: string) {
+    if (!session?.token) return
     setSyncing(id)
-    await new Promise((r) => setTimeout(r, 1200))
-    setCalendars((prev) =>
-      prev.map((c) =>
-        c.id === id ? { ...c, lastSyncedAt: Math.floor(Date.now() / 1000) } : c,
-      ),
-    )
-    setSyncing(null)
-    toast.success("Calendar synced")
+    try {
+      const stats = await apiSyncCalendar(session.token, id)
+      setCalendars((prev) =>
+        prev.map((c) =>
+          c.id === id
+            ? {
+                ...c,
+                lastSyncedAt: stats.lastSyncedAt,
+                meetingCount: c.meetingCount + stats.upserted,
+              }
+            : c,
+        ),
+      )
+      toast.success("Calendar synced", {
+        description: `${stats.upserted} meeting${stats.upserted === 1 ? "" : "s"} updated.`,
+      })
+    } catch (error) {
+      const connectError =
+        error instanceof CalendarApiError
+          ? error.toConnectError()
+          : {
+              code: "sync_failed" as const,
+              provider: "google" as const,
+              title: "Sync failed",
+              message: calendarErrorMessage(error),
+            }
+      setPageError(connectError)
+      toast.error(connectError.title, { description: connectError.message })
+    } finally {
+      setSyncing(null)
+    }
   }
 
-  function handleDisconnect(cal: CalendarConnection) {
-    setCalendars((prev) => prev.filter((c) => c.id !== cal.id))
-    toast.info(`Disconnected ${cal.email}`)
+  async function handleDisconnect(cal: CalendarConnection) {
+    if (!session?.token) return
+    try {
+      await apiDisconnectCalendar(session.token, cal.id)
+      setCalendars((prev) => prev.filter((c) => c.id !== cal.id))
+      toast.info(`Disconnected ${cal.email}`)
+    } catch (error) {
+      toast.error(calendarErrorMessage(error))
+    }
   }
 
   return (
@@ -86,6 +165,13 @@ export function CalendarsPage() {
         title="Calendars"
         description="Connect multiple accounts — including several Google emails — and sync all meetings in one place."
       />
+
+      {loading && (
+        <div className="text-muted-foreground flex items-center gap-2 text-sm">
+          <Loader2 className="size-4 animate-spin" />
+          Loading calendars…
+        </div>
+      )}
 
       {pageError && (
         <ConnectionErrorAlert
@@ -163,7 +249,7 @@ export function CalendarsPage() {
         <div>
           <h2 className="text-sm font-medium">Add a calendar</h2>
           <p className="text-muted-foreground mt-1 text-sm">
-            Google supports multiple accounts per user. Outlook and Apple can be added the same way.
+            Google supports multiple accounts per user. Outlook and Apple coming soon.
           </p>
         </div>
         <div className="grid gap-4 sm:grid-cols-3">
@@ -209,8 +295,7 @@ export function CalendarsPage() {
           if (!open) setConnectProvider(null)
         }}
         existingCalendars={calendars}
-        currentUserId={session?.user.id ?? "user-1"}
-        onSuccess={handleConnectSuccess}
+        sessionToken={session?.token}
         onError={handleConnectError}
       />
 

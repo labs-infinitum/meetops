@@ -1,6 +1,7 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
-use http::{HeaderValue, Method};
+use reqwest::Client;
+use sqlx::SqlitePool;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::transport::Server;
@@ -9,24 +10,43 @@ use tower_http::{
     trace::TraceLayer,
 };
 
-use crate::{auth::AuthService, config::GrpcConfig};
+use crate::{
+    auth::AuthService,
+    calendar::CalendarService,
+    config::{Config, GrpcConfig},
+};
 
 pub mod auth;
+pub mod calendar;
 
-pub async fn serve(
-    listener: TcpListener,
-    config: Arc<GrpcConfig>,
-    auth: AuthService,
-) -> anyhow::Result<()> {
+#[derive(Clone)]
+pub struct GrpcState {
+    pub config: Arc<Config>,
+    pub db: SqlitePool,
+    pub http: Client,
+    pub auth: AuthService,
+}
+
+pub async fn serve(listener: TcpListener, grpc_config: Arc<GrpcConfig>, state: GrpcState) -> anyhow::Result<()> {
     let addr = listener.local_addr()?;
-    let auth_service = auth::AuthGrpcService { inner: auth };
+    let auth_service = auth::AuthGrpcService {
+        inner: state.auth.clone(),
+    };
+    let calendar_service = calendar::CalendarGrpcService {
+        inner: CalendarService::new(
+            state.db.clone(),
+            state.http.clone(),
+            Arc::clone(&state.config),
+            state.auth.clone(),
+        ),
+    };
 
     let cors = CorsLayer::new()
-        .allow_origin(parse_allow_origin(&config.allow_origin)?)
+        .allow_origin(parse_allow_origin(&grpc_config.allow_origin)?)
         .allow_methods(AllowMethods::list([
-            Method::GET,
-            Method::POST,
-            Method::OPTIONS,
+            http::Method::GET,
+            http::Method::POST,
+            http::Method::OPTIONS,
         ]))
         .allow_headers(AllowHeaders::any());
 
@@ -42,7 +62,7 @@ pub async fn serve(
             tracing::debug!(method = %request.method(), uri = %request.uri(), "gRPC request started");
         })
         .on_response(
-            |response: &http::Response<_>, latency: Duration, _span: &tracing::Span| {
+            |response: &http::Response<_>, latency: std::time::Duration, _span: &tracing::Span| {
                 tracing::info!(
                     status = %response.status(),
                     latency_ms = latency.as_millis(),
@@ -52,7 +72,7 @@ pub async fn serve(
         )
         .on_failure(
             |error: tower_http::classify::ServerErrorsFailureClass,
-             latency: Duration,
+             latency: std::time::Duration,
              _span: &tracing::Span| {
                 tracing::warn!(
                     ?error,
@@ -71,6 +91,9 @@ pub async fn serve(
         .add_service(tonic_web::enable(
             auth::proto::auth_service_server::AuthServiceServer::new(auth_service),
         ))
+        .add_service(tonic_web::enable(
+            calendar::proto::calendar_service_server::CalendarServiceServer::new(calendar_service),
+        ))
         .serve_with_incoming(TcpListenerStream::new(listener))
         .await?;
 
@@ -81,5 +104,5 @@ fn parse_allow_origin(origin: &str) -> anyhow::Result<AllowOrigin> {
     if origin == "*" {
         return Ok(AllowOrigin::any());
     }
-    Ok(AllowOrigin::list([HeaderValue::from_str(origin)?]))
+    Ok(AllowOrigin::list([http::HeaderValue::from_str(origin)?]))
 }

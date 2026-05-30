@@ -11,6 +11,8 @@ pub enum AppError {
     GoogleAuth(#[from] crate::google::oauth::GoogleAuthError),
     #[error(transparent)]
     Calendar(#[from] crate::google::calendar::CalendarError),
+    #[error(transparent)]
+    CalendarConnect(#[from] crate::calendar::CalendarConnectError),
 }
 
 impl IntoResponse for AppError {

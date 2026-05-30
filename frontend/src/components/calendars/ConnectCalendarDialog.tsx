@@ -13,17 +13,20 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ConnectionErrorAlert } from "@/components/errors/ConnectionError"
 import { ProviderIcon, providerMeta } from "@/components/calendars/ProviderIcon"
+import {
+  apiStartGoogleOAuth,
+  CalendarApiError,
+  calendarErrorMessage,
+} from "@/lib/calendar-api"
+import { buildConnectError, nextGoogleColor } from "@/lib/calendar-connect"
 import type { CalendarConnectError, CalendarConnection, CalendarProvider } from "@/types"
-import { mockConnectCalendar } from "@/lib/calendar-connect"
-import { mockCalendarAccountClaims } from "@/lib/calendar-connect"
 
 type ConnectCalendarDialogProps = {
   provider: CalendarProvider | null
   open: boolean
   onOpenChange: (open: boolean) => void
   existingCalendars: CalendarConnection[]
-  currentUserId: string
-  onSuccess: (connection: CalendarConnection) => void
+  sessionToken?: string
   onError: (error: CalendarConnectError) => void
 }
 
@@ -32,11 +35,9 @@ export function ConnectCalendarDialog({
   open,
   onOpenChange,
   existingCalendars,
-  currentUserId,
-  onSuccess,
+  sessionToken,
   onError,
 }: ConnectCalendarDialogProps) {
-  const [email, setEmail] = useState("")
   const [label, setLabel] = useState("")
   const [loading, setLoading] = useState(false)
   const [inlineError, setInlineError] = useState<CalendarConnectError | null>(null)
@@ -50,7 +51,6 @@ export function ConnectCalendarDialog({
   ).length
 
   function resetForm() {
-    setEmail("")
     setLabel("")
     setInlineError(null)
     setLoading(false)
@@ -61,25 +61,43 @@ export function ConnectCalendarDialog({
     onOpenChange(next)
   }
 
-  async function submit(overrideEmail?: string) {
-    const targetEmail = overrideEmail ?? email
+  async function submit() {
+    if (!sessionToken) {
+      const error = buildConnectError("oauth_failed", activeProvider)
+      setInlineError(error)
+      onError(error)
+      return
+    }
+
+    if (activeProvider !== "google") {
+      const error = buildConnectError("provider_unavailable", activeProvider)
+      setInlineError(error)
+      onError(error)
+      return
+    }
+
     setLoading(true)
     setInlineError(null)
 
-    const result = await mockConnectCalendar(
-      { provider: activeProvider, email: targetEmail, label: label || undefined },
-      existingCalendars,
-      currentUserId,
-    )
-
-    setLoading(false)
-
-    if (result.ok) {
-      onSuccess(result.connection)
-      handleOpenChange(false)
-    } else {
-      setInlineError(result.error)
-      onError(result.error)
+    try {
+      const color = nextGoogleColor(existingCalendars)
+      const redirectUrl = await apiStartGoogleOAuth(
+        sessionToken,
+        label.trim() || undefined,
+        color,
+      )
+      window.location.href = redirectUrl
+    } catch (error) {
+      setLoading(false)
+      const connectError =
+        error instanceof CalendarApiError
+          ? error.toConnectError()
+          : buildConnectError("oauth_failed", activeProvider, {
+              email: undefined,
+            })
+      connectError.message = calendarErrorMessage(error)
+      setInlineError(connectError)
+      onError(connectError)
     }
   }
 
@@ -95,7 +113,11 @@ export function ConnectCalendarDialog({
                   ? "Add another Google account"
                   : `Connect ${meta.name}`}
               </DialogTitle>
-              <DialogDescription>{meta.description}</DialogDescription>
+              <DialogDescription>
+                {activeProvider === "google"
+                  ? "Sign in with Google to grant calendar access. You can connect multiple Google accounts."
+                  : meta.description}
+              </DialogDescription>
             </div>
           </div>
         </DialogHeader>
@@ -115,82 +137,28 @@ export function ConnectCalendarDialog({
             />
           )}
 
-          <div className="space-y-2">
-            <Label htmlFor="calendar-email">Account email</Label>
-            <Input
-              id="calendar-email"
-              type="email"
-              placeholder={
-                activeProvider === "google"
-                  ? "you@company.com or personal@gmail.com"
-                  : "you@company.com"
-              }
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="calendar-label">
-              Display name <span className="text-muted-foreground font-normal">(optional)</span>
-            </Label>
-            <Input
-              id="calendar-label"
-              placeholder="Work, Personal, Client projects…"
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-            />
-          </div>
-
-          <div className="rounded-lg border border-dashed p-3">
-            <p className="text-muted-foreground mb-2 text-xs font-medium">Demo scenarios</p>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="xs"
-                disabled={loading}
-                onClick={() => submit("sarah@acme.co")}
-              >
-                Account taken by another user
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="xs"
-                disabled={loading}
-                onClick={() => {
-                  const mine = existingCalendars.find(
-                    (c) => c.connected && c.provider === activeProvider,
-                  )
-                  if (mine) submit(mine.email)
-                  else
-                    setInlineError({
-                      code: "invalid_account",
-                      provider: activeProvider,
-                    title: "No existing account",
-                    message: "Connect an account first to test the duplicate error.",
-                  })
-                }}
-              >
-                Already on your account
-              </Button>
+          {activeProvider === "google" && (
+            <div className="space-y-2">
+              <Label htmlFor="calendar-label">
+                Display name <span className="text-muted-foreground font-normal">(optional)</span>
+              </Label>
+              <Input
+                id="calendar-label"
+                placeholder="Work, Personal, Client projects…"
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
+              />
             </div>
-            <p className="text-muted-foreground mt-2 text-[11px] leading-relaxed">
-              Try <span className="font-mono">{Object.keys(mockCalendarAccountClaims)[0]}</span> to
-              simulate another user&apos;s linked calendar.
-            </p>
-          </div>
+          )}
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={loading}>
             Cancel
           </Button>
-          <Button onClick={() => submit()} disabled={loading || !email.trim()}>
+          <Button onClick={() => submit()} disabled={loading}>
             {loading && <Loader2 className="animate-spin" />}
-            {activeProvider === "google" ? "Connect Google account" : "Connect"}
+            {activeProvider === "google" ? "Continue with Google" : "Connect"}
           </Button>
         </DialogFooter>
       </DialogContent>

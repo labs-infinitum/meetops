@@ -1,15 +1,31 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use rand::RngCore;
 use reqwest::Client;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
+use uuid::Uuid;
 
-use crate::{config::Config, db};
+use crate::{config::Config, db::calendar_connections, db};
 
 const GOOGLE_AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
+const GOOGLE_USERINFO_URL: &str = "https://www.googleapis.com/oauth2/v2/userinfo";
 pub const CALENDAR_SCOPE: &str = "https://www.googleapis.com/auth/calendar.readonly";
-const OAUTH_STATE_KEY: &str = "google_oauth_state";
+pub const USERINFO_EMAIL_SCOPE: &str = "https://www.googleapis.com/auth/userinfo.email";
+pub const OAUTH_SCOPES: &str =
+    "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.email";
+
+fn oauth_state_key(state: &str) -> String {
+    format!("oauth_state:{state}")
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OAuthStatePayload {
+    pub user_id: Option<String>,
+    pub provider: String,
+    pub label: Option<String>,
+    pub color: Option<String>,
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum GoogleAuthError {
@@ -23,6 +39,10 @@ pub enum GoogleAuthError {
         "Google token response did not include a refresh token; restart auth from /auth/google/start"
     )]
     MissingRefreshToken,
+    #[error("Google account email is unavailable; grant email permission and try again")]
+    MissingEmail,
+    #[error("calendar account {email} already linked to another user")]
+    AccountLinkedToOtherUser { email: String },
     #[error("database error: {0}")]
     Database(#[from] sqlx::Error),
     #[error("HTTP error: {0}")]
@@ -36,14 +56,6 @@ pub struct AccessToken {
     pub value: String,
 }
 
-#[derive(Debug, Deserialize, sqlx::FromRow)]
-struct StoredToken {
-    access_token: String,
-    refresh_token: String,
-    expires_at: i64,
-    scope: String,
-}
-
 #[derive(Debug, Deserialize)]
 struct TokenResponse {
     access_token: Option<String>,
@@ -54,17 +66,35 @@ struct TokenResponse {
     error_description: Option<String>,
 }
 
-pub async fn start_url(pool: &SqlitePool, config: &Config) -> Result<String, GoogleAuthError> {
+#[derive(Debug, Deserialize)]
+struct GoogleUserInfo {
+    email: Option<String>,
+}
+
+pub async fn start_url(
+    pool: &SqlitePool,
+    config: &Config,
+    payload: OAuthStatePayload,
+) -> Result<String, GoogleAuthError> {
     ensure_config(config)?;
 
     let state = random_state();
-    db::set_kv(pool, OAUTH_STATE_KEY, &state).await?;
+    let json = serde_json::to_string(&payload).map_err(|error| {
+        GoogleAuthError::Token(format!("failed to serialize oauth state: {error}"))
+    })?;
+    db::set_kv(pool, &oauth_state_key(&state), &json).await?;
+
+    let scope = if payload.user_id.is_some() {
+        OAUTH_SCOPES
+    } else {
+        CALENDAR_SCOPE
+    };
 
     let params = [
         ("client_id", config.google.client_id.as_str()),
         ("redirect_uri", config.google.redirect_uri.as_str()),
         ("response_type", "code"),
-        ("scope", CALENDAR_SCOPE),
+        ("scope", scope),
         ("access_type", "offline"),
         ("prompt", "consent"),
         ("include_granted_scopes", "true"),
@@ -86,9 +116,9 @@ pub async fn finish_callback(
     config: &Config,
     code: &str,
     state: &str,
-) -> Result<(), GoogleAuthError> {
+) -> Result<calendar_connections::CalendarConnectionRow, GoogleAuthError> {
     ensure_config(config)?;
-    verify_state(pool, state).await?;
+    let payload = verify_state(pool, state).await?;
 
     let response = http
         .post(GOOGLE_TOKEN_URL)
@@ -121,23 +151,190 @@ pub async fn finish_callback(
     let scope = token
         .scope
         .as_deref()
-        .ok_or_else(|| GoogleAuthError::Token("missing scope in Google token response".to_owned()))?;
+        .unwrap_or(OAUTH_SCOPES);
 
-    store_token(pool, &access_token, &refresh_token, expires_in, scope).await?;
+    let email = if payload.user_id.is_some() {
+        fetch_google_email(http, &access_token).await?
+    } else {
+        String::new()
+    };
 
-    db::delete_kv(pool, OAUTH_STATE_KEY).await?;
+    db::delete_kv(pool, &oauth_state_key(state)).await?;
 
-    Ok(())
+    let expires_at = db::now_unix() + expires_in;
+
+    if let Some(user_id) = payload.user_id.as_deref() {
+        if email.is_empty() {
+            return Err(GoogleAuthError::MissingEmail);
+        }
+
+        if let Some(existing) =
+            calendar_connections::find_by_provider_email(pool, &payload.provider, &email).await?
+        {
+            match existing.user_id.as_deref() {
+                Some(existing_user) if existing_user == user_id => {
+                    calendar_connections::update_tokens(
+                        pool,
+                        &existing.id,
+                        &access_token,
+                        &refresh_token,
+                        expires_at,
+                        scope,
+                    )
+                    .await?;
+                    return calendar_connections::get_by_id(pool, &existing.id)
+                        .await?
+                        .ok_or(GoogleAuthError::NotConnected);
+                }
+                Some(_) => {
+                    return Err(GoogleAuthError::AccountLinkedToOtherUser { email });
+                }
+                None => {
+                    // Orphan legacy connection — assign to this user.
+                    let now = db::now_unix();
+                    sqlx::query(
+                        r#"
+                        UPDATE calendar_connections
+                        SET user_id = ?, email = ?, access_token = ?, refresh_token = ?,
+                            expires_at = ?, scope = ?, updated_at = ?
+                        WHERE id = ?
+                        "#,
+                    )
+                    .bind(user_id)
+                    .bind(&email)
+                    .bind(&access_token)
+                    .bind(&refresh_token)
+                    .bind(expires_at)
+                    .bind(scope)
+                    .bind(now)
+                    .bind(&existing.id)
+                    .execute(pool)
+                    .await?;
+                    return calendar_connections::get_by_id(pool, &existing.id)
+                        .await?
+                        .ok_or(GoogleAuthError::NotConnected);
+                }
+            }
+        }
+
+        let label = payload
+            .label
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| email.split('@').next().unwrap_or("Google").to_owned());
+
+        let existing_for_user = calendar_connections::list_for_user(pool, user_id).await?;
+        let color = payload.color.unwrap_or_else(|| {
+            calendar_connections::next_google_color(&existing_for_user).to_owned()
+        });
+
+        let connection_id = Uuid::new_v4().to_string();
+        return calendar_connections::insert(
+            pool,
+            &connection_id,
+            user_id,
+            &payload.provider,
+            &email,
+            &label,
+            &color,
+            &access_token,
+            &refresh_token,
+            expires_at,
+            scope,
+        )
+        .await
+        .map_err(GoogleAuthError::from);
+    }
+
+    // Legacy single-tenant callback without a logged-in user.
+    if let Some(existing) = calendar_connections::list_all_for_sync(pool).await?.into_iter().next()
+    {
+        calendar_connections::update_tokens(
+            pool,
+            &existing.id,
+            &access_token,
+            &refresh_token,
+            expires_at,
+            scope,
+        )
+        .await?;
+        return calendar_connections::get_by_id(pool, &existing.id)
+            .await?
+            .ok_or(GoogleAuthError::NotConnected);
+    }
+
+    let connection_id = Uuid::new_v4().to_string();
+    insert_legacy_connection(
+        pool,
+        &connection_id,
+        &access_token,
+        &refresh_token,
+        expires_at,
+        scope,
+    )
+    .await
 }
 
-pub async fn valid_access_token(
+async fn insert_legacy_connection(
+    pool: &SqlitePool,
+    connection_id: &str,
+    access_token: &str,
+    refresh_token: &str,
+    expires_at: i64,
+    scope: &str,
+) -> Result<calendar_connections::CalendarConnectionRow, GoogleAuthError> {
+    let now = db::now_unix();
+    sqlx::query(
+        r#"
+        INSERT INTO calendar_connections (
+            id, user_id, provider, email, label, color,
+            access_token, refresh_token, expires_at, scope,
+            created_at, updated_at
+        )
+        VALUES (?, NULL, 'google', '', 'Google Calendar', '#4285F4', ?, ?, ?, ?, ?, ?)
+        "#,
+    )
+    .bind(connection_id)
+    .bind(access_token)
+    .bind(refresh_token)
+    .bind(expires_at)
+    .bind(scope)
+    .bind(now)
+    .bind(now)
+    .execute(pool)
+    .await?;
+
+    calendar_connections::get_by_id(pool, connection_id)
+        .await?
+        .ok_or(GoogleAuthError::NotConnected)
+}
+
+async fn fetch_google_email(http: &Client, access_token: &str) -> Result<String, GoogleAuthError> {
+    let response = http
+        .get(GOOGLE_USERINFO_URL)
+        .bearer_auth(access_token)
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        return Err(GoogleAuthError::MissingEmail);
+    }
+
+    let info = response.json::<GoogleUserInfo>().await?;
+    info.email
+        .map(|email| calendar_connections::normalize_email(&email))
+        .filter(|email| !email.is_empty())
+        .ok_or(GoogleAuthError::MissingEmail)
+}
+
+pub async fn valid_access_token_for_connection(
     pool: &SqlitePool,
     http: &Client,
     config: &Config,
+    connection_id: &str,
 ) -> Result<AccessToken, GoogleAuthError> {
     ensure_config(config)?;
 
-    let Some(stored) = load_token(pool).await? else {
+    let Some(stored) = calendar_connections::get_by_id(pool, connection_id).await? else {
         return Err(GoogleAuthError::NotConnected);
     };
 
@@ -170,11 +367,13 @@ pub async fn valid_access_token(
     let expires_in = token.expires_in.ok_or_else(|| {
         GoogleAuthError::Token("missing expires_in in Google token response".to_owned())
     })?;
-    store_token(
+
+    calendar_connections::update_tokens(
         pool,
+        connection_id,
         &access_token,
         &stored.refresh_token,
-        expires_in,
+        db::now_unix() + expires_in,
         token.scope.as_deref().unwrap_or(stored.scope.as_str()),
     )
     .await?;
@@ -184,63 +383,28 @@ pub async fn valid_access_token(
     })
 }
 
-pub async fn is_connected(pool: &SqlitePool) -> sqlx::Result<bool> {
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM google_oauth WHERE id = 1")
-        .fetch_one(pool)
-        .await?;
-    Ok(count > 0)
-}
-
-async fn verify_state(pool: &SqlitePool, state: &str) -> Result<(), GoogleAuthError> {
-    let expected = db::get_kv(pool, OAUTH_STATE_KEY).await?;
-    match expected {
-        Some(expected) if expected == state => Ok(()),
-        _ => Err(GoogleAuthError::StateMismatch),
-    }
-}
-
-async fn load_token(pool: &SqlitePool) -> Result<Option<StoredToken>, sqlx::Error> {
-    sqlx::query_as::<_, StoredToken>(
-        r#"
-        SELECT access_token, refresh_token, expires_at, scope
-        FROM google_oauth
-        WHERE id = 1
-        "#,
-    )
-    .fetch_optional(pool)
-    .await
-}
-
-async fn store_token(
+pub async fn valid_access_token(
     pool: &SqlitePool,
-    access_token: &str,
-    refresh_token: &str,
-    expires_in: i64,
-    scope: &str,
-) -> Result<(), sqlx::Error> {
-    let now = db::now_unix();
-    let expires_at = now + expires_in;
-    sqlx::query(
-        r#"
-        INSERT INTO google_oauth (id, access_token, refresh_token, expires_at, scope, updated_at)
-        VALUES (1, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-            access_token = excluded.access_token,
-            refresh_token = excluded.refresh_token,
-            expires_at = excluded.expires_at,
-            scope = excluded.scope,
-            updated_at = excluded.updated_at
-        "#,
-    )
-    .bind(access_token)
-    .bind(refresh_token)
-    .bind(expires_at)
-    .bind(scope)
-    .bind(now)
-    .execute(pool)
-    .await?;
+    http: &Client,
+    config: &Config,
+) -> Result<AccessToken, GoogleAuthError> {
+    let connections = calendar_connections::list_all_for_sync(pool).await?;
+    let Some(first) = connections.into_iter().next() else {
+        return Err(GoogleAuthError::NotConnected);
+    };
+    valid_access_token_for_connection(pool, http, config, &first.id).await
+}
 
-    Ok(())
+pub async fn is_connected(pool: &SqlitePool) -> sqlx::Result<bool> {
+    calendar_connections::any_google_connected(pool).await
+}
+
+async fn verify_state(pool: &SqlitePool, state: &str) -> Result<OAuthStatePayload, GoogleAuthError> {
+    let stored = db::get_kv(pool, &oauth_state_key(state)).await?;
+    let Some(json) = stored else {
+        return Err(GoogleAuthError::StateMismatch);
+    };
+    serde_json::from_str(&json).map_err(|_| GoogleAuthError::StateMismatch)
 }
 
 fn ensure_config(config: &Config) -> Result<(), GoogleAuthError> {

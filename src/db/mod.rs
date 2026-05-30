@@ -8,6 +8,7 @@ use sqlx::{
 use crate::config::Config;
 
 pub mod bot_runs;
+pub mod calendar_connections;
 pub mod models;
 pub mod users;
 

@@ -65,7 +65,14 @@ pub struct GoogleConfig {
     pub client_id: String,
     pub client_secret: String,
     pub redirect_uri: String,
+    /// Where to redirect the browser after OAuth completes (React app).
+    #[serde(default = "default_frontend_redirect_url")]
+    pub frontend_redirect_url: String,
     pub calendar_sync_interval_secs: u64,
+}
+
+fn default_frontend_redirect_url() -> String {
+    "http://localhost:5173/app/calendars".to_owned()
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -131,6 +138,7 @@ impl Default for Config {
                 client_id: String::new(),
                 client_secret: String::new(),
                 redirect_uri: "http://localhost:8080/auth/google/callback".to_owned(),
+                frontend_redirect_url: default_frontend_redirect_url(),
                 calendar_sync_interval_secs: 300,
             },
             bot: BotConfig {

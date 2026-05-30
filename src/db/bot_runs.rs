@@ -46,9 +46,11 @@ pub async fn try_claim_run(
         r#"
         INSERT OR IGNORE INTO bot_runs (
             meeting_id, meeting_start_at, status, error, trigger_after,
-            started_at, ended_at, created_at, updated_at
+            started_at, ended_at, user_id, created_at, updated_at
         )
-        VALUES (?, ?, ?, NULL, ?, NULL, NULL, ?, ?)
+        SELECT ?, ?, ?, NULL, ?, NULL, NULL, m.user_id, ?, ?
+        FROM meetings m
+        WHERE m.id = ?
         "#,
     )
     .bind(meeting_id)
@@ -57,6 +59,7 @@ pub async fn try_claim_run(
     .bind(trigger_after)
     .bind(now)
     .bind(now)
+    .bind(meeting_id)
     .execute(pool)
     .await?;
 

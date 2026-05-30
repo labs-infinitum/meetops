@@ -3,10 +3,14 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
-use crate::{config::Config, db, google::oauth, meet_url::MeetUrl};
+use crate::{
+    config::Config,
+    db::{self, calendar_connections::CalendarConnectionRow},
+    google::oauth,
+    meet_url::MeetUrl,
+};
 
 const CALENDAR_EVENTS_URL: &str = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
-const CALENDAR_SYNC_TOKEN_KEY: &str = "google_calendar_sync_token";
 
 #[derive(Debug, thiserror::Error)]
 pub enum CalendarError {
@@ -99,17 +103,52 @@ pub async fn sync_upcoming_events(
     http: &Client,
     config: &Config,
 ) -> Result<SyncStats, CalendarError> {
-    let access_token = oauth::valid_access_token(pool, http, config).await?;
-    let mut sync_token = db::get_kv(pool, CALENDAR_SYNC_TOKEN_KEY).await?;
+    let mut total = SyncStats {
+        seen: 0,
+        upserted: 0,
+        deleted: 0,
+    };
 
-    match sync_with_token(pool, http, &access_token.value, sync_token.as_deref()).await {
+    let connections = db::calendar_connections::list_all_for_sync(pool).await?;
+    if connections.is_empty() {
+        return Err(CalendarError::Auth(oauth::GoogleAuthError::NotConnected));
+    }
+
+    for connection in connections {
+        let stats = sync_connection(pool, http, config, &connection).await?;
+        total.seen += stats.seen;
+        total.upserted += stats.upserted;
+        total.deleted += stats.deleted;
+    }
+
+    Ok(total)
+}
+
+pub async fn sync_connection(
+    pool: &SqlitePool,
+    http: &Client,
+    config: &Config,
+    connection: &CalendarConnectionRow,
+) -> Result<SyncStats, CalendarError> {
+    let access_token =
+        oauth::valid_access_token_for_connection(pool, http, config, &connection.id).await?;
+    let sync_token = connection.sync_token.clone();
+
+    match sync_with_token(pool, http, connection, &access_token.value, sync_token.as_deref()).await
+    {
         Ok(stats) => Ok(stats),
         Err(CalendarError::Api(message))
-            if message.contains("410") && sync_token.take().is_some() =>
+            if message.contains("410") && sync_token.is_some() =>
         {
-            tracing::warn!("Google Calendar sync token expired; running a full sync");
-            db::delete_kv(pool, CALENDAR_SYNC_TOKEN_KEY).await?;
-            sync_with_token(pool, http, &access_token.value, None).await
+            tracing::warn!(
+                connection_id = %connection.id,
+                "Google Calendar sync token expired; running a full sync"
+            );
+            db::calendar_connections::delete_sync_token(pool, &connection.id).await?;
+            let access_token =
+                oauth::valid_access_token_for_connection(pool, http, config, &connection.id)
+                    .await?;
+            sync_with_token(pool, http, connection, &access_token.value, None).await
         }
         Err(error) => Err(error),
     }
@@ -118,6 +157,7 @@ pub async fn sync_upcoming_events(
 async fn sync_with_token(
     pool: &SqlitePool,
     http: &Client,
+    connection: &CalendarConnectionRow,
     access_token: &str,
     sync_token: Option<&str>,
 ) -> Result<SyncStats, CalendarError> {
@@ -169,7 +209,7 @@ async fn sync_with_token(
         stats.seen += body.items.len();
         for event in body.items {
             if event.status.as_deref() == Some("cancelled") {
-                stats.deleted += delete_meeting(pool, &event.id).await?;
+                stats.deleted += delete_meeting(pool, connection, &event.id).await?;
                 continue;
             }
 
@@ -177,7 +217,7 @@ async fn sync_with_token(
                 continue;
             };
 
-            upsert_meeting(pool, &event, &meet_url).await?;
+            upsert_meeting(pool, connection, &event, &meet_url).await?;
             stats.upserted += 1;
         }
 
@@ -188,15 +228,25 @@ async fn sync_with_token(
         }
     };
 
-    if let Some(final_sync_token) = final_sync_token {
-        db::set_kv(pool, CALENDAR_SYNC_TOKEN_KEY, &final_sync_token).await?;
-    }
+    let now = db::now_unix();
+    db::calendar_connections::update_sync_state(
+        pool,
+        &connection.id,
+        final_sync_token.as_deref(),
+        now,
+    )
+    .await?;
 
     Ok(stats)
 }
 
+fn meeting_id(connection_id: &str, google_event_id: &str) -> String {
+    format!("{connection_id}:{google_event_id}")
+}
+
 async fn upsert_meeting(
     pool: &SqlitePool,
+    connection: &CalendarConnectionRow,
     event: &GoogleEvent,
     meet_url: &MeetUrl,
 ) -> Result<(), CalendarError> {
@@ -210,13 +260,16 @@ async fn upsert_meeting(
         .transpose()
         .map_err(|error| CalendarError::Api(error.to_string()))?;
 
+    let id = meeting_id(&connection.id, &event.id);
+
     sqlx::query(
         r#"
         INSERT INTO meetings (
             id, title, description, organizer_email, meet_url, start_at, end_at,
-            attendees_json, calendar_etag, auto_join, created_at, updated_at
+            attendees_json, calendar_etag, auto_join, user_id, calendar_connection_id,
+            google_event_id, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             title = excluded.title,
             description = excluded.description,
@@ -229,7 +282,7 @@ async fn upsert_meeting(
             updated_at = excluded.updated_at
         "#,
     )
-    .bind(&event.id)
+    .bind(&id)
     .bind(event.summary.as_deref().unwrap_or("Untitled meeting"))
     .bind(event.description.as_deref())
     .bind(
@@ -243,6 +296,9 @@ async fn upsert_meeting(
     .bind(end_at)
     .bind(attendees_json.as_deref())
     .bind(event.etag.as_deref())
+    .bind(connection.user_id.as_deref())
+    .bind(&connection.id)
+    .bind(&event.id)
     .bind(now)
     .bind(now)
     .execute(pool)
@@ -251,9 +307,14 @@ async fn upsert_meeting(
     Ok(())
 }
 
-async fn delete_meeting(pool: &SqlitePool, event_id: &str) -> Result<usize, sqlx::Error> {
+async fn delete_meeting(
+    pool: &SqlitePool,
+    connection: &CalendarConnectionRow,
+    google_event_id: &str,
+) -> Result<usize, sqlx::Error> {
+    let id = meeting_id(&connection.id, google_event_id);
     let result = sqlx::query("DELETE FROM meetings WHERE id = ?")
-        .bind(event_id)
+        .bind(id)
         .execute(pool)
         .await?;
     Ok(result.rows_affected() as usize)

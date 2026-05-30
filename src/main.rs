@@ -4,6 +4,7 @@ use tokio::net::TcpListener;
 
 mod auth;
 mod bot;
+mod calendar;
 mod config;
 mod db;
 mod error;
@@ -65,9 +66,14 @@ async fn main() -> anyhow::Result<()> {
     })?;
 
     let grpc_config = Arc::new(config.grpc.clone());
-    let grpc_auth = auth_service.clone();
+    let grpc_state = grpc::GrpcState {
+        config: Arc::clone(&config),
+        db: pool.clone(),
+        http: http.clone(),
+        auth: auth_service.clone(),
+    };
     tokio::spawn(async move {
-        if let Err(error) = grpc::serve(grpc_listener, grpc_config, grpc_auth).await {
+        if let Err(error) = grpc::serve(grpc_listener, grpc_config, grpc_state).await {
             tracing::error!(%error, "gRPC server exited with error");
         }
     });
@@ -76,6 +82,7 @@ async fn main() -> anyhow::Result<()> {
         config,
         db: pool,
         http,
+        auth: auth_service,
     };
     let app = web::router(state);
 

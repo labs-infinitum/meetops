@@ -23,6 +23,7 @@ data_dir = "./data"
 client_id = ""
 client_secret = ""
 redirect_uri = "http://localhost:8080/auth/google/callback"
+frontend_redirect_url = "http://localhost:5173/app/calendars"
 calendar_sync_interval_secs = 300
 
 [bot]
