@@ -6,7 +6,7 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "turbo dev",
+    "dev": "turbo dev --filter=@ai-meeting-notetaker/backend --filter=@ai-meeting-notetaker/frontend",
     "build": "turbo build",
     "lint": "turbo lint",
     "test": "turbo test",
@@ -14,7 +14,7 @@
     "db:reset": "turbo db:reset --filter=@ai-meeting-notetaker/backend"
   },
   "devDependencies": {
-    "turbo": "^2.5.4"
+    "turbo": "^2.9.16"
   },
   "packageManager": "bun@1.2.15"
 }
