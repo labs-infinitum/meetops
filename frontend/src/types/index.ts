@@ -46,6 +46,7 @@ export type Meeting = {
   endAt: number
   autoRecord: boolean
   calendarId: string
+  calendarLabel?: string
   attendees: string[]
   description?: string
 }

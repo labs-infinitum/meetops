@@ -12,6 +12,7 @@ mod google;
 mod grpc;
 mod logging;
 mod meet_url;
+mod meeting;
 mod web;
 mod workers;
 

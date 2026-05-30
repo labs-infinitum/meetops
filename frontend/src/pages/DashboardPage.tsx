@@ -1,8 +1,10 @@
+import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import {
   Calendar,
   CheckSquare,
   ChevronRight,
+  Loader2,
   Video,
   CalendarDays,
 } from "lucide-react"
@@ -11,25 +13,48 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { PageHeader } from "@/components/shared/PageHeader"
 import { StatCard } from "@/components/shared/StatCard"
-import { StatusBadge } from "@/components/shared/StatusBadge"
+import { mockActionItems, mockBotRuns, mockNotes } from "@/lib/mock-data"
 import {
-  getDashboardStats,
-  mockBotRuns,
-  mockMeetings,
-  mockNotes,
-} from "@/lib/mock-data"
+  apiGetDashboardSummary,
+  meetingErrorMessage,
+  meetingPath,
+} from "@/lib/meeting-api"
 import { formatDate, formatRelative, meetingTimeRange } from "@/lib/format"
-
-const now = Math.floor(Date.now() / 1000)
+import { useAuth } from "@/lib/auth-context"
+import { StatusBadge } from "@/components/shared/StatusBadge"
+import type { Meeting } from "@/types"
+import { toast } from "sonner"
 
 export function DashboardPage() {
-  const stats = getDashboardStats()
-  const upcomingMeetings = mockMeetings
-    .filter((m) => m.startAt > now)
-    .sort((a, b) => a.startAt - b.startAt)
-    .slice(0, 4)
+  const { session } = useAuth()
+  const [loading, setLoading] = useState(true)
+  const [upcomingMeetings, setUpcomingMeetings] = useState<Meeting[]>([])
+  const [stats, setStats] = useState({
+    upcoming7d: 0,
+    connectedCalendars: 0,
+    completedRecordings: 0,
+    openTodos: mockActionItems.filter((t) => !t.completed).length,
+  })
+
   const recentRuns = mockBotRuns.slice(0, 4)
   const latestNote = mockNotes[0]
+
+  useEffect(() => {
+    if (!session?.token) return
+    setLoading(true)
+    apiGetDashboardSummary(session.token)
+      .then((summary) => {
+        setUpcomingMeetings(summary.upcomingMeetings)
+        setStats((prev) => ({
+          ...prev,
+          upcoming7d: summary.upcoming7d,
+          connectedCalendars: summary.connectedCalendars,
+          completedRecordings: summary.completedRecordings,
+        }))
+      })
+      .catch((error) => toast.error(meetingErrorMessage(error)))
+      .finally(() => setLoading(false))
+  }, [session?.token])
 
   return (
     <div className="space-y-8">
@@ -43,9 +68,16 @@ export function DashboardPage() {
         }
       />
 
+      {loading && (
+        <div className="text-muted-foreground flex items-center gap-2 text-sm">
+          <Loader2 className="size-4 animate-spin" />
+          Loading dashboard…
+        </div>
+      )}
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard title="Upcoming meetings" value={stats.upcoming} icon={CalendarDays} subtitle="Next 7 days" />
-        <StatCard title="Recordings" value={stats.recordings} icon={Video} subtitle="Completed this month" />
+        <StatCard title="Upcoming meetings" value={stats.upcoming7d} icon={CalendarDays} subtitle="Next 7 days" />
+        <StatCard title="Recordings" value={stats.completedRecordings} icon={Video} subtitle="Completed" />
         <StatCard title="Open todos" value={stats.openTodos} icon={CheckSquare} subtitle="From recent meetings" />
         <StatCard title="Calendars" value={stats.connectedCalendars} icon={Calendar} subtitle="Connected accounts" />
       </div>
@@ -55,7 +87,7 @@ export function DashboardPage() {
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
               <CardTitle className="text-base">Upcoming meetings</CardTitle>
-              <CardDescription>Auto-record enabled meetings</CardDescription>
+              <CardDescription>Synced from your connected calendars</CardDescription>
             </div>
             <Button variant="ghost" size="sm" asChild>
               <Link to="/app/meetings">
@@ -71,7 +103,7 @@ export function DashboardPage() {
               upcomingMeetings.map((meeting) => (
                 <Link
                   key={meeting.id}
-                  to={`/app/meetings/${meeting.id}`}
+                  to={meetingPath(meeting.id)}
                   className="hover:bg-muted/50 flex items-center justify-between rounded-lg border p-3 transition-colors"
                 >
                   <div className="min-w-0">

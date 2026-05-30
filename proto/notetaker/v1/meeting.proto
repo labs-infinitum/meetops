@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+package notetaker.v1;
+
+service MeetingService {
+  rpc ListMeetings(ListMeetingsRequest) returns (ListMeetingsResponse);
+  rpc GetMeeting(GetMeetingRequest) returns (GetMeetingResponse);
+  rpc SetAutoRecord(SetAutoRecordRequest) returns (SetAutoRecordResponse);
+  rpc GetDashboardSummary(GetDashboardSummaryRequest) returns (GetDashboardSummaryResponse);
+}
+
+message ListMeetingsRequest {
+  string token = 1;
+}
+
+message Meeting {
+  string id = 1;
+  string title = 2;
+  string meet_url = 3;
+  int64 start_at = 4;
+  int64 end_at = 5;
+  bool auto_record = 6;
+  string calendar_id = 7;
+  string calendar_label = 8;
+  repeated string attendees = 9;
+  string description = 10;
+}
+
+message ListMeetingsResponse {
+  oneof result {
+    ListMeetingsSuccess success = 1;
+    MeetingError error = 2;
+  }
+}
+
+message ListMeetingsSuccess {
+  repeated Meeting meetings = 1;
+}
+
+message GetMeetingRequest {
+  string token = 1;
+  string meeting_id = 2;
+}
+
+message GetMeetingResponse {
+  oneof result {
+    Meeting success = 1;
+    MeetingError error = 2;
+  }
+}
+
+message SetAutoRecordRequest {
+  string token = 1;
+  string meeting_id = 2;
+  bool auto_record = 3;
+}
+
+message SetAutoRecordResponse {
+  oneof result {
+    SetAutoRecordSuccess success = 1;
+    MeetingError error = 2;
+  }
+}
+
+message SetAutoRecordSuccess {
+  bool ok = 1;
+}
+
+message GetDashboardSummaryRequest {
+  string token = 1;
+}
+
+message GetDashboardSummaryResponse {
+  oneof result {
+    DashboardSummary success = 1;
+    MeetingError error = 2;
+  }
+}
+
+message DashboardSummary {
+  int32 upcoming_7d = 1;
+  int32 connected_calendars = 2;
+  int32 completed_recordings = 3;
+  repeated Meeting upcoming_meetings = 4;
+}
+
+message MeetingError {
+  string code = 1;
+  string message = 2;
+}

@@ -205,3 +205,63 @@ pub async fn set_meeting_auto_join(
     .await?;
     Ok(result.rows_affected())
 }
+
+pub async fn list_recent_for_user(
+    pool: &SqlitePool,
+    user_id: &str,
+    limit: i64,
+) -> sqlx::Result<Vec<BotRunListItem>> {
+    sqlx::query_as::<_, BotRunListItem>(
+        r#"
+        SELECT
+            br.id,
+            br.meeting_id,
+            m.title,
+            br.status,
+            br.error,
+            br.meeting_start_at,
+            br.started_at,
+            br.ended_at,
+            br.created_at,
+            br.recording_path
+        FROM bot_runs br
+        JOIN meetings m ON m.id = br.meeting_id
+        WHERE br.user_id = ?
+           OR m.user_id = ?
+           OR m.calendar_connection_id IN (
+               SELECT id FROM calendar_connections WHERE user_id = ?
+           )
+        ORDER BY br.created_at DESC
+        LIMIT ?
+        "#,
+    )
+    .bind(user_id)
+    .bind(user_id)
+    .bind(user_id)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn count_completed_for_user(pool: &SqlitePool, user_id: &str) -> sqlx::Result<i64> {
+    sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM bot_runs br
+        JOIN meetings m ON m.id = br.meeting_id
+        WHERE br.status = 'completed'
+          AND (
+            br.user_id = ?
+            OR m.user_id = ?
+            OR m.calendar_connection_id IN (
+                SELECT id FROM calendar_connections WHERE user_id = ?
+            )
+          )
+        "#,
+    )
+    .bind(user_id)
+    .bind(user_id)
+    .bind(user_id)
+    .fetch_one(pool)
+    .await
+}

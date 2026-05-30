@@ -62,7 +62,7 @@ export function AppRoutes() {
 function MeetingDetailPageWrapper() {
   const { id } = useParams<{ id: string }>()
   if (!id) return <Navigate to="/app/meetings" replace />
-  return <MeetingDetailPage meetingId={id} />
+  return <MeetingDetailPage meetingId={decodeURIComponent(id)} />
 }
 
 function RecordingDetailPageWrapper() {

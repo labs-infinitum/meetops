@@ -14,10 +14,12 @@ use crate::{
     auth::AuthService,
     calendar::CalendarService,
     config::{Config, GrpcConfig},
+    meeting::MeetingService,
 };
 
 pub mod auth;
 pub mod calendar;
+pub mod meeting;
 
 #[derive(Clone)]
 pub struct GrpcState {
@@ -39,6 +41,9 @@ pub async fn serve(listener: TcpListener, grpc_config: Arc<GrpcConfig>, state: G
             Arc::clone(&state.config),
             state.auth.clone(),
         ),
+    };
+    let meeting_service = meeting::MeetingGrpcService {
+        inner: MeetingService::new(state.db.clone(), state.auth.clone()),
     };
 
     let cors = CorsLayer::new()
@@ -93,6 +98,9 @@ pub async fn serve(listener: TcpListener, grpc_config: Arc<GrpcConfig>, state: G
         ))
         .add_service(tonic_web::enable(
             calendar::proto::calendar_service_server::CalendarServiceServer::new(calendar_service),
+        ))
+        .add_service(tonic_web::enable(
+            meeting::proto::meeting_service_server::MeetingServiceServer::new(meeting_service),
         ))
         .serve_with_incoming(TcpListenerStream::new(listener))
         .await?;
