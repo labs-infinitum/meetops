@@ -1,0 +1,36 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    container_name: notetaker-backend
+    env_file:
+      - path: apps/backend/.env
+        required: false
+    environment:
+      GMR_SERVER__HOST: 0.0.0.0
+      GMR_GRPC__HOST: 0.0.0.0
+      GMR_STORAGE__DATA_DIR: /data
+      GMR_BOT__CHROMIUM_PATH: /usr/bin/google-chrome-stable
+      GMR_BOT__CHROME_USER_DATA_DIR: /data/chrome-profile
+      GMR_GRPC__ALLOW_ORIGIN: ${PUBLIC_FRONTEND_URL:-http://localhost:3000}
+      GMR_GOOGLE__REDIRECT_URI: ${PUBLIC_OAUTH_CALLBACK_URL:-http://localhost:8080/auth/google/callback}
+      GMR_GOOGLE__FRONTEND_REDIRECT_URL: ${PUBLIC_FRONTEND_URL:-http://localhost:3000}/app/calendars
+    ports:
+      - "${BACKEND_HTTP_PORT:-8080}:8080"
+    volumes:
+      - ./data:/data
+    shm_size: "2gb"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+    container_name: notetaker-frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    restart: unless-stopped

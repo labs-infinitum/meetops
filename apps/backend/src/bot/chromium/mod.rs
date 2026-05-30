@@ -330,6 +330,13 @@ fn browser_config(
     #[cfg(target_os = "linux")]
     {
         builder = builder.arg(LINUX_CHROME_PASSWORD_STORE_ARG);
+        if running_in_container() {
+            builder = builder
+                .arg("--no-sandbox")
+                .arg("--disable-dev-shm-usage")
+                .arg("--disable-gpu");
+            tracing::info!("Chrome container flags enabled (--no-sandbox, --disable-dev-shm-usage)");
+        }
         tracing::info!(
             flag = LINUX_CHROME_PASSWORD_STORE_ARG,
             profile_dir = %user_data_dir.display(),
@@ -410,6 +417,10 @@ fn warn_if_profile_lock_exists(user_data_dir: &PathBuf) {
             "bot Chrome profile appears to be in use; close existing bot Chrome windows before signing in"
         );
     }
+}
+
+fn running_in_container() -> bool {
+    Path::new("/.dockerenv").exists() || Path::new("/run/.containerenv").exists()
 }
 
 fn chrome_executable(configured_path: &PathBuf) -> anyhow::Result<PathBuf> {

@@ -61,3 +61,43 @@ cd apps/frontend && bun dev
 - **`apps/backend/config.toml`** — server ports, bot paths, storage
 
 Paths in `apps/backend/config.toml` are relative to `apps/backend/`. Default `data_dir = "../../data"` keeps SQLite and Chrome profile at the monorepo root.
+
+## Docker (recommended for the recording bot)
+
+The backend image includes Google Chrome, Xvfb, xdotool, openbox, ImageMagick, and ffmpeg — no host install required.
+
+```bash
+cp apps/backend/.env.docker.example apps/backend/.env
+# Fill in Google OAuth + S3 credentials in apps/backend/.env
+
+docker compose up --build
+```
+
+| URL | Service |
+|-----|---------|
+| http://localhost:3000 | React UI (grpc-web proxied to backend) |
+| http://localhost:8080 | OAuth callback (`/auth/google/callback`) |
+
+Register `http://localhost:8080/auth/google/callback` in Google Cloud Console.
+
+**One-time bot Google sign-in** (persists in the repo `data/` directory, shared with local dev):
+
+```bash
+docker compose run --rm --service-ports backend profile
+```
+
+Other CLI commands:
+
+```bash
+docker compose run --rm backend db reset
+docker compose run --rm backend profile-status
+```
+
+Optional compose env (repo-root `.env` or shell):
+
+```bash
+PUBLIC_FRONTEND_URL=http://localhost:3000
+PUBLIC_OAUTH_CALLBACK_URL=http://localhost:8080/auth/google/callback
+FRONTEND_PORT=3000
+BACKEND_HTTP_PORT=8080
+```

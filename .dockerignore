@@ -1,0 +1,12 @@
+.git
+.turbo
+**/target
+**/node_modules
+**/dist
+data
+.env
+**/.env
+!apps/backend/.env.example
+apps/backend/config.toml
+**/*.db
+chrome-window-*.png

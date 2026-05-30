@@ -1,0 +1,15 @@
+:80 {
+	root * /srv
+
+	@grpc path /notetaker.v1.*
+	handle @grpc {
+		reverse_proxy backend:50051 {
+			flush_interval -1
+		}
+	}
+
+	handle {
+		try_files {path} /index.html
+		file_server
+	}
+}
