@@ -10,7 +10,7 @@ use crate::{
     config::Config,
     db::{bot_runs, BotRunStatus},
     meet_url::MeetUrl,
-    storage::RecordingsStore,
+    storage::{RecordingsStore, RECORDING_STORAGE_S3},
 };
 
 pub async fn run_claimed(
@@ -88,19 +88,19 @@ pub async fn run_with_permit(
                 .persist_bot_recording(&raw_path, &user_id, run_id)
                 .await
             {
-                Ok((stored, kind)) => {
+                Ok(stored) => {
                     finalize_run_logged(
                         &pool,
                         run_id,
                         BotRunStatus::Completed,
                         None,
                         Some(stored.as_str()),
-                        Some(kind.as_str()),
+                        Some(RECORDING_STORAGE_S3),
                     )
                     .await;
                 }
                 Err(error) => {
-                    let message = format!("recording saved locally but upload failed: {error}");
+                    let message = format!("S3 upload failed: {error}");
                     finalize_run_logged(
                         &pool,
                         run_id,

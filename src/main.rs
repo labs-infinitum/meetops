@@ -45,11 +45,7 @@ async fn main() -> anyhow::Result<()> {
     db::migrate(&pool).await?;
     let http = reqwest::Client::new();
     let recordings = Arc::new(RecordingsStore::connect(&config.storage).await?);
-    if recordings.uses_s3() {
-        tracing::info!("Recording storage backend: S3");
-    } else {
-        tracing::info!("Recording storage backend: local filesystem");
-    }
+    tracing::info!(bucket = recordings.bucket(), "Recording storage: S3");
 
     workers::calendar_sync::spawn(Arc::clone(&config), pool.clone(), http.clone());
 

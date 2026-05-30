@@ -8,7 +8,7 @@ use crate::{
     bot::{chromium, recorder, x11_display},
     config::Config,
     meet_url::MeetUrl,
-    storage::RecordingsStore,
+    storage::{RecordingsStore, RECORDING_STORAGE_S3},
 };
 
 pub async fn join(meet_url: String, config: &Config) -> anyhow::Result<()> {
@@ -35,12 +35,8 @@ pub async fn record(meet_url: String, config: &Config, store: &RecordingsStore) 
     let recording_id = format!("manual-{}", Utc::now().format("%Y%m%dT%H%M%SZ"));
     let recording_dir = store.manual_staging_dir(&recording_id);
     let raw_path = recorder::record(meet_url, config, recording_dir).await?;
-    let (stored, kind) = store.persist_manual_recording(&raw_path, &recording_id).await?;
-    tracing::info!(
-        storage = kind.as_str(),
-        path = %stored,
-        "manual recording saved"
-    );
+    let stored = store.persist_manual_recording(&raw_path, &recording_id).await?;
+    tracing::info!(storage = RECORDING_STORAGE_S3, path = %stored, "manual recording saved");
     Ok(())
 }
 

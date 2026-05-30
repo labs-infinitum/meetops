@@ -1,3 +1,3 @@
-pub mod recordings;
+mod recordings;
 
-pub use recordings::{RecordingStorageKind, RecordingsStore};
+pub use recordings::{RecordingsStore, RECORDING_STORAGE_S3};

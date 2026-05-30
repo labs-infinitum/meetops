@@ -5,50 +5,31 @@ use aws_sdk_s3::presigning::PresigningConfig;
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::Client as S3Client;
 
-use crate::config::{RecordingsBackend, StorageConfig};
+use crate::config::StorageConfig;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RecordingStorageKind {
-    Local,
-    S3,
-}
-
-impl RecordingStorageKind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Local => "local",
-            Self::S3 => "s3",
-        }
-    }
-
-    pub fn parse(value: &str) -> Self {
-        match value {
-            "s3" => Self::S3,
-            _ => Self::Local,
-        }
-    }
-}
+pub const RECORDING_STORAGE_S3: &str = "s3";
 
 #[derive(Clone)]
 pub struct RecordingsStore {
     config: StorageConfig,
-    s3: Option<S3Client>,
+    s3: S3Client,
 }
 
 impl RecordingsStore {
     pub async fn connect(config: &StorageConfig) -> anyhow::Result<Self> {
-        let s3 = if config.recordings.backend == RecordingsBackend::S3
-            && !config.recordings.s3.bucket.is_empty()
-        {
-            let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest());
-            if let Some(region) = config.recordings.s3.region.as_deref() {
-                loader = loader.region(aws_config::Region::new(region.to_owned()));
-            }
-            let shared = loader.load().await;
-            Some(S3Client::new(&shared))
-        } else {
-            None
-        };
+        let bucket = config.recordings.s3.bucket.trim();
+        if bucket.is_empty() {
+            anyhow::bail!(
+                "S3 bucket is required for recordings — set storage.recordings.s3.bucket or S3_BUCKET"
+            );
+        }
+
+        let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest());
+        if let Some(region) = config.recordings.s3.region.as_deref() {
+            loader = loader.region(aws_config::Region::new(region.to_owned()));
+        }
+        let shared = loader.load().await;
+        let s3 = S3Client::new(&shared);
 
         Ok(Self {
             config: config.clone(),
@@ -56,14 +37,15 @@ impl RecordingsStore {
         })
     }
 
-    pub fn uses_s3(&self) -> bool {
-        self.s3.is_some()
+    pub fn bucket(&self) -> &str {
+        &self.config.recordings.s3.bucket
     }
 
     pub fn presigned_url_ttl_secs(&self) -> u64 {
         self.config.recordings.s3.presigned_url_ttl_secs
     }
 
+    /// Temporary on-disk directory while Chrome captures the Meet tab; uploaded to S3 after the run.
     pub fn staging_dir(&self, user_id: &str, run_id: i64) -> PathBuf {
         self.config
             .data_dir
@@ -104,62 +86,38 @@ impl RecordingsStore {
         local_path: &Path,
         user_id: &str,
         run_id: i64,
-    ) -> anyhow::Result<(String, RecordingStorageKind)> {
-        if let Some(client) = &self.s3 {
-            let key = self.object_key_for_bot_run(user_id, run_id);
-            self.upload_file(client, local_path, &key).await?;
-            if self.config.recordings.delete_local_after_upload {
-                self.remove_local_artifacts(local_path).await;
-            }
-            Ok((key, RecordingStorageKind::S3))
-        } else {
-            let rel = self.local_relative_path(local_path)?;
-            Ok((rel, RecordingStorageKind::Local))
+    ) -> anyhow::Result<String> {
+        let key = self.object_key_for_bot_run(user_id, run_id);
+        self.upload_file(&self.s3, local_path, &key).await?;
+        if self.config.recordings.delete_local_after_upload {
+            self.remove_staging_artifacts(local_path).await;
         }
+        Ok(key)
     }
 
     pub async fn persist_manual_recording(
         &self,
         local_path: &Path,
         recording_id: &str,
-    ) -> anyhow::Result<(String, RecordingStorageKind)> {
-        if let Some(client) = &self.s3 {
-            let key = self.object_key_for_manual(recording_id);
-            self.upload_file(client, local_path, &key).await?;
-            if self.config.recordings.delete_local_after_upload {
-                self.remove_local_artifacts(local_path).await;
-            }
-            Ok((key, RecordingStorageKind::S3))
-        } else {
-            let rel = self.local_relative_path(local_path)?;
-            Ok((rel, RecordingStorageKind::Local))
+    ) -> anyhow::Result<String> {
+        let key = self.object_key_for_manual(recording_id);
+        self.upload_file(&self.s3, local_path, &key).await?;
+        if self.config.recordings.delete_local_after_upload {
+            self.remove_staging_artifacts(local_path).await;
         }
+        Ok(key)
     }
 
-    pub async fn playback_url(
-        &self,
-        storage: RecordingStorageKind,
-        stored_path: &str,
-    ) -> anyhow::Result<String> {
-        match storage {
-            RecordingStorageKind::S3 => {
-                let client = self
-                    .s3
-                    .as_ref()
-                    .ok_or_else(|| anyhow::anyhow!("S3 is not configured"))?;
-                let ttl = Duration::from_secs(self.config.recordings.s3.presigned_url_ttl_secs);
-                let presigned = client
-                    .get_object()
-                    .bucket(&self.config.recordings.s3.bucket)
-                    .key(stored_path)
-                    .presigned(PresigningConfig::expires_in(ttl)?)
-                    .await?;
-                Ok(presigned.uri().to_string())
-            }
-            RecordingStorageKind::Local => {
-                anyhow::bail!("local recording playback is not exposed via URL; configure S3")
-            }
-        }
+    pub async fn playback_url(&self, object_key: &str) -> anyhow::Result<String> {
+        let ttl = Duration::from_secs(self.config.recordings.s3.presigned_url_ttl_secs);
+        let presigned = self
+            .s3
+            .get_object()
+            .bucket(&self.config.recordings.s3.bucket)
+            .key(object_key)
+            .presigned(PresigningConfig::expires_in(ttl)?)
+            .await?;
+        Ok(presigned.uri().to_string())
     }
 
     async fn upload_file(&self, client: &S3Client, local_path: &Path, key: &str) -> anyhow::Result<()> {
@@ -182,16 +140,9 @@ impl RecordingsStore {
         Ok(())
     }
 
-    fn local_relative_path(&self, local_path: &Path) -> anyhow::Result<String> {
-        local_path
-            .strip_prefix(&self.config.data_dir)
-            .map(|path| path.to_string_lossy().into_owned())
-            .map_err(|_| anyhow::anyhow!("recording path is outside data_dir"))
-    }
-
-    async fn remove_local_artifacts(&self, local_path: &Path) {
+    async fn remove_staging_artifacts(&self, local_path: &Path) {
         if let Err(error) = tokio::fs::remove_file(local_path).await {
-            tracing::warn!(%error, path = %local_path.display(), "failed to delete local recording after S3 upload");
+            tracing::warn!(%error, path = %local_path.display(), "failed to delete staging file after S3 upload");
         }
         if let Some(parent) = local_path.parent() {
             let _ = tokio::fs::remove_dir_all(parent).await;

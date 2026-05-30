@@ -141,8 +141,7 @@ export function RecordingDetailPage({ recordingId }: { recordingId: string }) {
 
       if (
         loaded.status === "completed" &&
-        loaded.recordingPath &&
-        loaded.recordingStorage === "s3"
+        loaded.recordingPath
       ) {
         const playback = await apiGetPlaybackUrl(session.token, runId)
         setPlaybackUrl(playback.url)
@@ -273,12 +272,6 @@ export function RecordingDetailPage({ recordingId }: { recordingId: string }) {
                 <StatusBadge status={run.status} />
               </div>
             </div>
-            {run.recordingStorage && (
-              <div>
-                <p className="text-muted-foreground text-xs">Storage</p>
-                <p className="text-sm font-medium uppercase">{run.recordingStorage}</p>
-              </div>
-            )}
             {run.startedAt && (
               <div>
                 <p className="text-muted-foreground text-xs">Started</p>

@@ -55,19 +55,6 @@ fn default_log_filter() -> String {
     "info,google_meeting_recorder=debug,tower_http=debug,tonic=info".to_owned()
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum RecordingsBackend {
-    Local,
-    S3,
-}
-
-impl Default for RecordingsBackend {
-    fn default() -> Self {
-        Self::Local
-    }
-}
-
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct S3StorageConfig {
     #[serde(default)]
@@ -101,8 +88,6 @@ fn default_presigned_url_ttl_secs() -> u64 {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RecordingsStorageConfig {
-    #[serde(default)]
-    pub backend: RecordingsBackend,
     #[serde(default = "default_true")]
     pub delete_local_after_upload: bool,
     #[serde(default)]
@@ -112,7 +97,6 @@ pub struct RecordingsStorageConfig {
 impl Default for RecordingsStorageConfig {
     fn default() -> Self {
         Self {
-            backend: RecordingsBackend::Local,
             delete_local_after_upload: true,
             s3: S3StorageConfig::default(),
         }
@@ -214,7 +198,6 @@ impl Default for Config {
             storage: StorageConfig {
                 data_dir: PathBuf::from("./data"),
                 recordings: RecordingsStorageConfig {
-                    backend: RecordingsBackend::Local,
                     delete_local_after_upload: true,
                     s3: S3StorageConfig {
                         bucket: String::new(),
@@ -268,7 +251,6 @@ impl Config {
         if let Ok(bucket) = std::env::var("S3_BUCKET") {
             if !bucket.trim().is_empty() {
                 self.storage.recordings.s3.bucket = bucket;
-                self.storage.recordings.backend = RecordingsBackend::S3;
             }
         }
         if let Ok(prefix) = std::env::var("S3_PREFIX") {

@@ -10,7 +10,7 @@ use crate::{
     config::Config,
     db::{self, bot_runs::BotRunListItem},
     meet_url::{InvalidMeetUrl, MeetUrl},
-    storage::{RecordingStorageKind, RecordingsStore},
+    storage::RecordingsStore,
     workers::bot_runner,
 };
 
@@ -133,10 +133,9 @@ impl RecordingService {
         let Some(path) = run.recording_path.as_deref() else {
             return Err(RecordingServiceError::NotAvailable);
         };
-        let storage = RecordingStorageKind::parse(&run.recording_storage);
         let url = self
             .store
-            .playback_url(storage, path)
+            .playback_url(path)
             .await
             .map_err(RecordingServiceError::Internal)?;
         let expires_at = db::now_unix() + self.store_presigned_ttl();
