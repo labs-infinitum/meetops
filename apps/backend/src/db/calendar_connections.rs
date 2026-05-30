@@ -1,6 +1,20 @@
 use sqlx::SqlitePool;
 
-use crate::db;
+use crate::{crypto::tokens, db};
+
+fn token_protocol_error(error: anyhow::Error) -> sqlx::Error {
+    sqlx::Error::Protocol(error.to_string())
+}
+
+fn encrypt_token(value: &str) -> sqlx::Result<String> {
+    tokens::encrypt(value).map_err(token_protocol_error)
+}
+
+fn decrypt_row(mut row: CalendarConnectionRow) -> sqlx::Result<CalendarConnectionRow> {
+    row.access_token = tokens::decrypt(&row.access_token).map_err(token_protocol_error)?;
+    row.refresh_token = tokens::decrypt(&row.refresh_token).map_err(token_protocol_error)?;
+    Ok(row)
+}
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -67,10 +81,12 @@ pub async fn get_by_id(
     pool: &SqlitePool,
     connection_id: &str,
 ) -> sqlx::Result<Option<CalendarConnectionRow>> {
-    sqlx::query_as("SELECT * FROM calendar_connections WHERE id = ?")
+    let row = sqlx::query_as("SELECT * FROM calendar_connections WHERE id = ?")
         .bind(connection_id)
         .fetch_optional(pool)
-        .await
+        .await?;
+
+    row.map(decrypt_row).transpose()
 }
 
 pub async fn get_by_id_for_user(
@@ -78,13 +94,15 @@ pub async fn get_by_id_for_user(
     connection_id: &str,
     user_id: &str,
 ) -> sqlx::Result<Option<CalendarConnectionRow>> {
-    sqlx::query_as(
+    let row = sqlx::query_as(
         "SELECT * FROM calendar_connections WHERE id = ? AND user_id = ?",
     )
     .bind(connection_id)
     .bind(user_id)
     .fetch_optional(pool)
-    .await
+    .await?;
+
+    row.map(decrypt_row).transpose()
 }
 
 pub async fn find_by_provider_email(
@@ -92,7 +110,7 @@ pub async fn find_by_provider_email(
     provider: &str,
     email: &str,
 ) -> sqlx::Result<Option<CalendarConnectionRow>> {
-    sqlx::query_as(
+    let row = sqlx::query_as(
         r#"
         SELECT * FROM calendar_connections
         WHERE provider = ? AND email = ? COLLATE NOCASE
@@ -101,7 +119,9 @@ pub async fn find_by_provider_email(
     .bind(provider)
     .bind(email)
     .fetch_optional(pool)
-    .await
+    .await?;
+
+    row.map(decrypt_row).transpose()
 }
 
 pub async fn find_owner_by_provider_email(
@@ -124,7 +144,7 @@ pub async fn find_owner_by_provider_email(
 }
 
 pub async fn list_all_for_sync(pool: &SqlitePool) -> sqlx::Result<Vec<CalendarConnectionRow>> {
-    sqlx::query_as(
+    let rows = sqlx::query_as(
         r#"
         SELECT * FROM calendar_connections
         WHERE email != ''
@@ -132,7 +152,9 @@ pub async fn list_all_for_sync(pool: &SqlitePool) -> sqlx::Result<Vec<CalendarCo
         "#,
     )
     .fetch_all(pool)
-    .await
+    .await?;
+
+    rows.into_iter().map(decrypt_row).collect()
 }
 
 pub async fn insert(
@@ -149,6 +171,8 @@ pub async fn insert(
     scope: &str,
 ) -> sqlx::Result<CalendarConnectionRow> {
     let now = db::now_unix();
+    let access_token = encrypt_token(access_token)?;
+    let refresh_token = encrypt_token(refresh_token)?;
     sqlx::query(
         r#"
         INSERT INTO calendar_connections (
@@ -188,6 +212,8 @@ pub async fn update_tokens(
     scope: &str,
 ) -> sqlx::Result<()> {
     let now = db::now_unix();
+    let access_token = encrypt_token(access_token)?;
+    let refresh_token = encrypt_token(refresh_token)?;
     sqlx::query(
         r#"
         UPDATE calendar_connections

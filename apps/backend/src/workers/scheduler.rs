@@ -9,7 +9,7 @@ use tokio::sync::Semaphore;
 use crate::{
     bot::active_recordings::ActiveRecordings,
     config::Config,
-    db::bot_runs,
+    db::{bot_runs, BotRunStatus},
     meet_url::MeetUrl,
     storage::RecordingsStore,
 };
@@ -66,6 +66,21 @@ async fn run_tick(
                     %error,
                     "skipping scheduled recording for invalid Meet URL"
                 );
+                if let Err(finalize_err) = bot_runs::finalize_run(
+                    db,
+                    run_id,
+                    BotRunStatus::Failed,
+                    Some(&error.to_string()),
+                    None,
+                )
+                .await
+                {
+                    tracing::error!(
+                        %finalize_err,
+                        run_id,
+                        "failed to finalize bot run after invalid Meet URL"
+                    );
+                }
                 continue;
             }
         };

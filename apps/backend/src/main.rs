@@ -6,6 +6,7 @@ mod auth;
 mod bot;
 mod calendar;
 mod config;
+mod crypto;
 mod db;
 mod error;
 mod google;
@@ -27,6 +28,14 @@ async fn main() -> anyhow::Result<()> {
     load_dev_env();
     let config = Arc::new(Config::load()?);
     logging::init(&config.logging);
+    crypto::tokens::init(config.storage.token_encryption_key.as_deref())?;
+    if !crypto::tokens::encryption_enabled()
+        && (!config.google.client_id.is_empty() || !config.google.client_secret.is_empty())
+    {
+        tracing::warn!(
+            "GMR_STORAGE__TOKEN_ENCRYPTION_KEY is not set; calendar OAuth tokens are stored in plaintext"
+        );
+    }
     if let Some(command) = CliCommand::parse(std::env::args().skip(1))? {
         return match command {
             CliCommand::DbReset => {

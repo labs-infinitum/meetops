@@ -10,6 +10,7 @@ name = "find-chrome-tab-allow-click"
 path = "src/bin/find_chrome_tab_allow_click.rs"
 
 [dependencies]
+aes-gcm = "0.10"
 anyhow = "1"
 argon2 = "0.5"
 aws-config = { version = "1", features = ["behavior-version-latest"] }

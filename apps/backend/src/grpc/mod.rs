@@ -130,8 +130,17 @@ pub async fn serve(listener: TcpListener, grpc_config: Arc<GrpcConfig>, state: G
 }
 
 fn parse_allow_origin(origin: &str) -> anyhow::Result<AllowOrigin> {
-    if origin == "*" {
+    let trimmed = origin.trim();
+    if trimmed == "*" {
         return Ok(AllowOrigin::any());
     }
-    Ok(AllowOrigin::list([http::HeaderValue::from_str(origin)?]))
+
+    let origins: Result<Vec<_>, _> = trimmed
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(http::HeaderValue::from_str)
+        .collect();
+
+    Ok(AllowOrigin::list(origins?))
 }

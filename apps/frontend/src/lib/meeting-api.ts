@@ -1,5 +1,6 @@
 import type { Meeting } from "@/types"
 import { getMeetingClient } from "@/lib/grpc-client"
+import { withAuthGuard } from "@/lib/session-guard"
 import type {
   DashboardSummary,
   GetDashboardSummaryResponse,
@@ -91,15 +92,19 @@ function unwrapDashboard(response: GetDashboardSummaryResponse): {
 }
 
 export async function apiListMeetings(token: string): Promise<Meeting[]> {
-  const client = getMeetingClient()
-  const { response } = await client.listMeetings({ token })
-  return unwrapList(response)
+  return withAuthGuard(async () => {
+    const client = getMeetingClient()
+    const { response } = await client.listMeetings({ token })
+    return unwrapList(response)
+  })
 }
 
 export async function apiGetMeeting(token: string, meetingId: string): Promise<Meeting> {
-  const client = getMeetingClient()
-  const { response } = await client.getMeeting({ token, meetingId })
-  return unwrapGet(response)
+  return withAuthGuard(async () => {
+    const client = getMeetingClient()
+    const { response } = await client.getMeeting({ token, meetingId })
+    return unwrapGet(response)
+  })
 }
 
 export async function apiSetAutoRecord(
@@ -107,15 +112,19 @@ export async function apiSetAutoRecord(
   meetingId: string,
   autoRecord: boolean,
 ): Promise<boolean> {
-  const client = getMeetingClient()
-  const { response } = await client.setAutoRecord({ token, meetingId, autoRecord })
-  return unwrapSetAutoRecord(response)
+  return withAuthGuard(async () => {
+    const client = getMeetingClient()
+    const { response } = await client.setAutoRecord({ token, meetingId, autoRecord })
+    return unwrapSetAutoRecord(response)
+  })
 }
 
 export async function apiGetDashboardSummary(token: string) {
-  const client = getMeetingClient()
-  const { response } = await client.getDashboardSummary({ token })
-  return unwrapDashboard(response)
+  return withAuthGuard(async () => {
+    const client = getMeetingClient()
+    const { response } = await client.getDashboardSummary({ token })
+    return unwrapDashboard(response)
+  })
 }
 
 export function meetingPath(id: string) {

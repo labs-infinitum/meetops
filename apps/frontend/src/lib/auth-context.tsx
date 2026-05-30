@@ -15,6 +15,11 @@ import {
   apiSignUp,
   authErrorMessage,
 } from "@/lib/auth-api"
+import {
+  isSessionExpired,
+  isSessionInvalidError,
+  registerSessionInvalidHandler,
+} from "@/lib/session-guard"
 
 const STORAGE_KEY = "amn-auth-session"
 
@@ -33,7 +38,11 @@ function loadSession(): AuthSession | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return null
-    return JSON.parse(raw) as AuthSession
+    const session = JSON.parse(raw) as AuthSession
+    if (isSessionExpired(session.expiresAt)) {
+      return null
+    }
+    return session
   } catch {
     return null
   }
@@ -51,13 +60,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(() => loadSession())
   const [isLoading, setIsLoading] = useState(true)
 
+  const logout = useCallback(async () => {
+    const token = session?.token
+    setSession(null)
+    saveSession(null)
+    if (token) {
+      try {
+        await apiLogout(token)
+      } catch {
+        // Local session already cleared.
+      }
+    }
+  }, [session?.token])
+
+  useEffect(() => {
+    registerSessionInvalidHandler(() => {
+      void logout()
+      if (window.location.pathname !== "/login") {
+        window.location.assign("/login")
+      }
+    })
+  }, [logout])
+
   useEffect(() => {
     let cancelled = false
 
     async function validateStoredSession() {
       const stored = loadSession()
       if (!stored?.token) {
-        if (!cancelled) setIsLoading(false)
+        if (!cancelled) {
+          setSession(null)
+          saveSession(null)
+          setIsLoading(false)
+        }
+        return
+      }
+
+      if (isSessionExpired(stored.expiresAt)) {
+        if (!cancelled) {
+          setSession(null)
+          saveSession(null)
+          setIsLoading(false)
+        }
         return
       }
 
@@ -67,10 +111,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setSession(validated)
           saveSession(validated)
         }
-      } catch {
+      } catch (error) {
         if (!cancelled) {
           setSession(null)
           saveSession(null)
+          if (isSessionInvalidError(error)) {
+            window.location.assign("/login")
+          }
         }
       } finally {
         if (!cancelled) setIsLoading(false)
@@ -108,23 +155,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [],
   )
 
-  const logout = useCallback(async () => {
-    const token = session?.token
-    setSession(null)
-    saveSession(null)
-    if (token) {
-      try {
-        await apiLogout(token)
-      } catch {
-        // Local session already cleared.
-      }
-    }
-  }, [session?.token])
-
   const value = useMemo(
     () => ({
       session,
-      isAuthenticated: session !== null,
+      isAuthenticated: session !== null && !isSessionExpired(session.expiresAt),
       isLoading,
       login,
       signup,

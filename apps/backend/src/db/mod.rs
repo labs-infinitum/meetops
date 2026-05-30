@@ -29,8 +29,10 @@ pub async fn connect(config: &Config) -> sqlx::Result<SqlitePool> {
 
 const MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 
-/// Applies migrations. Recreates the database file when legacy migration history,
-/// checksum mismatches, or a corrupted partial schema is detected.
+const RESET_HINT: &str = "run `cargo run -- db reset` (or set GMR_STORAGE__AUTO_MIGRATE_RESET=true to recreate automatically)";
+
+/// Applies migrations. When `storage.auto_migrate_reset` is enabled, recreates the database file
+/// on legacy migration history, checksum mismatches, or a corrupted partial schema.
 pub async fn migrate(
     config: &Config,
     pool: SqlitePool,
@@ -39,6 +41,13 @@ pub async fn migrate(
         .await
         .map_err(sqlx::migrate::MigrateError::Execute)?
     {
+        if !config.storage.auto_migrate_reset {
+            tracing::error!(
+                "legacy or corrupted schema detected; {RESET_HINT}"
+            );
+            return Err(migration_reset_required());
+        }
+
         tracing::warn!(
             "legacy or corrupted schema detected; recreating database from 0001_init.sql"
         );
@@ -50,6 +59,14 @@ pub async fn migrate(
     match MIGRATOR.run(&pool).await {
         Ok(()) => Ok(pool),
         Err(error) if should_reset_on_migrate_error(&error) => {
+            if !config.storage.auto_migrate_reset {
+                tracing::error!(
+                    error = %error,
+                    "migration history incompatible with squashed schema; {RESET_HINT}"
+                );
+                return Err(error);
+            }
+
             tracing::warn!(
                 error = %error,
                 "migration history incompatible with squashed schema; recreating database"
@@ -62,6 +79,16 @@ pub async fn migrate(
         }
         Err(error) => Err(error),
     }
+}
+
+fn migration_reset_required() -> sqlx::migrate::MigrateError {
+    sqlx::migrate::MigrateError::Execute(
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("database schema incompatible with current migrations; {RESET_HINT}"),
+        )
+        .into(),
+    )
 }
 
 /// Wipes the SQLite file and applies migrations from scratch.
@@ -185,6 +212,7 @@ mod tests {
     fn test_config(data_dir: &PathBuf) -> Config {
         let mut config = Config::default();
         config.storage.data_dir = data_dir.clone();
+        config.storage.auto_migrate_reset = true;
         config
     }
 
@@ -315,6 +343,29 @@ mod tests {
         assert_eq!(migration_count, 1);
 
         pool.close().await;
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[tokio::test]
+    async fn migrate_refuses_reset_without_flag() {
+        let data_dir = test_data_dir("no-auto-reset");
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).expect("create test data dir");
+        let mut config = test_config(&data_dir);
+        config.storage.auto_migrate_reset = false;
+        let _ = std::fs::remove_file(config.database_path());
+        let pool = test_pool(&config).await;
+        seed_legacy_migration_chain(&pool).await;
+
+        let error = migrate(&config, pool)
+            .await
+            .expect_err("migrate should fail without auto_migrate_reset");
+
+        assert!(matches!(
+            error,
+            sqlx::migrate::MigrateError::Execute(_)
+        ));
+
         let _ = std::fs::remove_dir_all(data_dir);
     }
 }

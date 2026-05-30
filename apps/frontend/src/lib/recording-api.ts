@@ -1,5 +1,6 @@
 import type { BotRun, BotRunStatus } from "@/types"
 import { getRecordingClient } from "@/lib/grpc-client"
+import { withAuthGuard } from "@/lib/session-guard"
 import type {
   BotRun as ProtoBotRun,
   GetBotRunResponse,
@@ -108,36 +109,46 @@ function unwrapStop(response: StopRecordingResponse): void {
 }
 
 export async function apiListBotRuns(token: string, limit = 50): Promise<BotRun[]> {
-  const client = getRecordingClient()
-  const { response } = await client.listBotRuns({ token, limit })
-  return unwrapList(response)
+  return withAuthGuard(async () => {
+    const client = getRecordingClient()
+    const { response } = await client.listBotRuns({ token, limit })
+    return unwrapList(response)
+  })
 }
 
 export async function apiGetBotRun(token: string, runId: number): Promise<BotRun> {
-  const client = getRecordingClient()
-  const { response } = await client.getBotRun({ token, runId: BigInt(runId) })
-  return unwrapGet(response)
+  return withAuthGuard(async () => {
+    const client = getRecordingClient()
+    const { response } = await client.getBotRun({ token, runId: BigInt(runId) })
+    return unwrapGet(response)
+  })
 }
 
 export async function apiGetPlaybackUrl(
   token: string,
   runId: number,
 ): Promise<{ url: string; expiresAt: number }> {
-  const client = getRecordingClient()
-  const { response } = await client.getPlaybackUrl({ token, runId: BigInt(runId) })
-  return unwrapPlayback(response)
+  return withAuthGuard(async () => {
+    const client = getRecordingClient()
+    const { response } = await client.getPlaybackUrl({ token, runId: BigInt(runId) })
+    return unwrapPlayback(response)
+  })
 }
 
 export async function apiStartAdHocRecording(token: string, meetUrl: string): Promise<BotRun> {
-  const client = getRecordingClient()
-  const { response } = await client.startAdHocRecording({ token, meetUrl })
-  return unwrapStartAdHoc(response)
+  return withAuthGuard(async () => {
+    const client = getRecordingClient()
+    const { response } = await client.startAdHocRecording({ token, meetUrl })
+    return unwrapStartAdHoc(response)
+  })
 }
 
 export async function apiStopRecording(token: string, runId: number): Promise<void> {
-  const client = getRecordingClient()
-  const { response } = await client.stopRecording({ token, runId: BigInt(runId) })
-  unwrapStop(response)
+  return withAuthGuard(async () => {
+    const client = getRecordingClient()
+    const { response } = await client.stopRecording({ token, runId: BigInt(runId) })
+    unwrapStop(response)
+  })
 }
 
 export function isActiveBotRun(status: BotRun["status"]): boolean {

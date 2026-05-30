@@ -1,6 +1,7 @@
 import type { CalendarConnectError, CalendarConnection, CalendarProvider } from "@/types"
 import { getCalendarClient } from "@/lib/grpc-client"
 import { buildConnectError } from "@/lib/calendar-connect"
+import { withAuthGuard } from "@/lib/session-guard"
 import type {
   CalendarConnection as ProtoConnection,
   CalendarError,
@@ -127,9 +128,11 @@ function unwrapSyncNow(response: SyncNowResponse): {
 }
 
 export async function apiListConnections(token: string): Promise<CalendarConnection[]> {
-  const client = getCalendarClient()
-  const { response } = await client.listConnections({ token })
-  return unwrapListResponse(response)
+  return withAuthGuard(async () => {
+    const client = getCalendarClient()
+    const { response } = await client.listConnections({ token })
+    return unwrapListResponse(response)
+  })
 }
 
 export async function apiStartGoogleOAuth(
@@ -137,32 +140,38 @@ export async function apiStartGoogleOAuth(
   label?: string,
   color?: string,
 ): Promise<string> {
-  const client = getCalendarClient()
-  const { response } = await client.startOAuth({
-    token,
-    provider: "google",
-    label: label ?? "",
-    color: color ?? "",
+  return withAuthGuard(async () => {
+    const client = getCalendarClient()
+    const { response } = await client.startOAuth({
+      token,
+      provider: "google",
+      label: label ?? "",
+      color: color ?? "",
+    })
+    return unwrapStartOAuth(response)
   })
-  return unwrapStartOAuth(response)
 }
 
 export async function apiDisconnectCalendar(
   token: string,
   connectionId: string,
 ): Promise<boolean> {
-  const client = getCalendarClient()
-  const { response } = await client.disconnect({ token, connectionId })
-  return unwrapDisconnect(response)
+  return withAuthGuard(async () => {
+    const client = getCalendarClient()
+    const { response } = await client.disconnect({ token, connectionId })
+    return unwrapDisconnect(response)
+  })
 }
 
 export async function apiSyncCalendar(
   token: string,
   connectionId: string,
 ): Promise<{ seen: number; upserted: number; deleted: number; lastSyncedAt: number }> {
-  const client = getCalendarClient()
-  const { response } = await client.syncNow({ token, connectionId })
-  return unwrapSyncNow(response)
+  return withAuthGuard(async () => {
+    const client = getCalendarClient()
+    const { response } = await client.syncNow({ token, connectionId })
+    return unwrapSyncNow(response)
+  })
 }
 
 export function calendarErrorMessage(error: unknown): string {

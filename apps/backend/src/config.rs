@@ -106,6 +106,13 @@ impl Default for RecordingsStorageConfig {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct StorageConfig {
     pub data_dir: PathBuf,
+    /// When true, recreate the SQLite file on legacy/corrupted migration state at startup.
+    /// Default false — run `cargo run -- db reset` manually instead.
+    #[serde(default)]
+    pub auto_migrate_reset: bool,
+    /// Base64-encoded 32-byte AES-256 key for encrypting calendar OAuth tokens at rest.
+    #[serde(default)]
+    pub token_encryption_key: Option<String>,
     #[serde(default)]
     pub recordings: RecordingsStorageConfig,
 }
@@ -185,7 +192,7 @@ impl Default for Config {
             grpc: GrpcConfig {
                 host: "127.0.0.1".parse().expect("static IP address is valid"),
                 port: 50051,
-                allow_origin: "http://localhost:5173".to_owned(),
+                allow_origin: "http://localhost:5173,http://localhost:3000".to_owned(),
             },
             auth: AuthConfig {
                 session_ttl_secs: 60 * 60 * 24 * 30,
@@ -197,6 +204,8 @@ impl Default for Config {
             },
             storage: StorageConfig {
                 data_dir: PathBuf::from("../../data"),
+                auto_migrate_reset: false,
+                token_encryption_key: None,
                 recordings: RecordingsStorageConfig {
                     delete_local_after_upload: true,
                     s3: S3StorageConfig {

@@ -57,10 +57,23 @@ cd apps/frontend && bun dev
 
 ## Configuration
 
-- **`.env`** (`apps/backend/.env`) — secrets: Google OAuth, AWS/S3, Groq
+- **`.env`** (`apps/backend/.env`) — secrets: Google OAuth, AWS/S3, Groq, optional `GMR_STORAGE__TOKEN_ENCRYPTION_KEY`
 - **`apps/backend/config.toml`** — server ports, bot paths, storage
 
 Paths in `apps/backend/config.toml` are relative to `apps/backend/`. Default `data_dir = "../../data"` keeps SQLite and Chrome profile at the monorepo root.
+
+### OAuth and CORS
+
+Google OAuth uses **two URLs**:
+
+| URL | Purpose |
+|-----|---------|
+| `GMR_GOOGLE__REDIRECT_URI` (default `http://localhost:8080/auth/google/callback`) | Backend HTTP handler — register this in Google Cloud Console |
+| `GMR_GOOGLE__FRONTEND_REDIRECT_URL` (default `http://localhost:5173/app/calendars`) | Browser redirect after OAuth completes |
+
+grpc-web CORS (`GMR_GRPC__ALLOW_ORIGIN`) accepts a **comma-separated** list of frontend origins. Default includes both Vite dev (`:5173`) and Docker (`:3000`).
+
+If migrations fail at startup with an incompatible schema, run `bun run db:reset` (or `cargo run -- db reset`). Automatic recreation is opt-in via `GMR_STORAGE__AUTO_MIGRATE_RESET=true`.
 
 ## Docker (recommended for the recording bot)
 
