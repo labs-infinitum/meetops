@@ -81,6 +81,63 @@ pub async fn try_claim_run(
     Ok(Some(id))
 }
 
+pub async fn create_ad_hoc_run(
+    pool: &SqlitePool,
+    user_id: &str,
+    meet_url: &str,
+    title: &str,
+    start_at: i64,
+    end_at: i64,
+) -> sqlx::Result<i64> {
+    use uuid::Uuid;
+
+    let meeting_id = format!("adhoc:{}", Uuid::new_v4());
+    let now = now_unix();
+
+    let mut tx = pool.begin().await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO meetings (
+            id, title, meet_url, start_at, end_at, auto_join,
+            user_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)
+        "#,
+    )
+    .bind(&meeting_id)
+    .bind(title)
+    .bind(meet_url)
+    .bind(start_at)
+    .bind(end_at)
+    .bind(user_id)
+    .bind(now)
+    .bind(now)
+    .execute(&mut *tx)
+    .await?;
+
+    let result = sqlx::query(
+        r#"
+        INSERT INTO bot_runs (
+            meeting_id, meeting_start_at, status, error, trigger_after,
+            started_at, ended_at, user_id, created_at, updated_at
+        ) VALUES (?, ?, ?, NULL, ?, NULL, NULL, ?, ?, ?)
+        "#,
+    )
+    .bind(&meeting_id)
+    .bind(start_at)
+    .bind(BotRunStatus::Queued.as_str())
+    .bind(start_at)
+    .bind(user_id)
+    .bind(now)
+    .bind(now)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(result.last_insert_rowid())
+}
+
 pub async fn mark_joining(pool: &SqlitePool, run_id: i64) -> sqlx::Result<()> {
     let now = now_unix();
     sqlx::query(

@@ -164,6 +164,9 @@ pub struct BotConfig {
     pub admission_timeout_secs: u64,
     /// How often the scheduler checks for meetings to auto-join.
     pub scheduler_poll_interval_secs: u64,
+    /// Max recording duration for ad-hoc joins started from the UI.
+    #[serde(default = "default_ad_hoc_recording_duration_secs")]
+    pub ad_hoc_recording_duration_secs: u64,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -175,6 +178,10 @@ pub struct GroqConfig {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_ad_hoc_recording_duration_secs() -> u64 {
+    7200
 }
 
 impl Default for Config {
@@ -228,6 +235,7 @@ impl Default for Config {
                 join_lead_time_secs: 60,
                 admission_timeout_secs: 300,
                 scheduler_poll_interval_secs: 15,
+                ad_hoc_recording_duration_secs: default_ad_hoc_recording_duration_secs(),
             },
             groq: GroqConfig {
                 api_key_env: "GROQ_API_KEY".to_owned(),

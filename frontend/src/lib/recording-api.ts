@@ -6,6 +6,7 @@ import type {
   GetPlaybackUrlResponse,
   ListBotRunsResponse,
   RecordingError,
+  StartAdHocRecordingResponse,
 } from "@/gen/notetaker/v1/recording"
 
 export class RecordingApiError extends Error {
@@ -72,6 +73,31 @@ function unwrapPlayback(response: GetPlaybackUrlResponse): { url: string; expire
   throw new RecordingApiError("internal_error", "Empty playback URL response.")
 }
 
+function unwrapStartAdHoc(response: StartAdHocRecordingResponse): BotRun {
+  if (response.result.oneofKind === "success") {
+    const run = response.result.success.run
+    if (run) return mapRun(run)
+    return mapRun({
+      id: response.result.success.runId,
+      meetingId: "",
+      meetingTitle: "",
+      status: "queued",
+      error: "",
+      meetingStartAt: BigInt(0),
+      startedAt: BigInt(0),
+      endedAt: BigInt(0),
+      createdAt: BigInt(0),
+      recordingPath: "",
+      recordingStorage: "",
+      durationSecs: BigInt(0),
+    })
+  }
+  if (response.result.oneofKind === "error") {
+    throw parseError(response.result.error)
+  }
+  throw new RecordingApiError("internal_error", "Empty ad-hoc recording response.")
+}
+
 export async function apiListBotRuns(token: string, limit = 50): Promise<BotRun[]> {
   const client = getRecordingClient()
   const { response } = await client.listBotRuns({ token, limit })
@@ -93,6 +119,12 @@ export async function apiGetPlaybackUrl(
   return unwrapPlayback(response)
 }
 
+export async function apiStartAdHocRecording(token: string, meetUrl: string): Promise<BotRun> {
+  const client = getRecordingClient()
+  const { response } = await client.startAdHocRecording({ token, meetUrl })
+  return unwrapStartAdHoc(response)
+}
+
 export function recordingErrorMessage(error: unknown): string {
   if (error instanceof RecordingApiError) {
     switch (error.code) {
@@ -102,6 +134,10 @@ export function recordingErrorMessage(error: unknown): string {
         return "Recording not found."
       case "not_available":
         return "Recording is not available for playback yet."
+      case "invalid_meet_url":
+        return "Enter a valid Google Meet link (https://meet.google.com/…)."
+      case "bot_busy":
+        return "The bot is already recording another meeting. Try again when it finishes."
       default:
         return error.message
     }

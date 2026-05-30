@@ -7,6 +7,7 @@ import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { PageHeader } from "@/components/shared/PageHeader"
+import { JoinAdHocMeetingButton } from "@/components/meetings/JoinAdHocMeetingDialog"
 import {
   apiGetMeeting,
   apiListMeetings,
@@ -102,6 +103,7 @@ export function MeetingsPage() {
       <PageHeader
         title="Meetings"
         description="Upcoming and past meetings synced from your calendars."
+        action={<JoinAdHocMeetingButton sessionToken={session?.token} />}
       />
 
       {loading && (

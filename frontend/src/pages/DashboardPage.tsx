@@ -147,18 +147,19 @@ export function DashboardPage() {
               <p className="text-muted-foreground text-sm">No recording activity yet.</p>
             ) : (
               recentRuns.map((run) => (
-              <Link
-                key={run.id}
-                to={`/app/recordings/${run.id}`}
-                className="hover:bg-muted/50 flex items-center justify-between rounded-lg border p-3 transition-colors"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{run.meetingTitle}</p>
-                  <p className="text-muted-foreground text-xs">{formatDate(run.meetingStartAt)}</p>
-                </div>
-                <StatusBadge status={run.status} />
-              </Link>
-            ))}
+                <Link
+                  key={run.id}
+                  to={`/app/recordings/${run.id}`}
+                  className="hover:bg-muted/50 flex items-center justify-between rounded-lg border p-3 transition-colors"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{run.meetingTitle}</p>
+                    <p className="text-muted-foreground text-xs">{formatDate(run.meetingStartAt)}</p>
+                  </div>
+                  <StatusBadge status={run.status} />
+                </Link>
+              ))
+            )}
           </CardContent>
         </Card>
       </div>

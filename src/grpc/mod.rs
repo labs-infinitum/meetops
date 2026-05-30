@@ -3,6 +3,7 @@ use std::sync::Arc;
 use reqwest::Client;
 use sqlx::SqlitePool;
 use tokio::net::TcpListener;
+use tokio::sync::Semaphore;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::transport::Server;
 use tower_http::{
@@ -31,6 +32,7 @@ pub struct GrpcState {
     pub http: Client,
     pub auth: AuthService,
     pub recordings: Arc<RecordingsStore>,
+    pub chrome_sessions: Arc<Semaphore>,
 }
 
 pub async fn serve(listener: TcpListener, grpc_config: Arc<GrpcConfig>, state: GrpcState) -> anyhow::Result<()> {
@@ -53,7 +55,9 @@ pub async fn serve(listener: TcpListener, grpc_config: Arc<GrpcConfig>, state: G
         inner: RecordingService::new(
             state.db.clone(),
             state.auth.clone(),
-            (*state.recordings).clone(),
+            Arc::clone(&state.recordings),
+            Arc::clone(&state.config),
+            Arc::clone(&state.chrome_sessions),
         ),
     };
 

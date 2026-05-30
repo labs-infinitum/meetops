@@ -86,6 +86,7 @@ async fn main() -> anyhow::Result<()> {
         http: http.clone(),
         auth: auth_service.clone(),
         recordings: Arc::clone(&recordings),
+        chrome_sessions: Arc::clone(&chrome_sessions),
     };
     tokio::spawn(async move {
         if let Err(error) = grpc::serve(grpc_listener, grpc_config, grpc_state).await {

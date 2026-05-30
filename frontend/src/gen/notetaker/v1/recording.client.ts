@@ -5,6 +5,8 @@
 import type { RpcTransport } from "@protobuf-ts/runtime-rpc";
 import type { ServiceInfo } from "@protobuf-ts/runtime-rpc";
 import { RecordingService } from "./recording";
+import type { StartAdHocRecordingResponse } from "./recording";
+import type { StartAdHocRecordingRequest } from "./recording";
 import type { GetPlaybackUrlResponse } from "./recording";
 import type { GetPlaybackUrlRequest } from "./recording";
 import type { GetBotRunResponse } from "./recording";
@@ -30,6 +32,10 @@ export interface IRecordingServiceClient {
      * @generated from protobuf rpc: GetPlaybackUrl
      */
     getPlaybackUrl(input: GetPlaybackUrlRequest, options?: RpcOptions): UnaryCall<GetPlaybackUrlRequest, GetPlaybackUrlResponse>;
+    /**
+     * @generated from protobuf rpc: StartAdHocRecording
+     */
+    startAdHocRecording(input: StartAdHocRecordingRequest, options?: RpcOptions): UnaryCall<StartAdHocRecordingRequest, StartAdHocRecordingResponse>;
 }
 /**
  * @generated from protobuf service notetaker.v1.RecordingService
@@ -60,5 +66,12 @@ export class RecordingServiceClient implements IRecordingServiceClient, ServiceI
     getPlaybackUrl(input: GetPlaybackUrlRequest, options?: RpcOptions): UnaryCall<GetPlaybackUrlRequest, GetPlaybackUrlResponse> {
         const method = this.methods[2], opt = this._transport.mergeOptions(options);
         return stackIntercept<GetPlaybackUrlRequest, GetPlaybackUrlResponse>("unary", this._transport, method, opt, input);
+    }
+    /**
+     * @generated from protobuf rpc: StartAdHocRecording
+     */
+    startAdHocRecording(input: StartAdHocRecordingRequest, options?: RpcOptions): UnaryCall<StartAdHocRecordingRequest, StartAdHocRecordingResponse> {
+        const method = this.methods[3], opt = this._transport.mergeOptions(options);
+        return stackIntercept<StartAdHocRecordingRequest, StartAdHocRecordingResponse>("unary", this._transport, method, opt, input);
     }
 }
