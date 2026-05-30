@@ -50,7 +50,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::fs::create_dir_all(&config.storage.data_dir).await?;
 
     let pool = db::connect(&config).await?;
-    db::migrate(&pool).await?;
+    let pool = db::migrate(&config, pool).await?;
     workers::session_cleanup::spawn(pool.clone());
     let http = reqwest::Client::new();
     let recordings = Arc::new(RecordingsStore::connect(&config.storage).await?);

@@ -29,33 +29,36 @@ pub async fn connect(config: &Config) -> sqlx::Result<SqlitePool> {
 
 const MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 
-/// Applies migrations. If the database still tracks the old multi-file migration chain
-/// (versions > 1, missing checksum for squashed `0001_init.sql`, or schema without
-/// migration metadata), drops all tables and re-runs the single init migration.
-pub async fn migrate(pool: &SqlitePool) -> Result<(), sqlx::migrate::MigrateError> {
-    if needs_squash_reset(pool)
+/// Applies migrations. Recreates the database file when legacy migration history,
+/// checksum mismatches, or a corrupted partial schema is detected.
+pub async fn migrate(
+    config: &Config,
+    pool: SqlitePool,
+) -> Result<SqlitePool, sqlx::migrate::MigrateError> {
+    if needs_squash_reset(&pool)
         .await
         .map_err(sqlx::migrate::MigrateError::Execute)?
     {
         tracing::warn!(
-            "legacy migration history detected; resetting schema to squashed 0001_init.sql"
+            "legacy or corrupted schema detected; recreating database from 0001_init.sql"
         );
-        reset_schema(pool)
-            .await
-            .map_err(sqlx::migrate::MigrateError::Execute)?;
+        pool.close().await;
+        reset(config).await?;
+        return connect(config).await.map_err(sqlx::migrate::MigrateError::Execute);
     }
 
-    match MIGRATOR.run(pool).await {
-        Ok(()) => Ok(()),
+    match MIGRATOR.run(&pool).await {
+        Ok(()) => Ok(pool),
         Err(error) if should_reset_on_migrate_error(&error) => {
             tracing::warn!(
                 error = %error,
-                "migration history incompatible with squashed schema; resetting database"
+                "migration history incompatible with squashed schema; recreating database"
             );
-            reset_schema(pool)
+            pool.close().await;
+            reset(config).await?;
+            connect(config)
                 .await
-                .map_err(sqlx::migrate::MigrateError::Execute)?;
-            MIGRATOR.run(pool).await
+                .map_err(sqlx::migrate::MigrateError::Execute)
         }
         Err(error) => Err(error),
     }
@@ -77,8 +80,16 @@ pub async fn reset(config: &Config) -> Result<(), sqlx::migrate::MigrateError> {
 }
 
 async fn needs_squash_reset(pool: &SqlitePool) -> sqlx::Result<bool> {
-    let has_app_schema = table_exists(pool, "users").await?;
-    if !has_app_schema {
+    let has_users = table_exists(pool, "users").await?;
+    let has_orphan_app_schema = !has_users
+        && (table_exists(pool, "meetings").await?
+            || table_exists(pool, "calendar_connections").await?
+            || table_exists(pool, "bot_runs").await?);
+    if has_orphan_app_schema {
+        return Ok(true);
+    }
+
+    if !has_users {
         return Ok(false);
     }
 
@@ -120,29 +131,6 @@ async fn table_exists(pool: &SqlitePool, name: &str) -> sqlx::Result<bool> {
     .await?;
 
     Ok(exists.is_some())
-}
-
-async fn reset_schema(pool: &SqlitePool) -> sqlx::Result<()> {
-    sqlx::query("PRAGMA foreign_keys = OFF")
-        .execute(pool)
-        .await?;
-
-    let tables: Vec<String> = sqlx::query_scalar(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
-    )
-    .fetch_all(pool)
-    .await?;
-
-    for table in tables {
-        let drop_sql = format!("DROP TABLE IF EXISTS \"{}\"", table.replace('"', "\"\""));
-        sqlx::query(&drop_sql).execute(pool).await?;
-    }
-
-    sqlx::query("PRAGMA foreign_keys = ON")
-        .execute(pool)
-        .await?;
-
-    Ok(())
 }
 
 pub fn now_unix() -> i64 {
@@ -190,13 +178,24 @@ mod tests {
 
     use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 
+    use crate::config::Config;
+
     use super::*;
 
-    async fn test_pool(path: &PathBuf) -> SqlitePool {
-        let options = SqliteConnectOptions::from_str(&format!("sqlite://{}", path.display()))
-            .expect("sqlite path")
-            .create_if_missing(true)
-            .foreign_keys(true);
+    fn test_config(data_dir: &PathBuf) -> Config {
+        let mut config = Config::default();
+        config.storage.data_dir = data_dir.clone();
+        config
+    }
+
+    async fn test_pool(config: &Config) -> SqlitePool {
+        let options = SqliteConnectOptions::from_str(&format!(
+            "sqlite://{}",
+            config.database_path().display()
+        ))
+        .expect("sqlite path")
+        .create_if_missing(true)
+        .foreign_keys(true);
 
         SqlitePoolOptions::new()
             .connect_with(options)
@@ -204,9 +203,9 @@ mod tests {
             .expect("connect test database")
     }
 
-    fn test_db_path(name: &str) -> PathBuf {
+    fn test_data_dir(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
-            "gmr-{name}-{}-{}.db",
+            "gmr-{name}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -252,12 +251,17 @@ mod tests {
 
     #[tokio::test]
     async fn migrate_resets_legacy_migration_chain() {
-        let db_path = test_db_path("legacy-chain");
-        let _ = std::fs::remove_file(&db_path);
-        let pool = test_pool(&db_path).await;
+        let data_dir = test_data_dir("legacy-chain");
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).expect("create test data dir");
+        let config = test_config(&data_dir);
+        let _ = std::fs::remove_file(config.database_path());
+        let pool = test_pool(&config).await;
         seed_legacy_migration_chain(&pool).await;
 
-        migrate(&pool).await.expect("migrate legacy database");
+        let pool = migrate(&config, pool)
+            .await
+            .expect("migrate legacy database");
 
         let migration_count: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM _sqlx_migrations")
@@ -280,14 +284,18 @@ mod tests {
         .expect("inspect bot_runs columns");
         assert_eq!(recording_path_exists.as_deref(), Some("recording_path"));
 
-        let _ = std::fs::remove_file(db_path);
+        pool.close().await;
+        let _ = std::fs::remove_dir_all(data_dir);
     }
 
     #[tokio::test]
     async fn migrate_resets_modified_init_checksum() {
-        let db_path = test_db_path("checksum-mismatch");
-        let _ = std::fs::remove_file(&db_path);
-        let pool = test_pool(&db_path).await;
+        let data_dir = test_data_dir("checksum-mismatch");
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).expect("create test data dir");
+        let config = test_config(&data_dir);
+        let _ = std::fs::remove_file(config.database_path());
+        let pool = test_pool(&config).await;
         seed_legacy_migration_chain(&pool).await;
 
         sqlx::query("DELETE FROM _sqlx_migrations WHERE version != 1")
@@ -295,7 +303,9 @@ mod tests {
             .await
             .expect("keep only version 1");
 
-        migrate(&pool).await.expect("migrate checksum mismatch database");
+        let pool = migrate(&config, pool)
+            .await
+            .expect("migrate checksum mismatch database");
 
         let migration_count: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM _sqlx_migrations")
@@ -304,6 +314,7 @@ mod tests {
                 .expect("count migrations");
         assert_eq!(migration_count, 1);
 
-        let _ = std::fs::remove_file(db_path);
+        pool.close().await;
+        let _ = std::fs::remove_dir_all(data_dir);
     }
 }
