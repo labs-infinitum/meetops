@@ -1,3 +1,4 @@
+pub mod active_recordings;
 pub mod allow_button_detect;
 pub mod chromium;
 pub mod recorder;

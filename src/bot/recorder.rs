@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use chrono::Utc;
 use sqlx::SqlitePool;
+use tokio::sync::watch;
 use tokio::time::{Duration, Instant};
 
 use crate::{
@@ -12,12 +13,14 @@ use crate::{
 };
 
 pub async fn record(meet_url: MeetUrl, config: &Config, recording_dir: PathBuf) -> anyhow::Result<PathBuf> {
+    let (_tx, stop_rx) = watch::channel(false);
     let raw = record_inner(
         meet_url,
         config,
         recording_dir,
         RecordStop::Manual,
         None,
+        stop_rx,
         async {},
     )
     .await?;
@@ -33,6 +36,7 @@ pub async fn record_scheduled<Fut>(
     end_at_unix: i64,
     pool: &SqlitePool,
     run_id: i64,
+    stop_rx: watch::Receiver<bool>,
     after_joined: Fut,
 ) -> anyhow::Result<PathBuf>
 where
@@ -44,6 +48,7 @@ where
         recording_dir,
         RecordStop::UntilUnix(end_at_unix),
         Some((pool, run_id)),
+        stop_rx,
         after_joined,
     )
     .await
@@ -54,12 +59,20 @@ enum RecordStop {
     UntilUnix(i64),
 }
 
+enum RecordExitReason {
+    CtrlC,
+    CalendarEnd,
+    UserStop,
+    SoloParticipant,
+}
+
 async fn record_inner<Fut>(
     meet_url: MeetUrl,
     config: &Config,
     recording_dir: PathBuf,
     stop: RecordStop,
     scheduled: Option<(&SqlitePool, i64)>,
+    mut stop_rx: watch::Receiver<bool>,
     after_joined: Fut,
 ) -> anyhow::Result<PathBuf>
 where
@@ -85,7 +98,17 @@ where
 
     let mut session = chromium::open_joined_meeting(join_options).await?;
 
+    if *stop_rx.borrow() {
+        session.close().await;
+        anyhow::bail!("stopped by user");
+    }
+
     after_joined.await;
+
+    if *stop_rx.borrow() {
+        session.close().await;
+        anyhow::bail!("stopped by user");
+    }
 
     match chromium::grant_meet_capture_permissions(session.browser()).await {
         Ok(()) => {}
@@ -141,7 +164,7 @@ where
             tracing::info!(
                 recording_dir = %recording_dir.display(),
                 end_at_unix = ts,
-                "recording started; stops at calendar end or Ctrl+C"
+                "recording started; stops at calendar end, solo timeout, user stop, or Ctrl+C"
             );
         }
     }
@@ -166,11 +189,20 @@ where
         RecordStop::UntilUnix(ts) => Utc::now().timestamp() < ts,
     };
 
+    let solo_threshold = Duration::from_secs(config.bot.solo_participant_leave_secs.max(1));
+    let mut solo_since: Option<Instant> = None;
+    let mut exit_reason: Option<RecordExitReason> = None;
+
     if should_wait {
         loop {
+            if *stop_rx.borrow() {
+                exit_reason = Some(RecordExitReason::UserStop);
+                break;
+            }
+
             tokio::select! {
                 _ = tokio::signal::ctrl_c() => {
-                    tracing::info!("stop recording: Ctrl+C");
+                    exit_reason = Some(RecordExitReason::CtrlC);
                     break;
                 }
                 _ = async {
@@ -179,19 +211,59 @@ where
                         None => std::future::pending::<()>().await,
                     }
                 } => {
-                    tracing::info!("stop recording: calendar end time reached");
+                    exit_reason = Some(RecordExitReason::CalendarEnd);
                     break;
+                }
+                changed = stop_rx.changed() => {
+                    if changed.is_ok() && *stop_rx.borrow() {
+                        exit_reason = Some(RecordExitReason::UserStop);
+                        break;
+                    }
                 }
                 _ = status_tick.tick() => {
                     match chromium::recording_runtime_status(&session.page).await {
                         Ok(status) => tracing::info!(%status, "recording browser status"),
                         Err(error) => tracing::warn!(%error, "failed to read recording browser status"),
                     }
+
+                    match chromium::meet_participant_count(&session.page).await {
+                        Ok(Some(count)) if count <= 1 => {
+                            solo_since.get_or_insert_with(Instant::now);
+                            if solo_since
+                                .expect("solo_since set when count <= 1")
+                                .elapsed()
+                                >= solo_threshold
+                            {
+                                exit_reason = Some(RecordExitReason::SoloParticipant);
+                                break;
+                            }
+                        }
+                        Ok(Some(_)) => {
+                            solo_since = None;
+                        }
+                        Ok(None) => {}
+                        Err(error) => {
+                            tracing::warn!(%error, "failed to read Meet participant count");
+                        }
+                    }
                 }
             }
         }
     } else if matches!(stop, RecordStop::UntilUnix(_)) {
         tracing::warn!("calendar end already passed; finalizing recording");
+    }
+
+    match exit_reason {
+        Some(RecordExitReason::CtrlC) => tracing::info!("stop recording: Ctrl+C"),
+        Some(RecordExitReason::CalendarEnd) => {
+            tracing::info!("stop recording: calendar end time reached")
+        }
+        Some(RecordExitReason::UserStop) => tracing::info!("stop recording: user requested"),
+        Some(RecordExitReason::SoloParticipant) => tracing::info!(
+            secs = solo_threshold.as_secs(),
+            "stop recording: no other participants in Meet"
+        ),
+        None => {}
     }
 
     tracing::info!("stopping browser recorder");

@@ -10,7 +10,8 @@ use proto::{
     BotRun, GetBotRunRequest, GetBotRunResponse, GetPlaybackUrlRequest, GetPlaybackUrlResponse,
     ListBotRunsRequest, ListBotRunsResponse, ListBotRunsSuccess, PlaybackUrlSuccess,
     RecordingError, StartAdHocRecordingRequest, StartAdHocRecordingResponse,
-    StartAdHocRecordingSuccess, recording_service_server::RecordingService,
+    StartAdHocRecordingSuccess, StopRecordingRequest, StopRecordingResponse, StopRecordingSuccess,
+    recording_service_server::RecordingService,
 };
 
 pub struct RecordingGrpcService {
@@ -95,6 +96,25 @@ impl RecordingService for RecordingGrpcService {
                 result: Some(proto::start_ad_hoc_recording_response::Result::Error(
                     to_proto_error(&error),
                 )),
+            })),
+        }
+    }
+
+    async fn stop_recording(
+        &self,
+        request: Request<StopRecordingRequest>,
+    ) -> Result<Response<StopRecordingResponse>, Status> {
+        let req = request.into_inner();
+        match self.inner.stop_recording(&req.token, req.run_id).await {
+            Ok(()) => Ok(Response::new(StopRecordingResponse {
+                result: Some(proto::stop_recording_response::Result::Success(
+                    StopRecordingSuccess {},
+                )),
+            })),
+            Err(error) => Ok(Response::new(StopRecordingResponse {
+                result: Some(proto::stop_recording_response::Result::Error(to_proto_error(
+                    &error,
+                ))),
             })),
         }
     }

@@ -7,6 +7,7 @@ use sqlx::SqlitePool;
 use tokio::sync::Semaphore;
 
 use crate::{
+    bot::active_recordings::ActiveRecordings,
     config::Config,
     db::bot_runs,
     meet_url::MeetUrl,
@@ -20,11 +21,14 @@ pub fn spawn(
     db: SqlitePool,
     chrome_sessions: Arc<Semaphore>,
     recordings: Arc<RecordingsStore>,
+    active_recordings: Arc<ActiveRecordings>,
 ) {
     let poll_secs = config.bot.scheduler_poll_interval_secs.max(1);
     tokio::spawn(async move {
         loop {
-            if let Err(error) = run_tick(&config, &db, &chrome_sessions, &recordings).await {
+            if let Err(error) =
+                run_tick(&config, &db, &chrome_sessions, &recordings, &active_recordings).await
+            {
                 tracing::error!(%error, "scheduler tick failed");
             }
             tokio::time::sleep(Duration::from_secs(poll_secs)).await;
@@ -37,6 +41,7 @@ async fn run_tick(
     db: &SqlitePool,
     chrome_sessions: &Arc<Semaphore>,
     recordings: &Arc<RecordingsStore>,
+    active_recordings: &Arc<ActiveRecordings>,
 ) -> anyhow::Result<()> {
     let now = chrono::Utc::now().timestamp();
     let lead = config.bot.join_lead_time_secs as i64;
@@ -67,9 +72,10 @@ async fn run_tick(
         let end_at = meeting.end_at;
         let sem = chrome_sessions.clone();
         let store = Arc::clone(recordings);
+        let active = Arc::clone(active_recordings);
 
         tokio::spawn(async move {
-            bot_runner::run_claimed(cfg, pool, sem, store, run_id, meet_url, end_at).await;
+            bot_runner::run_claimed(cfg, pool, sem, store, active, run_id, meet_url, end_at).await;
         });
     }
 

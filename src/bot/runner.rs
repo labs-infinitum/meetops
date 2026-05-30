@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use chrono::Utc;
 use sqlx::SqlitePool;
+use tokio::sync::watch;
 
 use crate::{
     bot::{chromium, recorder, x11_display},
@@ -50,6 +51,7 @@ pub async fn record_until_meeting_end<Fut>(
     recording_dir: PathBuf,
     pool: &SqlitePool,
     run_id: i64,
+    stop_rx: watch::Receiver<bool>,
     after_joined: Fut,
 ) -> anyhow::Result<PathBuf>
 where
@@ -62,6 +64,7 @@ where
         end_at_unix,
         pool,
         run_id,
+        stop_rx,
         after_joined,
     )
     .await

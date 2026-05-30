@@ -7,6 +7,7 @@ service RecordingService {
   rpc GetBotRun(GetBotRunRequest) returns (GetBotRunResponse);
   rpc GetPlaybackUrl(GetPlaybackUrlRequest) returns (GetPlaybackUrlResponse);
   rpc StartAdHocRecording(StartAdHocRecordingRequest) returns (StartAdHocRecordingResponse);
+  rpc StopRecording(StopRecordingRequest) returns (StopRecordingResponse);
 }
 
 message ListBotRunsRequest {
@@ -90,3 +91,17 @@ message StartAdHocRecordingSuccess {
   int64 run_id = 1;
   BotRun run = 2;
 }
+
+message StopRecordingRequest {
+  string token = 1;
+  int64 run_id = 2;
+}
+
+message StopRecordingResponse {
+  oneof result {
+    StopRecordingSuccess success = 1;
+    RecordingError error = 2;
+  }
+}
+
+message StopRecordingSuccess {}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
-import { AlertCircle, ChevronRight, Film, Loader2 } from "lucide-react"
+import { AlertCircle, ChevronRight, Film, Loader2, Square } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import {
@@ -18,6 +18,8 @@ import {
   apiGetBotRun,
   apiGetPlaybackUrl,
   apiListBotRuns,
+  apiStopRecording,
+  isActiveBotRun,
   RecordingApiError,
   recordingErrorMessage,
 } from "@/lib/recording-api"
@@ -122,37 +124,67 @@ export function RecordingDetailPage({ recordingId }: { recordingId: string }) {
   const [playbackUrl, setPlaybackUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+  const [stopping, setStopping] = useState(false)
 
   const runId = Number(recordingId)
   const noteLink = run ? `/app/notes?meeting=${encodeURIComponent(run.meetingId)}` : "/app/notes"
+  const isActive = run ? isActiveBotRun(run.status) : false
+
+  async function loadRun(showLoading = false) {
+    if (!session?.token || Number.isNaN(runId)) return
+    if (showLoading) setLoading(true)
+
+    try {
+      const loaded = await apiGetBotRun(session.token, runId)
+      setRun(loaded)
+      setNotFound(false)
+
+      if (
+        loaded.status === "completed" &&
+        loaded.recordingPath &&
+        loaded.recordingStorage === "s3"
+      ) {
+        const playback = await apiGetPlaybackUrl(session.token, runId)
+        setPlaybackUrl(playback.url)
+      } else if (!isActiveBotRun(loaded.status)) {
+        setPlaybackUrl(null)
+      }
+    } catch (error) {
+      if (error instanceof RecordingApiError && error.code === "not_found") {
+        setNotFound(true)
+      } else {
+        toast.error(recordingErrorMessage(error))
+      }
+    } finally {
+      if (showLoading) setLoading(false)
+    }
+  }
 
   useEffect(() => {
-    if (!session?.token || Number.isNaN(runId)) return
-    setLoading(true)
-    setNotFound(false)
-    setPlaybackUrl(null)
-
-    apiGetBotRun(session.token, runId)
-      .then(async (loaded) => {
-        setRun(loaded)
-        if (
-          loaded.status === "completed" &&
-          loaded.recordingPath &&
-          loaded.recordingStorage === "s3"
-        ) {
-          const playback = await apiGetPlaybackUrl(session.token, runId)
-          setPlaybackUrl(playback.url)
-        }
-      })
-      .catch((error) => {
-        if (error instanceof RecordingApiError && error.code === "not_found") {
-          setNotFound(true)
-        } else {
-          toast.error(recordingErrorMessage(error))
-        }
-      })
-      .finally(() => setLoading(false))
+    loadRun(true)
   }, [session?.token, runId])
+
+  useEffect(() => {
+    if (!session?.token || Number.isNaN(runId) || !isActive) return
+    const interval = window.setInterval(() => {
+      loadRun()
+    }, 3000)
+    return () => window.clearInterval(interval)
+  }, [session?.token, runId, isActive])
+
+  async function stopRecording() {
+    if (!session?.token || !run) return
+    setStopping(true)
+    try {
+      await apiStopRecording(session.token, run.id)
+      toast.success("Stopping bot and ending recording…")
+      await loadRun()
+    } catch (error) {
+      toast.error(recordingErrorMessage(error))
+    } finally {
+      setStopping(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -180,7 +212,12 @@ export function RecordingDetailPage({ recordingId }: { recordingId: string }) {
         title={run.meetingTitle}
         description={`Run #${run.id} · ${formatDate(run.meetingStartAt)}`}
         action={
-          run.status === "completed" ? (
+          isActive ? (
+            <Button variant="destructive" onClick={stopRecording} disabled={stopping}>
+              {stopping ? <Loader2 className="animate-spin" /> : <Square className="size-4" />}
+              Stop bot
+            </Button>
+          ) : run.status === "completed" ? (
             <Button asChild>
               <Link to={noteLink}>View AI notes</Link>
             </Button>
@@ -201,14 +238,18 @@ export function RecordingDetailPage({ recordingId }: { recordingId: string }) {
                 >
                   Your browser does not support video playback.
                 </video>
-              ) : run.status === "recording" || run.status === "completed" ? (
+              ) : isActive || run.status === "completed" ? (
                 <div className="flex aspect-video items-center justify-center">
                   <div className="text-center">
                     <Film className="text-muted-foreground mx-auto size-12" />
                     <p className="text-muted-foreground mt-3 text-sm">
                       {run.status === "recording"
                         ? "Recording in progress…"
-                        : "Video is not available yet."}
+                        : run.status === "joining" || run.status === "in_meeting"
+                          ? "Bot is joining the meeting…"
+                          : isActive
+                            ? "Bot is starting…"
+                            : "Video is not available yet."}
                     </p>
                   </div>
                 </div>

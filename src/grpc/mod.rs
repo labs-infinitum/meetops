@@ -13,6 +13,7 @@ use tower_http::{
 
 use crate::{
     auth::AuthService,
+    bot::active_recordings::ActiveRecordings,
     calendar::CalendarService,
     config::{Config, GrpcConfig},
     meeting::MeetingService,
@@ -33,6 +34,7 @@ pub struct GrpcState {
     pub auth: AuthService,
     pub recordings: Arc<RecordingsStore>,
     pub chrome_sessions: Arc<Semaphore>,
+    pub active_recordings: Arc<ActiveRecordings>,
 }
 
 pub async fn serve(listener: TcpListener, grpc_config: Arc<GrpcConfig>, state: GrpcState) -> anyhow::Result<()> {
@@ -58,6 +60,7 @@ pub async fn serve(listener: TcpListener, grpc_config: Arc<GrpcConfig>, state: G
             Arc::clone(&state.recordings),
             Arc::clone(&state.config),
             Arc::clone(&state.chrome_sessions),
+            Arc::clone(&state.active_recordings),
         ),
     };
 

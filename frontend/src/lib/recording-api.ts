@@ -7,6 +7,7 @@ import type {
   ListBotRunsResponse,
   RecordingError,
   StartAdHocRecordingResponse,
+  StopRecordingResponse,
 } from "@/gen/notetaker/v1/recording"
 
 export class RecordingApiError extends Error {
@@ -98,6 +99,16 @@ function unwrapStartAdHoc(response: StartAdHocRecordingResponse): BotRun {
   throw new RecordingApiError("internal_error", "Empty ad-hoc recording response.")
 }
 
+function unwrapStop(response: StopRecordingResponse): void {
+  if (response.result.oneofKind === "success") {
+    return
+  }
+  if (response.result.oneofKind === "error") {
+    throw parseError(response.result.error)
+  }
+  throw new RecordingApiError("internal_error", "Empty stop recording response.")
+}
+
 export async function apiListBotRuns(token: string, limit = 50): Promise<BotRun[]> {
   const client = getRecordingClient()
   const { response } = await client.listBotRuns({ token, limit })
@@ -125,6 +136,16 @@ export async function apiStartAdHocRecording(token: string, meetUrl: string): Pr
   return unwrapStartAdHoc(response)
 }
 
+export async function apiStopRecording(token: string, runId: number): Promise<void> {
+  const client = getRecordingClient()
+  const { response } = await client.stopRecording({ token, runId: BigInt(runId) })
+  unwrapStop(response)
+}
+
+export function isActiveBotRun(status: BotRun["status"]): boolean {
+  return status === "queued" || status === "joining" || status === "in_meeting" || status === "recording"
+}
+
 export function recordingErrorMessage(error: unknown): string {
   if (error instanceof RecordingApiError) {
     switch (error.code) {
@@ -138,6 +159,8 @@ export function recordingErrorMessage(error: unknown): string {
         return "Enter a valid Google Meet link (https://meet.google.com/…)."
       case "bot_busy":
         return "The bot is already recording another meeting. Try again when it finishes."
+      case "not_active":
+        return "This recording is not active anymore."
       default:
         return error.message
     }

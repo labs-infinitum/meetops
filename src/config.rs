@@ -164,6 +164,9 @@ pub struct BotConfig {
     pub admission_timeout_secs: u64,
     /// How often the scheduler checks for meetings to auto-join.
     pub scheduler_poll_interval_secs: u64,
+    /// Leave and stop recording when Meet reports only the bot for this long.
+    #[serde(default = "default_solo_participant_leave_secs")]
+    pub solo_participant_leave_secs: u64,
     /// Max recording duration for ad-hoc joins started from the UI.
     #[serde(default = "default_ad_hoc_recording_duration_secs")]
     pub ad_hoc_recording_duration_secs: u64,
@@ -182,6 +185,10 @@ fn default_true() -> bool {
 
 fn default_ad_hoc_recording_duration_secs() -> u64 {
     7200
+}
+
+fn default_solo_participant_leave_secs() -> u64 {
+    300
 }
 
 impl Default for Config {
@@ -235,6 +242,7 @@ impl Default for Config {
                 join_lead_time_secs: 60,
                 admission_timeout_secs: 300,
                 scheduler_poll_interval_secs: 15,
+                solo_participant_leave_secs: default_solo_participant_leave_secs(),
                 ad_hoc_recording_duration_secs: default_ad_hoc_recording_duration_secs(),
             },
             groq: GroqConfig {

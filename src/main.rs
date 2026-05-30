@@ -54,11 +54,13 @@ async fn main() -> anyhow::Result<()> {
     workers::calendar_sync::spawn(Arc::clone(&config), pool.clone(), http.clone());
 
     let chrome_sessions = Arc::new(tokio::sync::Semaphore::new(1));
+    let active_recordings = Arc::new(bot::active_recordings::ActiveRecordings::default());
     workers::scheduler::spawn(
         Arc::clone(&config),
         pool.clone(),
         Arc::clone(&chrome_sessions),
         Arc::clone(&recordings),
+        Arc::clone(&active_recordings),
     );
 
     let auth_service = auth::AuthService::new(pool.clone(), Arc::new(config.auth.clone()));
@@ -87,6 +89,7 @@ async fn main() -> anyhow::Result<()> {
         auth: auth_service.clone(),
         recordings: Arc::clone(&recordings),
         chrome_sessions: Arc::clone(&chrome_sessions),
+        active_recordings: Arc::clone(&active_recordings),
     };
     tokio::spawn(async move {
         if let Err(error) = grpc::serve(grpc_listener, grpc_config, grpc_state).await {

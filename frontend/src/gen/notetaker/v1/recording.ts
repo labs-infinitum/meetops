@@ -257,6 +257,47 @@ export interface StartAdHocRecordingSuccess {
      */
     run?: BotRun;
 }
+/**
+ * @generated from protobuf message notetaker.v1.StopRecordingRequest
+ */
+export interface StopRecordingRequest {
+    /**
+     * @generated from protobuf field: string token = 1
+     */
+    token: string;
+    /**
+     * @generated from protobuf field: int64 run_id = 2
+     */
+    runId: bigint;
+}
+/**
+ * @generated from protobuf message notetaker.v1.StopRecordingResponse
+ */
+export interface StopRecordingResponse {
+    /**
+     * @generated from protobuf oneof: result
+     */
+    result: {
+        oneofKind: "success";
+        /**
+         * @generated from protobuf field: notetaker.v1.StopRecordingSuccess success = 1
+         */
+        success: StopRecordingSuccess;
+    } | {
+        oneofKind: "error";
+        /**
+         * @generated from protobuf field: notetaker.v1.RecordingError error = 2
+         */
+        error: RecordingError;
+    } | {
+        oneofKind: undefined;
+    };
+}
+/**
+ * @generated from protobuf message notetaker.v1.StopRecordingSuccess
+ */
+export interface StopRecordingSuccess {
+}
 // @generated message type with reflection information, may provide speed optimized methods
 class ListBotRunsRequest$Type extends MessageType<ListBotRunsRequest> {
     constructor() {
@@ -1063,6 +1104,159 @@ class StartAdHocRecordingSuccess$Type extends MessageType<StartAdHocRecordingSuc
  * @generated MessageType for protobuf message notetaker.v1.StartAdHocRecordingSuccess
  */
 export const StartAdHocRecordingSuccess = new StartAdHocRecordingSuccess$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class StopRecordingRequest$Type extends MessageType<StopRecordingRequest> {
+    constructor() {
+        super("notetaker.v1.StopRecordingRequest", [
+            { no: 1, name: "token", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 2, name: "run_id", kind: "scalar", T: 3 /*ScalarType.INT64*/, L: 0 /*LongType.BIGINT*/ }
+        ]);
+    }
+    create(value?: PartialMessage<StopRecordingRequest>): StopRecordingRequest {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.token = "";
+        message.runId = 0n;
+        if (value !== undefined)
+            reflectionMergePartial<StopRecordingRequest>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: StopRecordingRequest): StopRecordingRequest {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string token */ 1:
+                    message.token = reader.string();
+                    break;
+                case /* int64 run_id */ 2:
+                    message.runId = reader.int64().toBigInt();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: StopRecordingRequest, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string token = 1; */
+        if (message.token !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.token);
+        /* int64 run_id = 2; */
+        if (message.runId !== 0n)
+            writer.tag(2, WireType.Varint).int64(message.runId);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message notetaker.v1.StopRecordingRequest
+ */
+export const StopRecordingRequest = new StopRecordingRequest$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class StopRecordingResponse$Type extends MessageType<StopRecordingResponse> {
+    constructor() {
+        super("notetaker.v1.StopRecordingResponse", [
+            { no: 1, name: "success", kind: "message", oneof: "result", T: () => StopRecordingSuccess },
+            { no: 2, name: "error", kind: "message", oneof: "result", T: () => RecordingError }
+        ]);
+    }
+    create(value?: PartialMessage<StopRecordingResponse>): StopRecordingResponse {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.result = { oneofKind: undefined };
+        if (value !== undefined)
+            reflectionMergePartial<StopRecordingResponse>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: StopRecordingResponse): StopRecordingResponse {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* notetaker.v1.StopRecordingSuccess success */ 1:
+                    message.result = {
+                        oneofKind: "success",
+                        success: StopRecordingSuccess.internalBinaryRead(reader, reader.uint32(), options, (message.result as any).success)
+                    };
+                    break;
+                case /* notetaker.v1.RecordingError error */ 2:
+                    message.result = {
+                        oneofKind: "error",
+                        error: RecordingError.internalBinaryRead(reader, reader.uint32(), options, (message.result as any).error)
+                    };
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: StopRecordingResponse, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* notetaker.v1.StopRecordingSuccess success = 1; */
+        if (message.result.oneofKind === "success")
+            StopRecordingSuccess.internalBinaryWrite(message.result.success, writer.tag(1, WireType.LengthDelimited).fork(), options).join();
+        /* notetaker.v1.RecordingError error = 2; */
+        if (message.result.oneofKind === "error")
+            RecordingError.internalBinaryWrite(message.result.error, writer.tag(2, WireType.LengthDelimited).fork(), options).join();
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message notetaker.v1.StopRecordingResponse
+ */
+export const StopRecordingResponse = new StopRecordingResponse$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class StopRecordingSuccess$Type extends MessageType<StopRecordingSuccess> {
+    constructor() {
+        super("notetaker.v1.StopRecordingSuccess", []);
+    }
+    create(value?: PartialMessage<StopRecordingSuccess>): StopRecordingSuccess {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        if (value !== undefined)
+            reflectionMergePartial<StopRecordingSuccess>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: StopRecordingSuccess): StopRecordingSuccess {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: StopRecordingSuccess, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message notetaker.v1.StopRecordingSuccess
+ */
+export const StopRecordingSuccess = new StopRecordingSuccess$Type();
 /**
  * @generated ServiceType for protobuf service notetaker.v1.RecordingService
  */
@@ -1070,5 +1264,6 @@ export const RecordingService = new ServiceType("notetaker.v1.RecordingService",
     { name: "ListBotRuns", options: {}, I: ListBotRunsRequest, O: ListBotRunsResponse },
     { name: "GetBotRun", options: {}, I: GetBotRunRequest, O: GetBotRunResponse },
     { name: "GetPlaybackUrl", options: {}, I: GetPlaybackUrlRequest, O: GetPlaybackUrlResponse },
-    { name: "StartAdHocRecording", options: {}, I: StartAdHocRecordingRequest, O: StartAdHocRecordingResponse }
+    { name: "StartAdHocRecording", options: {}, I: StartAdHocRecordingRequest, O: StartAdHocRecordingResponse },
+    { name: "StopRecording", options: {}, I: StopRecordingRequest, O: StopRecordingResponse }
 ]);

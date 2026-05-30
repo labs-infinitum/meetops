@@ -6,6 +6,7 @@ use tokio::sync::Semaphore;
 
 use crate::{
     auth::{AuthError, AuthService},
+    bot::active_recordings::ActiveRecordings,
     config::Config,
     db::{self, bot_runs::BotRunListItem},
     meet_url::{InvalidMeetUrl, MeetUrl},
@@ -25,6 +26,8 @@ pub enum RecordingServiceError {
     InvalidMeetUrl,
     #[error("bot is busy recording another meeting")]
     BotBusy,
+    #[error("recording is not active")]
+    NotActive,
     #[error(transparent)]
     Internal(#[from] anyhow::Error),
 }
@@ -58,6 +61,7 @@ impl RecordingServiceError {
             Self::NotAvailable => "not_available",
             Self::InvalidMeetUrl => "invalid_meet_url",
             Self::BotBusy => "bot_busy",
+            Self::NotActive => "not_active",
             Self::Internal(_) => "internal_error",
         }
     }
@@ -70,6 +74,7 @@ pub struct RecordingService {
     store: Arc<RecordingsStore>,
     config: Arc<Config>,
     chrome_sessions: Arc<Semaphore>,
+    active_recordings: Arc<ActiveRecordings>,
 }
 
 impl RecordingService {
@@ -79,6 +84,7 @@ impl RecordingService {
         store: Arc<RecordingsStore>,
         config: Arc<Config>,
         chrome_sessions: Arc<Semaphore>,
+        active_recordings: Arc<ActiveRecordings>,
     ) -> Self {
         Self {
             db,
@@ -86,6 +92,7 @@ impl RecordingService {
             store,
             config,
             chrome_sessions,
+            active_recordings,
         }
     }
 
@@ -182,13 +189,34 @@ impl RecordingService {
         let cfg = Arc::clone(&self.config);
         let pool = self.db.clone();
         let recordings = Arc::clone(&self.store);
+        let active = Arc::clone(&self.active_recordings);
         let url = meet_url.clone();
 
         tokio::spawn(async move {
-            bot_runner::run_with_permit(permit, cfg, pool, recordings, run_id, url, end_at).await;
+            bot_runner::run_with_permit(
+                permit, cfg, pool, recordings, active, run_id, url, end_at,
+            )
+            .await;
         });
 
         Ok(run)
+    }
+
+    pub async fn stop_recording(&self, token: &str, run_id: i64) -> Result<(), RecordingServiceError> {
+        let user_id = self.require_user_id(token).await?;
+        let run = db::bot_runs::get_for_user(&self.db, &user_id, run_id)
+            .await?
+            .ok_or(RecordingServiceError::NotFound)?;
+
+        if !is_stoppable_status(&run.status) {
+            return Err(RecordingServiceError::NotActive);
+        }
+
+        if !self.active_recordings.request_stop(run_id) {
+            return Err(RecordingServiceError::NotActive);
+        }
+
+        Ok(())
     }
 
     fn store_presigned_ttl(&self) -> i64 {
@@ -205,4 +233,11 @@ pub fn duration_secs(run: &BotRunListItem) -> i64 {
         (Some(started), Some(ended)) if ended >= started => ended - started,
         _ => 0,
     }
+}
+
+fn is_stoppable_status(status: &str) -> bool {
+    matches!(
+        status,
+        "queued" | "joining" | "in_meeting" | "recording"
+    )
 }
