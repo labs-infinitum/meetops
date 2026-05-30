@@ -1,0 +1,121 @@
+use sqlx::SqlitePool;
+use thiserror::Error;
+
+use crate::{
+    auth::{AuthError, AuthService},
+    db::{self, bot_runs::BotRunListItem},
+    storage::{RecordingStorageKind, RecordingsStore},
+};
+
+#[derive(Debug, Error)]
+pub enum RecordingServiceError {
+    #[error("session not found or expired")]
+    SessionNotFound,
+    #[error("recording not found")]
+    NotFound,
+    #[error("recording is not available for playback")]
+    NotAvailable,
+    #[error(transparent)]
+    Internal(#[from] anyhow::Error),
+}
+
+impl From<AuthError> for RecordingServiceError {
+    fn from(error: AuthError) -> Self {
+        match error {
+            AuthError::SessionNotFound => Self::SessionNotFound,
+            other => Self::Internal(other.into()),
+        }
+    }
+}
+
+impl From<sqlx::Error> for RecordingServiceError {
+    fn from(error: sqlx::Error) -> Self {
+        Self::Internal(error.into())
+    }
+}
+
+impl RecordingServiceError {
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::SessionNotFound => "session_not_found",
+            Self::NotFound => "not_found",
+            Self::NotAvailable => "not_available",
+            Self::Internal(_) => "internal_error",
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct RecordingService {
+    db: SqlitePool,
+    auth: AuthService,
+    store: RecordingsStore,
+}
+
+impl RecordingService {
+    pub fn new(db: SqlitePool, auth: AuthService, store: RecordingsStore) -> Self {
+        Self { db, auth, store }
+    }
+
+    pub async fn list_bot_runs(
+        &self,
+        token: &str,
+        limit: i32,
+    ) -> Result<Vec<BotRunListItem>, RecordingServiceError> {
+        let user_id = self.require_user_id(token).await?;
+        let limit = i64::from(limit.clamp(1, 100));
+        db::bot_runs::list_recent_for_user(&self.db, &user_id, limit)
+            .await
+            .map_err(Into::into)
+    }
+
+    pub async fn get_bot_run(
+        &self,
+        token: &str,
+        run_id: i64,
+    ) -> Result<BotRunListItem, RecordingServiceError> {
+        let user_id = self.require_user_id(token).await?;
+        db::bot_runs::get_for_user(&self.db, &user_id, run_id)
+            .await?
+            .ok_or(RecordingServiceError::NotFound)
+    }
+
+    pub async fn playback_url(
+        &self,
+        token: &str,
+        run_id: i64,
+    ) -> Result<(String, i64), RecordingServiceError> {
+        let run = self.get_bot_run(token, run_id).await?;
+        if run.status != db::BotRunStatus::Completed.as_str()
+            && run.status != db::BotRunStatus::Recording.as_str()
+        {
+            return Err(RecordingServiceError::NotAvailable);
+        }
+        let Some(path) = run.recording_path.as_deref() else {
+            return Err(RecordingServiceError::NotAvailable);
+        };
+        let storage = RecordingStorageKind::parse(&run.recording_storage);
+        let url = self
+            .store
+            .playback_url(storage, path)
+            .await
+            .map_err(RecordingServiceError::Internal)?;
+        let expires_at = db::now_unix() + self.store_presigned_ttl();
+        Ok((url, expires_at))
+    }
+
+    fn store_presigned_ttl(&self) -> i64 {
+        self.store.presigned_url_ttl_secs() as i64
+    }
+
+    async fn require_user_id(&self, token: &str) -> Result<String, RecordingServiceError> {
+        Ok(self.auth.get_session(token).await?.user.id)
+    }
+}
+
+pub fn duration_secs(run: &BotRunListItem) -> i64 {
+    match (run.started_at, run.ended_at) {
+        (Some(started), Some(ended)) if ended >= started => ended - started,
+        _ => 0,
+    }
+}

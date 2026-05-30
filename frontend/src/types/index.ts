@@ -62,6 +62,7 @@ export type BotRun = {
   endedAt?: number
   createdAt: number
   recordingPath?: string
+  recordingStorage?: string
   durationSecs?: number
 }
 

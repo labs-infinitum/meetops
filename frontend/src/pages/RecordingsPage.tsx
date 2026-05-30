@@ -1,5 +1,6 @@
+import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
-import { AlertCircle, ChevronRight, Film } from "lucide-react"
+import { AlertCircle, ChevronRight, Film, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import {
@@ -13,11 +14,31 @@ import {
 import { PageHeader } from "@/components/shared/PageHeader"
 import { StatusBadge } from "@/components/shared/StatusBadge"
 import { EmptyState } from "@/components/shared/EmptyState"
-import { mockBotRuns } from "@/lib/mock-data"
+import {
+  apiGetBotRun,
+  apiGetPlaybackUrl,
+  apiListBotRuns,
+  RecordingApiError,
+  recordingErrorMessage,
+} from "@/lib/recording-api"
 import { formatDate, formatDateTime, formatDuration } from "@/lib/format"
+import { useAuth } from "@/lib/auth-context"
+import type { BotRun } from "@/types"
+import { toast } from "sonner"
 
 export function RecordingsPage() {
-  const runs = [...mockBotRuns].sort((a, b) => b.createdAt - a.createdAt)
+  const { session } = useAuth()
+  const [runs, setRuns] = useState<BotRun[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!session?.token) return
+    setLoading(true)
+    apiListBotRuns(session.token)
+      .then(setRuns)
+      .catch((error) => toast.error(recordingErrorMessage(error)))
+      .finally(() => setLoading(false))
+  }, [session?.token])
 
   return (
     <div className="space-y-8">
@@ -26,7 +47,14 @@ export function RecordingsPage() {
         description="Bot recording activity for your meetings."
       />
 
-      {runs.length === 0 ? (
+      {loading && (
+        <div className="text-muted-foreground flex items-center gap-2 text-sm">
+          <Loader2 className="size-4 animate-spin" />
+          Loading recordings…
+        </div>
+      )}
+
+      {!loading && runs.length === 0 ? (
         <EmptyState
           icon={Film}
           title="No recordings yet"
@@ -89,12 +117,53 @@ export function RecordingsPage() {
 }
 
 export function RecordingDetailPage({ recordingId }: { recordingId: string }) {
-  const run = mockBotRuns.find((r) => r.id === Number(recordingId))
-  const noteLink = run
-    ? `/app/notes?meeting=${run.meetingId}`
-    : "/app/notes"
+  const { session } = useAuth()
+  const [run, setRun] = useState<BotRun | null>(null)
+  const [playbackUrl, setPlaybackUrl] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [notFound, setNotFound] = useState(false)
 
-  if (!run) {
+  const runId = Number(recordingId)
+  const noteLink = run ? `/app/notes?meeting=${encodeURIComponent(run.meetingId)}` : "/app/notes"
+
+  useEffect(() => {
+    if (!session?.token || Number.isNaN(runId)) return
+    setLoading(true)
+    setNotFound(false)
+    setPlaybackUrl(null)
+
+    apiGetBotRun(session.token, runId)
+      .then(async (loaded) => {
+        setRun(loaded)
+        if (
+          loaded.status === "completed" &&
+          loaded.recordingPath &&
+          loaded.recordingStorage === "s3"
+        ) {
+          const playback = await apiGetPlaybackUrl(session.token, runId)
+          setPlaybackUrl(playback.url)
+        }
+      })
+      .catch((error) => {
+        if (error instanceof RecordingApiError && error.code === "not_found") {
+          setNotFound(true)
+        } else {
+          toast.error(recordingErrorMessage(error))
+        }
+      })
+      .finally(() => setLoading(false))
+  }, [session?.token, runId])
+
+  if (loading) {
+    return (
+      <div className="text-muted-foreground flex items-center gap-2 text-sm">
+        <Loader2 className="size-4 animate-spin" />
+        Loading recording…
+      </div>
+    )
+  }
+
+  if (notFound || !run) {
     return (
       <div className="space-y-4">
         <PageHeader title="Recording not found" />
@@ -122,23 +191,33 @@ export function RecordingDetailPage({ recordingId }: { recordingId: string }) {
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardContent className="p-6">
-            <div className="bg-muted flex aspect-video items-center justify-center rounded-lg border">
-              {run.status === "completed" || run.status === "recording" ? (
-                <div className="text-center">
-                  <Film className="text-muted-foreground mx-auto size-12" />
-                  <p className="text-muted-foreground mt-3 text-sm">
-                    Video preview placeholder
-                  </p>
-                  {run.recordingPath && (
-                    <p className="text-muted-foreground mt-1 font-mono text-xs">
-                      {run.recordingPath}
+            <div className="bg-muted overflow-hidden rounded-lg border">
+              {playbackUrl ? (
+                <video
+                  src={playbackUrl}
+                  controls
+                  className="aspect-video w-full bg-black"
+                  preload="metadata"
+                >
+                  Your browser does not support video playback.
+                </video>
+              ) : run.status === "recording" || run.status === "completed" ? (
+                <div className="flex aspect-video items-center justify-center">
+                  <div className="text-center">
+                    <Film className="text-muted-foreground mx-auto size-12" />
+                    <p className="text-muted-foreground mt-3 text-sm">
+                      {run.status === "recording"
+                        ? "Recording in progress…"
+                        : "Video is not available yet."}
                     </p>
-                  )}
+                  </div>
                 </div>
               ) : (
-                <div className="text-center">
-                  <AlertCircle className="text-muted-foreground mx-auto size-12" />
-                  <p className="text-muted-foreground mt-3 text-sm">No recording available</p>
+                <div className="flex aspect-video items-center justify-center">
+                  <div className="text-center">
+                    <AlertCircle className="text-muted-foreground mx-auto size-12" />
+                    <p className="text-muted-foreground mt-3 text-sm">No recording available</p>
+                  </div>
                 </div>
               )}
             </div>
@@ -153,6 +232,12 @@ export function RecordingDetailPage({ recordingId }: { recordingId: string }) {
                 <StatusBadge status={run.status} />
               </div>
             </div>
+            {run.recordingStorage && (
+              <div>
+                <p className="text-muted-foreground text-xs">Storage</p>
+                <p className="text-sm font-medium uppercase">{run.recordingStorage}</p>
+              </div>
+            )}
             {run.startedAt && (
               <div>
                 <p className="text-muted-foreground text-xs">Started</p>
@@ -165,12 +250,12 @@ export function RecordingDetailPage({ recordingId }: { recordingId: string }) {
                 <p className="text-sm">{formatDateTime(run.endedAt)}</p>
               </div>
             )}
-            {run.durationSecs && (
+            {run.durationSecs ? (
               <div>
                 <p className="text-muted-foreground text-xs">Duration</p>
                 <p className="text-sm">{formatDuration(run.durationSecs)}</p>
               </div>
-            )}
+            ) : null}
             {run.error && (
               <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
                 <p className="text-destructive text-xs font-medium">Error</p>

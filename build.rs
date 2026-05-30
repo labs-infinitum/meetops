@@ -10,6 +10,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "proto/notetaker/v1/auth.proto",
                 "proto/notetaker/v1/calendar.proto",
                 "proto/notetaker/v1/meeting.proto",
+                "proto/notetaker/v1/recording.proto",
             ],
             &["proto"],
         )?;

@@ -11,26 +11,25 @@ use crate::{
     db::bot_runs,
 };
 
-pub async fn record(meet_url: MeetUrl, config: &Config) -> anyhow::Result<()> {
-    let recording_id = format!("manual-{}", Utc::now().format("%Y%m%dT%H%M%SZ"));
+pub async fn record(meet_url: MeetUrl, config: &Config, recording_dir: PathBuf) -> anyhow::Result<PathBuf> {
     let raw = record_inner(
         meet_url,
         config,
-        &recording_id,
+        recording_dir,
         RecordStop::Manual,
         None,
         async {},
     )
     .await?;
     tracing::info!(raw = %raw.display(), "recording finished");
-    Ok(())
+    Ok(raw)
 }
 
-/// Join Meet, capture tab to `data/recordings/{recording_id}/raw.webm`, stop at `end_at_unix` or Ctrl+C.
+/// Join Meet, capture tab to `{recording_dir}/raw.webm`, stop at `end_at_unix` or Ctrl+C.
 pub async fn record_scheduled<Fut>(
     meet_url: MeetUrl,
     config: &Config,
-    recording_id: &str,
+    recording_dir: PathBuf,
     end_at_unix: i64,
     pool: &SqlitePool,
     run_id: i64,
@@ -42,7 +41,7 @@ where
     record_inner(
         meet_url,
         config,
-        recording_id,
+        recording_dir,
         RecordStop::UntilUnix(end_at_unix),
         Some((pool, run_id)),
         after_joined,
@@ -58,7 +57,7 @@ enum RecordStop {
 async fn record_inner<Fut>(
     meet_url: MeetUrl,
     config: &Config,
-    recording_id: &str,
+    recording_dir: PathBuf,
     stop: RecordStop,
     scheduled: Option<(&SqlitePool, i64)>,
     after_joined: Fut,
@@ -69,11 +68,6 @@ where
     let x11 = x11_display::prepare(&config.bot).await?;
     let x11_display = x11.as_ref().map(|s| s.display.clone());
 
-    let recording_dir = config
-        .storage
-        .data_dir
-        .join("recordings")
-        .join(recording_id);
     tokio::fs::create_dir_all(&recording_dir).await?;
     tracing::info!(recording_dir = %recording_dir.display(), "created recording directory");
 

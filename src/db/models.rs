@@ -51,4 +51,5 @@ pub struct BotRunListItem {
     pub ended_at: Option<i64>,
     pub created_at: i64,
     pub recording_path: Option<String>,
+    pub recording_storage: String,
 }

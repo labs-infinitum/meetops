@@ -13,10 +13,13 @@ mod grpc;
 mod logging;
 mod meet_url;
 mod meeting;
+mod recording;
+mod storage;
 mod web;
 mod workers;
 
 use config::Config;
+use storage::RecordingsStore;
 use web::AppState;
 
 #[tokio::main]
@@ -25,9 +28,12 @@ async fn main() -> anyhow::Result<()> {
     let config = Arc::new(Config::load()?);
     logging::init(&config.logging);
     if let Some(command) = CliCommand::parse(std::env::args().skip(1))? {
+        let recordings = RecordingsStore::connect(&config.storage).await?;
         return match command {
             CliCommand::Join { meet_url } => bot::runner::join(meet_url, &config).await,
-            CliCommand::Record { meet_url } => bot::runner::record(meet_url, &config).await,
+            CliCommand::Record { meet_url } => {
+                bot::runner::record(meet_url, &config, &recordings).await
+            }
             CliCommand::Profile => bot::runner::open_profile(&config).await,
             CliCommand::ProfileStatus => bot::runner::profile_status(&config),
         };
@@ -38,6 +44,12 @@ async fn main() -> anyhow::Result<()> {
     let pool = db::connect(&config).await?;
     db::migrate(&pool).await?;
     let http = reqwest::Client::new();
+    let recordings = Arc::new(RecordingsStore::connect(&config.storage).await?);
+    if recordings.uses_s3() {
+        tracing::info!("Recording storage backend: S3");
+    } else {
+        tracing::info!("Recording storage backend: local filesystem");
+    }
 
     workers::calendar_sync::spawn(Arc::clone(&config), pool.clone(), http.clone());
 
@@ -46,6 +58,7 @@ async fn main() -> anyhow::Result<()> {
         Arc::clone(&config),
         pool.clone(),
         Arc::clone(&chrome_sessions),
+        Arc::clone(&recordings),
     );
 
     let auth_service = auth::AuthService::new(pool.clone(), Arc::new(config.auth.clone()));
@@ -72,6 +85,7 @@ async fn main() -> anyhow::Result<()> {
         db: pool.clone(),
         http: http.clone(),
         auth: auth_service.clone(),
+        recordings: Arc::clone(&recordings),
     };
     tokio::spawn(async move {
         if let Err(error) = grpc::serve(grpc_listener, grpc_config, grpc_state).await {

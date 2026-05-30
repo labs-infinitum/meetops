@@ -19,6 +19,16 @@ log_line = true
 [storage]
 data_dir = "./data"
 
+[storage.recordings]
+backend = "s3"
+delete_local_after_upload = true
+
+[storage.recordings.s3]
+bucket = ""
+prefix = "recordings"
+# region defaults to AWS_REGION env when unset
+presigned_url_ttl_secs = 3600
+
 [google]
 client_id = ""
 client_secret = ""

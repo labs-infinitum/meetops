@@ -55,9 +55,75 @@ fn default_log_filter() -> String {
     "info,google_meeting_recorder=debug,tower_http=debug,tonic=info".to_owned()
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum RecordingsBackend {
+    Local,
+    S3,
+}
+
+impl Default for RecordingsBackend {
+    fn default() -> Self {
+        Self::Local
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct S3StorageConfig {
+    #[serde(default)]
+    pub bucket: String,
+    #[serde(default = "default_s3_prefix")]
+    pub prefix: String,
+    #[serde(default)]
+    pub region: Option<String>,
+    #[serde(default = "default_presigned_url_ttl_secs")]
+    pub presigned_url_ttl_secs: u64,
+}
+
+impl Default for S3StorageConfig {
+    fn default() -> Self {
+        Self {
+            bucket: String::new(),
+            prefix: default_s3_prefix(),
+            region: None,
+            presigned_url_ttl_secs: default_presigned_url_ttl_secs(),
+        }
+    }
+}
+
+fn default_s3_prefix() -> String {
+    "recordings".to_owned()
+}
+
+fn default_presigned_url_ttl_secs() -> u64 {
+    3600
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct RecordingsStorageConfig {
+    #[serde(default)]
+    pub backend: RecordingsBackend,
+    #[serde(default = "default_true")]
+    pub delete_local_after_upload: bool,
+    #[serde(default)]
+    pub s3: S3StorageConfig,
+}
+
+impl Default for RecordingsStorageConfig {
+    fn default() -> Self {
+        Self {
+            backend: RecordingsBackend::Local,
+            delete_local_after_upload: true,
+            s3: S3StorageConfig::default(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct StorageConfig {
     pub data_dir: PathBuf,
+    #[serde(default)]
+    pub recordings: RecordingsStorageConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -133,6 +199,16 @@ impl Default for Config {
             },
             storage: StorageConfig {
                 data_dir: PathBuf::from("./data"),
+                recordings: RecordingsStorageConfig {
+                    backend: RecordingsBackend::Local,
+                    delete_local_after_upload: true,
+                    s3: S3StorageConfig {
+                        bucket: String::new(),
+                        prefix: default_s3_prefix(),
+                        region: None,
+                        presigned_url_ttl_secs: default_presigned_url_ttl_secs(),
+                    },
+                },
             },
             google: GoogleConfig {
                 client_id: String::new(),
@@ -164,10 +240,31 @@ impl Default for Config {
 
 impl Config {
     pub fn load() -> Result<Self, figment::Error> {
-        Figment::from(Serialized::defaults(Self::default()))
+        let mut config: Self = Figment::from(Serialized::defaults(Self::default()))
             .merge(Toml::file("config.toml"))
             .merge(Env::prefixed("GMR_").split("__"))
-            .extract()
+            .extract()?;
+        config.apply_env_overrides();
+        Ok(config)
+    }
+
+    fn apply_env_overrides(&mut self) {
+        if let Ok(bucket) = std::env::var("S3_BUCKET") {
+            if !bucket.trim().is_empty() {
+                self.storage.recordings.s3.bucket = bucket;
+                self.storage.recordings.backend = RecordingsBackend::S3;
+            }
+        }
+        if let Ok(prefix) = std::env::var("S3_PREFIX") {
+            if !prefix.trim().is_empty() {
+                self.storage.recordings.s3.prefix = prefix;
+            }
+        }
+        if let Ok(region) = std::env::var("AWS_REGION") {
+            if !region.trim().is_empty() {
+                self.storage.recordings.s3.region = Some(region);
+            }
+        }
     }
 
     pub fn database_path(&self) -> PathBuf {

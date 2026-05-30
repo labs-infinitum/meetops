@@ -13,16 +13,17 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { PageHeader } from "@/components/shared/PageHeader"
 import { StatCard } from "@/components/shared/StatCard"
-import { mockActionItems, mockBotRuns, mockNotes } from "@/lib/mock-data"
+import { mockActionItems, mockNotes } from "@/lib/mock-data"
 import {
   apiGetDashboardSummary,
   meetingErrorMessage,
   meetingPath,
 } from "@/lib/meeting-api"
+import { apiListBotRuns, recordingErrorMessage } from "@/lib/recording-api"
 import { formatDate, formatRelative, meetingTimeRange } from "@/lib/format"
 import { useAuth } from "@/lib/auth-context"
 import { StatusBadge } from "@/components/shared/StatusBadge"
-import type { Meeting } from "@/types"
+import type { BotRun, Meeting } from "@/types"
 import { toast } from "sonner"
 
 export function DashboardPage() {
@@ -36,15 +37,19 @@ export function DashboardPage() {
     openTodos: mockActionItems.filter((t) => !t.completed).length,
   })
 
-  const recentRuns = mockBotRuns.slice(0, 4)
+  const [recentRuns, setRecentRuns] = useState<BotRun[]>([])
   const latestNote = mockNotes[0]
 
   useEffect(() => {
     if (!session?.token) return
     setLoading(true)
-    apiGetDashboardSummary(session.token)
-      .then((summary) => {
+    Promise.all([
+      apiGetDashboardSummary(session.token),
+      apiListBotRuns(session.token, 4),
+    ])
+      .then(([summary, runs]) => {
         setUpcomingMeetings(summary.upcomingMeetings)
+        setRecentRuns(runs)
         setStats((prev) => ({
           ...prev,
           upcoming7d: summary.upcoming7d,
@@ -52,7 +57,7 @@ export function DashboardPage() {
           completedRecordings: summary.completedRecordings,
         }))
       })
-      .catch((error) => toast.error(meetingErrorMessage(error)))
+      .catch((error) => toast.error(meetingErrorMessage(error) || recordingErrorMessage(error)))
       .finally(() => setLoading(false))
   }, [session?.token])
 
@@ -138,7 +143,10 @@ export function DashboardPage() {
             </Button>
           </CardHeader>
           <CardContent className="space-y-3">
-            {recentRuns.map((run) => (
+            {recentRuns.length === 0 ? (
+              <p className="text-muted-foreground text-sm">No recording activity yet.</p>
+            ) : (
+              recentRuns.map((run) => (
               <Link
                 key={run.id}
                 to={`/app/recordings/${run.id}`}

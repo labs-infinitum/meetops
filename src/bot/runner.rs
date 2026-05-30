@@ -1,11 +1,13 @@
 use std::path::PathBuf;
 
+use chrono::Utc;
 use sqlx::SqlitePool;
 
 use crate::{
     bot::{chromium, recorder, x11_display},
     config::Config,
     meet_url::MeetUrl,
+    storage::RecordingsStore,
 };
 
 pub async fn join(meet_url: String, config: &Config) -> anyhow::Result<()> {
@@ -27,16 +29,25 @@ pub fn profile_status(config: &Config) -> anyhow::Result<()> {
     chromium::profile_status(&config.bot.chrome_user_data_dir)
 }
 
-pub async fn record(meet_url: String, config: &Config) -> anyhow::Result<()> {
+pub async fn record(meet_url: String, config: &Config, store: &RecordingsStore) -> anyhow::Result<()> {
     let meet_url = MeetUrl::parse(&meet_url).map_err(|error| anyhow::anyhow!("{error}"))?;
-    recorder::record(meet_url, config).await
+    let recording_id = format!("manual-{}", Utc::now().format("%Y%m%dT%H%M%SZ"));
+    let recording_dir = store.manual_staging_dir(&recording_id);
+    let raw_path = recorder::record(meet_url, config, recording_dir).await?;
+    let (stored, kind) = store.persist_manual_recording(&raw_path, &recording_id).await?;
+    tracing::info!(
+        storage = kind.as_str(),
+        path = %stored,
+        "manual recording saved"
+    );
+    Ok(())
 }
 
 pub async fn record_until_meeting_end<Fut>(
     meet_url: MeetUrl,
     end_at_unix: i64,
     config: &Config,
-    recording_id: String,
+    recording_dir: PathBuf,
     pool: &SqlitePool,
     run_id: i64,
     after_joined: Fut,
@@ -47,7 +58,7 @@ where
     recorder::record_scheduled(
         meet_url,
         config,
-        &recording_id,
+        recording_dir,
         end_at_unix,
         pool,
         run_id,

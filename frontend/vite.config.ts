@@ -25,6 +25,10 @@ export default defineConfig({
         target: "http://127.0.0.1:50051",
         changeOrigin: true,
       },
+      "/notetaker.v1.RecordingService": {
+        target: "http://127.0.0.1:50051",
+        changeOrigin: true,
+      },
     },
   },
 })

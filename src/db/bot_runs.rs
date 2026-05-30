@@ -133,18 +133,27 @@ pub async fn mark_recording(pool: &SqlitePool, run_id: i64) -> sqlx::Result<()> 
     Ok(())
 }
 
+pub async fn get_user_id(pool: &SqlitePool, run_id: i64) -> sqlx::Result<Option<String>> {
+    sqlx::query_scalar("SELECT user_id FROM bot_runs WHERE id = ?")
+        .bind(run_id)
+        .fetch_optional(pool)
+        .await
+}
+
 pub async fn finalize_run(
     pool: &SqlitePool,
     run_id: i64,
     status: BotRunStatus,
     error: Option<&str>,
     recording_path: Option<&str>,
+    recording_storage: Option<&str>,
 ) -> sqlx::Result<()> {
     let now = now_unix();
     sqlx::query(
         r#"
         UPDATE bot_runs
-        SET status = ?, error = ?, ended_at = ?, updated_at = ?, recording_path = ?
+        SET status = ?, error = ?, ended_at = ?, updated_at = ?,
+            recording_path = ?, recording_storage = COALESCE(?, recording_storage)
         WHERE id = ?
         "#,
     )
@@ -153,6 +162,7 @@ pub async fn finalize_run(
     .bind(now)
     .bind(now)
     .bind(recording_path)
+    .bind(recording_storage)
     .bind(run_id)
     .execute(pool)
     .await?;
@@ -172,7 +182,8 @@ pub async fn list_recent(pool: &SqlitePool, limit: i64) -> sqlx::Result<Vec<BotR
             br.started_at,
             br.ended_at,
             br.created_at,
-            br.recording_path
+            br.recording_path,
+            br.recording_storage
         FROM bot_runs br
         JOIN meetings m ON m.id = br.meeting_id
         ORDER BY br.created_at DESC
@@ -223,7 +234,8 @@ pub async fn list_recent_for_user(
             br.started_at,
             br.ended_at,
             br.created_at,
-            br.recording_path
+            br.recording_path,
+            br.recording_storage
         FROM bot_runs br
         JOIN meetings m ON m.id = br.meeting_id
         WHERE br.user_id = ?
@@ -263,5 +275,44 @@ pub async fn count_completed_for_user(pool: &SqlitePool, user_id: &str) -> sqlx:
     .bind(user_id)
     .bind(user_id)
     .fetch_one(pool)
+    .await
+}
+
+pub async fn get_for_user(
+    pool: &SqlitePool,
+    user_id: &str,
+    run_id: i64,
+) -> sqlx::Result<Option<BotRunListItem>> {
+    sqlx::query_as::<_, BotRunListItem>(
+        r#"
+        SELECT
+            br.id,
+            br.meeting_id,
+            m.title,
+            br.status,
+            br.error,
+            br.meeting_start_at,
+            br.started_at,
+            br.ended_at,
+            br.created_at,
+            br.recording_path,
+            br.recording_storage
+        FROM bot_runs br
+        JOIN meetings m ON m.id = br.meeting_id
+        WHERE br.id = ?
+          AND (
+            br.user_id = ?
+            OR m.user_id = ?
+            OR m.calendar_connection_id IN (
+                SELECT id FROM calendar_connections WHERE user_id = ?
+            )
+          )
+        "#,
+    )
+    .bind(run_id)
+    .bind(user_id)
+    .bind(user_id)
+    .bind(user_id)
+    .fetch_optional(pool)
     .await
 }

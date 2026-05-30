@@ -12,6 +12,8 @@ path = "src/bin/find_chrome_tab_allow_click.rs"
 [dependencies]
 anyhow = "1"
 argon2 = "0.5"
+aws-config = { version = "1", features = ["behavior-version-latest"] }
+aws-sdk-s3 = "1"
 axum = "0.7"
 base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }

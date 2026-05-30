@@ -1,6 +1,7 @@
 //! Auto-record upcoming meetings shortly before `start_at` (see `Config.bot.join_lead_time_secs`).
 
-use std::{path::Path, sync::Arc, time::Duration};
+use std::sync::Arc;
+use std::time::Duration;
 
 use sqlx::SqlitePool;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
@@ -10,13 +11,19 @@ use crate::{
     config::Config,
     db::{bot_runs, BotRunStatus},
     meet_url::MeetUrl,
+    storage::RecordingsStore,
 };
 
-pub fn spawn(config: Arc<Config>, db: SqlitePool, chrome_sessions: Arc<Semaphore>) {
+pub fn spawn(
+    config: Arc<Config>,
+    db: SqlitePool,
+    chrome_sessions: Arc<Semaphore>,
+    recordings: Arc<RecordingsStore>,
+) {
     let poll_secs = config.bot.scheduler_poll_interval_secs.max(1);
     tokio::spawn(async move {
         loop {
-            if let Err(error) = run_tick(&config, &db, &chrome_sessions).await {
+            if let Err(error) = run_tick(&config, &db, &chrome_sessions, &recordings).await {
                 tracing::error!(%error, "scheduler tick failed");
             }
             tokio::time::sleep(Duration::from_secs(poll_secs)).await;
@@ -28,6 +35,7 @@ async fn run_tick(
     config: &Arc<Config>,
     db: &SqlitePool,
     chrome_sessions: &Arc<Semaphore>,
+    recordings: &Arc<RecordingsStore>,
 ) -> anyhow::Result<()> {
     let now = chrono::Utc::now().timestamp();
     let lead = config.bot.join_lead_time_secs as i64;
@@ -57,27 +65,21 @@ async fn run_tick(
         };
         let end_at = meeting.end_at;
         let sem = chrome_sessions.clone();
+        let store = Arc::clone(recordings);
 
         tokio::spawn(async move {
-            run_claimed(cfg, pool, sem, run_id, meet_url, end_at).await;
+            run_claimed(cfg, pool, sem, store, run_id, meet_url, end_at).await;
         });
     }
 
     Ok(())
 }
 
-fn recording_path_for_db(config: &Config, raw_path: &Path) -> String {
-    raw_path
-        .strip_prefix(&config.storage.data_dir)
-        .ok()
-        .and_then(|p| p.to_str().map(str::to_owned))
-        .unwrap_or_else(|| raw_path.to_string_lossy().into_owned())
-}
-
 async fn run_claimed(
     config: Arc<Config>,
     pool: SqlitePool,
     chrome_sessions: Arc<Semaphore>,
+    recordings: Arc<RecordingsStore>,
     run_id: i64,
     meet_url: MeetUrl,
     end_at: i64,
@@ -90,6 +92,7 @@ async fn run_claimed(
                 run_id,
                 BotRunStatus::Failed,
                 Some("scheduler semaphore closed"),
+                None,
                 None,
             )
             .await;
@@ -105,6 +108,7 @@ async fn run_claimed(
             BotRunStatus::Failed,
             Some("meeting already ended before join could start"),
             None,
+            None,
         )
         .await;
         return;
@@ -118,18 +122,24 @@ async fn run_claimed(
             BotRunStatus::Failed,
             Some("could not update run status to joining"),
             None,
+            None,
         )
         .await;
         return;
     }
 
-    let recording_id = format!("run-{run_id}");
+    let user_id = bot_runs::get_user_id(&pool, run_id)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| "unknown".to_owned());
+    let recording_dir = recordings.staging_dir(&user_id, run_id);
     let pool_joined = pool.clone();
     let result = runner::record_until_meeting_end(
         meet_url,
         end_at,
         &config,
-        recording_id,
+        recording_dir,
         &pool,
         run_id,
         async move {
@@ -141,13 +151,38 @@ async fn run_claimed(
     .await;
 
     match result {
-        Ok(raw_path) => {
-            let rel = recording_path_for_db(&config, &raw_path);
-            finalize_run_logged(&pool, run_id, BotRunStatus::Completed, None, Some(rel.as_str())).await;
-        }
+        Ok(raw_path) => match recordings
+            .persist_bot_recording(&raw_path, &user_id, run_id)
+            .await
+        {
+            Ok((stored, kind)) => {
+                finalize_run_logged(
+                    &pool,
+                    run_id,
+                    BotRunStatus::Completed,
+                    None,
+                    Some(stored.as_str()),
+                    Some(kind.as_str()),
+                )
+                .await;
+            }
+            Err(error) => {
+                let message = format!("recording saved locally but upload failed: {error}");
+                finalize_run_logged(
+                    &pool,
+                    run_id,
+                    BotRunStatus::Failed,
+                    Some(&message),
+                    None,
+                    None,
+                )
+                .await;
+            }
+        },
         Err(error) => {
             let message = error.to_string();
-            finalize_run_logged(&pool, run_id, BotRunStatus::Failed, Some(&message), None).await;
+            finalize_run_logged(&pool, run_id, BotRunStatus::Failed, Some(&message), None, None)
+                .await;
         }
     }
 }
@@ -158,9 +193,17 @@ async fn finalize_run_logged(
     status: BotRunStatus,
     error: Option<&str>,
     recording_path: Option<&str>,
+    recording_storage: Option<&str>,
 ) {
-    if let Err(err) =
-        bot_runs::finalize_run(pool, run_id, status, error, recording_path).await
+    if let Err(err) = bot_runs::finalize_run(
+        pool,
+        run_id,
+        status,
+        error,
+        recording_path,
+        recording_storage,
+    )
+    .await
     {
         tracing::error!(%err, run_id, status = status.as_str(), "failed to finalize bot run");
     }

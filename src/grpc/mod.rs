@@ -15,11 +15,14 @@ use crate::{
     calendar::CalendarService,
     config::{Config, GrpcConfig},
     meeting::MeetingService,
+    recording::RecordingService,
+    storage::RecordingsStore,
 };
 
 pub mod auth;
 pub mod calendar;
 pub mod meeting;
+pub mod recording;
 
 #[derive(Clone)]
 pub struct GrpcState {
@@ -27,6 +30,7 @@ pub struct GrpcState {
     pub db: SqlitePool,
     pub http: Client,
     pub auth: AuthService,
+    pub recordings: Arc<RecordingsStore>,
 }
 
 pub async fn serve(listener: TcpListener, grpc_config: Arc<GrpcConfig>, state: GrpcState) -> anyhow::Result<()> {
@@ -44,6 +48,13 @@ pub async fn serve(listener: TcpListener, grpc_config: Arc<GrpcConfig>, state: G
     };
     let meeting_service = meeting::MeetingGrpcService {
         inner: MeetingService::new(state.db.clone(), state.auth.clone()),
+    };
+    let recording_service = recording::RecordingGrpcService {
+        inner: RecordingService::new(
+            state.db.clone(),
+            state.auth.clone(),
+            (*state.recordings).clone(),
+        ),
     };
 
     let cors = CorsLayer::new()
@@ -101,6 +112,9 @@ pub async fn serve(listener: TcpListener, grpc_config: Arc<GrpcConfig>, state: G
         ))
         .add_service(tonic_web::enable(
             meeting::proto::meeting_service_server::MeetingServiceServer::new(meeting_service),
+        ))
+        .add_service(tonic_web::enable(
+            recording::proto::recording_service_server::RecordingServiceServer::new(recording_service),
         ))
         .serve_with_incoming(TcpListenerStream::new(listener))
         .await?;
