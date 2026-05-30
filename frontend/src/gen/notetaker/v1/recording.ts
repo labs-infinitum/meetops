@@ -70,11 +70,7 @@ export interface BotRun {
      */
     recordingPath: string;
     /**
-     * @generated from protobuf field: string recording_storage = 11
-     */
-    recordingStorage: string;
-    /**
-     * @generated from protobuf field: int64 duration_secs = 12
+     * @generated from protobuf field: int64 duration_secs = 11
      */
     durationSecs: bigint;
 }
@@ -367,8 +363,7 @@ class BotRun$Type extends MessageType<BotRun> {
             { no: 8, name: "ended_at", kind: "scalar", T: 3 /*ScalarType.INT64*/, L: 0 /*LongType.BIGINT*/ },
             { no: 9, name: "created_at", kind: "scalar", T: 3 /*ScalarType.INT64*/, L: 0 /*LongType.BIGINT*/ },
             { no: 10, name: "recording_path", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
-            { no: 11, name: "recording_storage", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
-            { no: 12, name: "duration_secs", kind: "scalar", T: 3 /*ScalarType.INT64*/, L: 0 /*LongType.BIGINT*/ }
+            { no: 11, name: "duration_secs", kind: "scalar", T: 3 /*ScalarType.INT64*/, L: 0 /*LongType.BIGINT*/ }
         ]);
     }
     create(value?: PartialMessage<BotRun>): BotRun {
@@ -383,7 +378,6 @@ class BotRun$Type extends MessageType<BotRun> {
         message.endedAt = 0n;
         message.createdAt = 0n;
         message.recordingPath = "";
-        message.recordingStorage = "";
         message.durationSecs = 0n;
         if (value !== undefined)
             reflectionMergePartial<BotRun>(this, message, value);
@@ -424,10 +418,7 @@ class BotRun$Type extends MessageType<BotRun> {
                 case /* string recording_path */ 10:
                     message.recordingPath = reader.string();
                     break;
-                case /* string recording_storage */ 11:
-                    message.recordingStorage = reader.string();
-                    break;
-                case /* int64 duration_secs */ 12:
+                case /* int64 duration_secs */ 11:
                     message.durationSecs = reader.int64().toBigInt();
                     break;
                 default:
@@ -472,12 +463,9 @@ class BotRun$Type extends MessageType<BotRun> {
         /* string recording_path = 10; */
         if (message.recordingPath !== "")
             writer.tag(10, WireType.LengthDelimited).string(message.recordingPath);
-        /* string recording_storage = 11; */
-        if (message.recordingStorage !== "")
-            writer.tag(11, WireType.LengthDelimited).string(message.recordingStorage);
-        /* int64 duration_secs = 12; */
+        /* int64 duration_secs = 11; */
         if (message.durationSecs !== 0n)
-            writer.tag(12, WireType.Varint).int64(message.durationSecs);
+            writer.tag(11, WireType.Varint).int64(message.durationSecs);
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);

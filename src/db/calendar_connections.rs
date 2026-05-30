@@ -5,7 +5,7 @@ use crate::db;
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct CalendarConnectionRow {
     pub id: String,
-    pub user_id: Option<String>,
+    pub user_id: String,
     pub provider: String,
     pub email: String,
     pub label: String,

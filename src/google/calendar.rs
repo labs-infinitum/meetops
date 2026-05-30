@@ -296,7 +296,7 @@ async fn upsert_meeting(
     .bind(end_at)
     .bind(attendees_json.as_deref())
     .bind(event.etag.as_deref())
-    .bind(connection.user_id.as_deref())
+    .bind(&connection.user_id)
     .bind(&connection.id)
     .bind(&event.id)
     .bind(now)

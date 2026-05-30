@@ -26,8 +26,7 @@ message BotRun {
   int64 ended_at = 8;
   int64 created_at = 9;
   string recording_path = 10;
-  string recording_storage = 11;
-  int64 duration_secs = 12;
+  int64 duration_secs = 11;
 }
 
 message ListBotRunsResponse {

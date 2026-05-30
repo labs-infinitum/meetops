@@ -50,7 +50,7 @@ pub async fn try_claim_run(
         )
         SELECT ?, ?, ?, NULL, ?, NULL, NULL, m.user_id, ?, ?
         FROM meetings m
-        WHERE m.id = ?
+        WHERE m.id = ? AND m.user_id IS NOT NULL
         "#,
     )
     .bind(meeting_id)
@@ -203,14 +203,12 @@ pub async fn finalize_run(
     status: BotRunStatus,
     error: Option<&str>,
     recording_path: Option<&str>,
-    recording_storage: Option<&str>,
 ) -> sqlx::Result<()> {
     let now = now_unix();
     sqlx::query(
         r#"
         UPDATE bot_runs
-        SET status = ?, error = ?, ended_at = ?, updated_at = ?,
-            recording_path = ?, recording_storage = COALESCE(?, recording_storage)
+        SET status = ?, error = ?, ended_at = ?, updated_at = ?, recording_path = ?
         WHERE id = ?
         "#,
     )
@@ -219,7 +217,6 @@ pub async fn finalize_run(
     .bind(now)
     .bind(now)
     .bind(recording_path)
-    .bind(recording_storage)
     .bind(run_id)
     .execute(pool)
     .await?;
@@ -243,8 +240,7 @@ pub async fn list_recent_for_user(
             br.started_at,
             br.ended_at,
             br.created_at,
-            br.recording_path,
-            br.recording_storage
+            br.recording_path
         FROM bot_runs br
         JOIN meetings m ON m.id = br.meeting_id
         WHERE br.user_id = ?
@@ -304,8 +300,7 @@ pub async fn get_for_user(
             br.started_at,
             br.ended_at,
             br.created_at,
-            br.recording_path,
-            br.recording_storage
+            br.recording_path
         FROM bot_runs br
         JOIN meetings m ON m.id = br.meeting_id
         WHERE br.id = ?

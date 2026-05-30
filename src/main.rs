@@ -28,10 +28,18 @@ async fn main() -> anyhow::Result<()> {
     let config = Arc::new(Config::load()?);
     logging::init(&config.logging);
     if let Some(command) = CliCommand::parse(std::env::args().skip(1))? {
-        let recordings = RecordingsStore::connect(&config.storage).await?;
         return match command {
+            CliCommand::DbReset => {
+                db::reset(&config).await?;
+                println!(
+                    "Database reset at {}",
+                    config.database_path().display()
+                );
+                Ok(())
+            }
             CliCommand::Join { meet_url } => bot::runner::join(meet_url, &config).await,
             CliCommand::Record { meet_url } => {
+                let recordings = RecordingsStore::connect(&config.storage).await?;
                 bot::runner::record(meet_url, &config, &recordings).await
             }
             CliCommand::Profile => bot::runner::open_profile(&config).await,
@@ -114,6 +122,7 @@ enum CliCommand {
     Record { meet_url: String },
     Profile,
     ProfileStatus,
+    DbReset,
 }
 
 impl CliCommand {
@@ -153,9 +162,21 @@ impl CliCommand {
                 }
                 Ok(Some(Self::ProfileStatus))
             }
+            "db" => {
+                let Some(subcommand) = args.next() else {
+                    anyhow::bail!("usage: cargo run -- db reset");
+                };
+                if subcommand != "reset" {
+                    anyhow::bail!("usage: cargo run -- db reset");
+                }
+                if args.next().is_some() {
+                    anyhow::bail!("usage: cargo run -- db reset");
+                }
+                Ok(Some(Self::DbReset))
+            }
             "-h" | "--help" => {
                 println!(
-                    "usage:\n  google-meeting-recorder\n  google-meeting-recorder profile\n  google-meeting-recorder profile-status\n  google-meeting-recorder join <meet_url>\n  google-meeting-recorder record <meet_url>"
+                    "usage:\n  google-meeting-recorder\n  google-meeting-recorder profile\n  google-meeting-recorder profile-status\n  google-meeting-recorder join <meet_url>\n  google-meeting-recorder record <meet_url>\n  google-meeting-recorder db reset"
                 );
                 std::process::exit(0);
             }

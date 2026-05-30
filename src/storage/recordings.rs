@@ -7,8 +7,6 @@ use aws_sdk_s3::Client as S3Client;
 
 use crate::config::StorageConfig;
 
-pub const RECORDING_STORAGE_S3: &str = "s3";
-
 #[derive(Clone)]
 pub struct RecordingsStore {
     config: StorageConfig,

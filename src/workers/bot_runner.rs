@@ -10,7 +10,7 @@ use crate::{
     config::Config,
     db::{bot_runs, BotRunStatus},
     meet_url::MeetUrl,
-    storage::{RecordingsStore, RECORDING_STORAGE_S3},
+    storage::RecordingsStore,
 };
 
 pub async fn run_claimed(
@@ -31,7 +31,6 @@ pub async fn run_claimed(
                 run_id,
                 BotRunStatus::Failed,
                 Some("scheduler semaphore closed"),
-                None,
                 None,
             )
             .await;
@@ -95,7 +94,6 @@ pub async fn run_with_permit(
                         BotRunStatus::Completed,
                         None,
                         Some(stored.as_str()),
-                        Some(RECORDING_STORAGE_S3),
                     )
                     .await;
                 }
@@ -107,7 +105,6 @@ pub async fn run_with_permit(
                         BotRunStatus::Failed,
                         Some(&message),
                         None,
-                        None,
                     )
                     .await;
                 }
@@ -115,7 +112,7 @@ pub async fn run_with_permit(
         }
         Err(error) => {
             let message = error.to_string();
-            finalize_run_logged(&pool, run_id, BotRunStatus::Failed, Some(&message), None, None)
+            finalize_run_logged(&pool, run_id, BotRunStatus::Failed, Some(&message), None)
                 .await;
         }
     }
@@ -171,7 +168,6 @@ async fn finalize_run_logged(
     status: BotRunStatus,
     error: Option<&str>,
     recording_path: Option<&str>,
-    recording_storage: Option<&str>,
 ) {
     if let Err(err) = bot_runs::finalize_run(
         pool,
@@ -179,7 +175,6 @@ async fn finalize_run_logged(
         status,
         error,
         recording_path,
-        recording_storage,
     )
     .await
     {

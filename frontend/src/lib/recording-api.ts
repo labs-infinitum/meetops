@@ -32,7 +32,6 @@ function mapRun(row: ProtoBotRun): BotRun {
     endedAt: row.endedAt ? Number(row.endedAt) : undefined,
     createdAt: Number(row.createdAt),
     recordingPath: row.recordingPath || undefined,
-    recordingStorage: row.recordingStorage || undefined,
     durationSecs: row.durationSecs ? Number(row.durationSecs) : undefined,
   }
 }
@@ -89,7 +88,6 @@ function unwrapStartAdHoc(response: StartAdHocRecordingResponse): BotRun {
       endedAt: BigInt(0),
       createdAt: BigInt(0),
       recordingPath: "",
-      recordingStorage: "",
       durationSecs: BigInt(0),
     })
   }

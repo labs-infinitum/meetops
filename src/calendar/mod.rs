@@ -148,7 +148,7 @@ impl CalendarService {
             &self.db,
             &self.config,
             OAuthStatePayload {
-                user_id: Some(user_id),
+                user_id,
                 provider: provider.to_owned(),
                 label: label.map(str::to_owned),
                 color: color.map(str::to_owned),
@@ -194,17 +194,15 @@ impl CalendarService {
     ) -> Result<CalendarConnectionRow, CalendarConnectError> {
         match oauth::finish_callback(&self.db, &self.http, &self.config, code, state).await {
             Ok(connection) => {
-                if connection.user_id.is_some() && !connection.email.is_empty() {
-                    if let Err(error) =
-                        calendar::sync_connection(&self.db, &self.http, &self.config, &connection)
-                            .await
-                    {
-                        tracing::warn!(
-                            connection_id = %connection.id,
-                            %error,
-                            "initial calendar sync failed after OAuth"
-                        );
-                    }
+                if let Err(error) =
+                    calendar::sync_connection(&self.db, &self.http, &self.config, &connection)
+                        .await
+                {
+                    tracing::warn!(
+                        connection_id = %connection.id,
+                        %error,
+                        "initial calendar sync failed after OAuth"
+                    );
                 }
                 Ok(connection)
             }

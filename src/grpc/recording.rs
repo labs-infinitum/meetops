@@ -132,7 +132,6 @@ fn to_proto_run(run: &crate::db::models::BotRunListItem) -> BotRun {
         ended_at: run.ended_at.unwrap_or(0),
         created_at: run.created_at,
         recording_path: run.recording_path.clone().unwrap_or_default(),
-        recording_storage: run.recording_storage.clone(),
         duration_secs: duration_secs(run),
     }
 }
