@@ -2,6 +2,7 @@ use sqlx::SqlitePool;
 
 use crate::db;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct CalendarConnectionRow {
     pub id: String,
@@ -33,7 +34,6 @@ pub struct CalendarConnectionListItem {
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct ConnectionOwner {
-    pub user_id: String,
     pub owner_name: String,
 }
 
@@ -111,7 +111,7 @@ pub async fn find_owner_by_provider_email(
 ) -> sqlx::Result<Option<ConnectionOwner>> {
     sqlx::query_as(
         r#"
-        SELECT cc.user_id, u.name AS owner_name
+        SELECT u.name AS owner_name
         FROM calendar_connections cc
         JOIN users u ON u.id = cc.user_id
         WHERE cc.provider = ? AND cc.email = ? COLLATE NOCASE

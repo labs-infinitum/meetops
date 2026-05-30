@@ -91,7 +91,6 @@ async fn auth_google_callback(
             if matches!(
                 error,
                 crate::calendar::CalendarConnectError::AlreadyConnectedByOther { .. }
-                    | crate::calendar::CalendarConnectError::AlreadyConnectedByYou { .. }
             ) {
                 Ok(Redirect::temporary(&oauth_redirect_url(
                     &state.config,

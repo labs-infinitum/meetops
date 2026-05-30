@@ -9,8 +9,6 @@ pub struct UserRow {
     pub email: String,
     pub name: String,
     pub password_hash: String,
-    pub created_at: i64,
-    pub updated_at: i64,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -18,8 +16,6 @@ pub struct SessionRow {
     pub token: String,
     pub user_id: String,
     pub expires_at: i64,
-    pub created_at: i64,
-    pub last_used_at: i64,
 }
 
 pub async fn create_user(
@@ -53,24 +49,30 @@ pub async fn create_user(
 }
 
 pub async fn get_user_by_id(pool: &SqlitePool, id: &str) -> sqlx::Result<Option<UserRow>> {
-    sqlx::query_as("SELECT * FROM users WHERE id = ?")
-        .bind(id)
-        .fetch_optional(pool)
-        .await
+    sqlx::query_as(
+        "SELECT id, username, email, name, password_hash FROM users WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
 }
 
 pub async fn get_user_by_username(pool: &SqlitePool, username: &str) -> sqlx::Result<Option<UserRow>> {
-    sqlx::query_as("SELECT * FROM users WHERE username = ? COLLATE NOCASE")
-        .bind(username)
-        .fetch_optional(pool)
-        .await
+    sqlx::query_as(
+        "SELECT id, username, email, name, password_hash FROM users WHERE username = ? COLLATE NOCASE",
+    )
+    .bind(username)
+    .fetch_optional(pool)
+    .await
 }
 
 pub async fn get_user_by_email(pool: &SqlitePool, email: &str) -> sqlx::Result<Option<UserRow>> {
-    sqlx::query_as("SELECT * FROM users WHERE email = ? COLLATE NOCASE")
-        .bind(email)
-        .fetch_optional(pool)
-        .await
+    sqlx::query_as(
+        "SELECT id, username, email, name, password_hash FROM users WHERE email = ? COLLATE NOCASE",
+    )
+    .bind(email)
+    .fetch_optional(pool)
+    .await
 }
 
 pub async fn create_session(
@@ -102,7 +104,7 @@ pub async fn create_session(
 pub async fn get_session(pool: &SqlitePool, token: &str) -> sqlx::Result<Option<SessionRow>> {
     sqlx::query_as(
         r#"
-        SELECT token, user_id, expires_at, created_at, last_used_at
+        SELECT token, user_id, expires_at
         FROM sessions
         WHERE token = ? AND expires_at > ?
         "#,

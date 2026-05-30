@@ -51,6 +51,7 @@ async fn main() -> anyhow::Result<()> {
 
     let pool = db::connect(&config).await?;
     db::migrate(&pool).await?;
+    workers::session_cleanup::spawn(pool.clone());
     let http = reqwest::Client::new();
     let recordings = Arc::new(RecordingsStore::connect(&config.storage).await?);
     tracing::info!(bucket = recordings.bucket(), "Recording storage: S3");

@@ -15,14 +15,10 @@ use crate::{
 pub enum CalendarConnectError {
     #[error("session not found or expired")]
     SessionNotFound,
-    #[error("invalid input: {0}")]
-    InvalidInput(String),
     #[error("provider not supported: {0}")]
     UnsupportedProvider(String),
     #[error("calendar connection not found")]
     NotFound,
-    #[error("already connected by you")]
-    AlreadyConnectedByYou { email: String, provider: String },
     #[error("already connected by another user")]
     AlreadyConnectedByOther {
         email: String,
@@ -56,10 +52,8 @@ impl CalendarConnectError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::SessionNotFound => "session_not_found",
-            Self::InvalidInput(_) => "invalid_input",
             Self::UnsupportedProvider(_) => "provider_unavailable",
             Self::NotFound => "not_found",
-            Self::AlreadyConnectedByYou { .. } => "already_connected_by_you",
             Self::AlreadyConnectedByOther { .. } => "already_connected_by_other_user",
             Self::GoogleAuth(error) => match error {
                 oauth::GoogleAuthError::MissingConfig => "provider_unavailable",
@@ -75,8 +69,7 @@ impl CalendarConnectError {
 
     pub fn email(&self) -> Option<&str> {
         match self {
-            Self::AlreadyConnectedByYou { email, .. }
-            | Self::AlreadyConnectedByOther { email, .. } => Some(email.as_str()),
+            Self::AlreadyConnectedByOther { email, .. } => Some(email.as_str()),
             Self::GoogleAuth(oauth::GoogleAuthError::AccountLinkedToOtherUser { email }) => {
                 Some(email.as_str())
             }
@@ -86,8 +79,7 @@ impl CalendarConnectError {
 
     pub fn provider(&self) -> Option<&str> {
         match self {
-            Self::AlreadyConnectedByYou { provider, .. }
-            | Self::AlreadyConnectedByOther { provider, .. } => Some(provider.as_str()),
+            Self::AlreadyConnectedByOther { provider, .. } => Some(provider.as_str()),
             _ => Some("google"),
         }
     }
