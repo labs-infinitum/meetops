@@ -196,7 +196,7 @@ impl Default for Config {
                 log_line: true,
             },
             storage: StorageConfig {
-                data_dir: PathBuf::from("./data"),
+                data_dir: PathBuf::from("../../data"),
                 recordings: RecordingsStorageConfig {
                     delete_local_after_upload: true,
                     s3: S3StorageConfig {
@@ -217,7 +217,7 @@ impl Default for Config {
             bot: BotConfig {
                 display_name: "AI Notetaker".to_owned(),
                 chromium_path: PathBuf::from("/usr/bin/google-chrome"),
-                chrome_user_data_dir: PathBuf::from("./data/chrome-profile"),
+                chrome_user_data_dir: PathBuf::from("../../data/chrome-profile"),
                 x11_display: None,
                 x11_auto_virtual: true,
                 x11_start_openbox: true,
@@ -241,6 +241,7 @@ impl Config {
     pub fn load() -> Result<Self, figment::Error> {
         let mut config: Self = Figment::from(Serialized::defaults(Self::default()))
             .merge(Toml::file("config.toml"))
+            .merge(Toml::file("../../config.toml"))
             .merge(Env::prefixed("GMR_").split("__"))
             .extract()?;
         config.apply_env_overrides();

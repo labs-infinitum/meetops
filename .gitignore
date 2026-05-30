@@ -1,7 +1,23 @@
-/target
-/data
-/config.toml
-.env
+# Turborepo
+.turbo
+node_modules
 
-# Scratch tab-share window captures during local debugging (see scripts/focus-chrome-screenshot.sh)
+# Backend (Rust)
+/apps/backend/target
+/apps/backend/config.toml
+/apps/backend/.env
+
+# Runtime data (SQLite, Chrome profile, local recording staging)
+/data
+
+# Scratch tab-share window captures during local debugging
 /chrome-window-*.png
+
+# Frontend (Node)
+/apps/frontend/dist
+
+# Legacy paths from pre-turbo layout
+/backend
+/frontend
+/proto
+/target

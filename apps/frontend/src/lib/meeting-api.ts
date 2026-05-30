@@ -78,7 +78,7 @@ function unwrapDashboard(response: GetDashboardSummaryResponse): {
   if (response.result.oneofKind === "success") {
     const summary: DashboardSummary = response.result.success
     return {
-      upcoming7d: summary.upcoming7d,
+      upcoming7d: summary.upcoming7D,
       connectedCalendars: summary.connectedCalendars,
       completedRecordings: summary.completedRecordings,
       upcomingMeetings: summary.upcomingMeetings.map(mapMeeting),

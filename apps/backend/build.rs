@@ -7,12 +7,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_client(false)
         .compile_protos(
             &[
-                "proto/notetaker/v1/auth.proto",
-                "proto/notetaker/v1/calendar.proto",
-                "proto/notetaker/v1/meeting.proto",
-                "proto/notetaker/v1/recording.proto",
+                "../../packages/proto/notetaker/v1/auth.proto",
+                "../../packages/proto/notetaker/v1/calendar.proto",
+                "../../packages/proto/notetaker/v1/meeting.proto",
+                "../../packages/proto/notetaker/v1/recording.proto",
             ],
-            &["proto"],
+            &["../../packages/proto"],
         )?;
     Ok(())
 }

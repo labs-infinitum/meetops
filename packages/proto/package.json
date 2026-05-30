@@ -1,0 +1,6 @@
+{
+  "name": "@ai-meeting-notetaker/proto",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Shared protobuf definitions for the notetaker API"
+}

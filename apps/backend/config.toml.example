@@ -18,7 +18,7 @@ log_file = true
 log_line = true
 
 [storage]
-data_dir = "./data"
+data_dir = "../../data"
 
 [storage.recordings]
 delete_local_after_upload = true
@@ -46,14 +46,14 @@ chromium_path = "/usr/bin/google-chrome-stable"
 # Relative paths are resolved from the process cwd; prefer an absolute path in production.
 # Linux: Chrome uses --password-store=basic so Google sign-in survives Xvfb/desktop logout.
 # Re-run `cargo run -- profile` once after upgrading if Meet asks you to sign in again.
-chrome_user_data_dir = "./data/chrome-profile"
+chrome_user_data_dir = "../../data/chrome-profile"
 # Linux X11 (optional). Unset = auto-discover a working display or start Xvfb on :10+.
 # Pin a display: x11_display = ":1"
 # Disable auto Xvfb: x11_auto_virtual = false
 # Disable auto openbox (xdotool): x11_start_openbox = false
 # x11_display = ":1"
 # Linux: pale-blue chroma heuristic on PNG first (`allow_button_detect`); grayscale template refines pose if blob misses.
-allow_button_template_png = "./allow-button-template.png"
+allow_button_template_png = "../../allow-button-template.png"
 # After getDisplayMedia: 3s wait; grab Chrome PNG, blob + optional template correlates Allow, xdotool --window clicks.
 # Uses the spawned browser's OS pid (`xdotool search --pid`) so other Chrome windows on the same DISPLAY are ignored when possible.
 # Requires: xdotool + one of ImageMagick (magick/import), maim, or ffmpeg with x11grab.

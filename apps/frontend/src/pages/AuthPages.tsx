@@ -86,7 +86,7 @@ export function LoginPage() {
 
         <p className="text-muted-foreground rounded-lg border border-dashed p-3 text-center text-xs">
           Connects to the Rust backend via gRPC (port 50051). Start the server with{" "}
-          <code className="font-mono">cargo run</code>.
+          <code className="font-mono">cd apps/backend && cargo run</code>.
         </p>
       </div>
     </AuthLayout>

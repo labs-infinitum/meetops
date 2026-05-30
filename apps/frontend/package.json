@@ -1,5 +1,5 @@
 {
-  "name": "frontend",
+  "name": "@ai-meeting-notetaker/frontend",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "proto:generate": "protoc --plugin=protoc-gen-ts=./node_modules/.bin/protoc-gen-ts --ts_out ./src/gen --ts_opt generate_dependencies,ts_nocheck --proto_path ../proto ../proto/notetaker/v1/auth.proto ../proto/notetaker/v1/calendar.proto ../proto/notetaker/v1/meeting.proto ../proto/notetaker/v1/recording.proto"
+    "proto:generate": "protoc --plugin=protoc-gen-ts=./node_modules/.bin/protoc-gen-ts --ts_out ./src/gen --ts_opt generate_dependencies,ts_nocheck --proto_path ../../packages/proto ../../packages/proto/notetaker/v1/auth.proto ../../packages/proto/notetaker/v1/calendar.proto ../../packages/proto/notetaker/v1/meeting.proto ../../packages/proto/notetaker/v1/recording.proto"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",

@@ -1,4 +1,4 @@
--- Greenfield schema (delete data/meetings.db when upgrading from older migration chains).
+-- Greenfield schema (run `cd apps/backend && cargo run -- db reset` when upgrading from older migration chains).
 
 CREATE TABLE users (
     id TEXT PRIMARY KEY NOT NULL,
