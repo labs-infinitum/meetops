@@ -226,54 +226,6 @@ pub async fn finalize_run(
     Ok(())
 }
 
-pub async fn list_recent(pool: &SqlitePool, limit: i64) -> sqlx::Result<Vec<BotRunListItem>> {
-    sqlx::query_as::<_, BotRunListItem>(
-        r#"
-        SELECT
-            br.id,
-            br.meeting_id,
-            m.title,
-            br.status,
-            br.error,
-            br.meeting_start_at,
-            br.started_at,
-            br.ended_at,
-            br.created_at,
-            br.recording_path,
-            br.recording_storage
-        FROM bot_runs br
-        JOIN meetings m ON m.id = br.meeting_id
-        ORDER BY br.created_at DESC
-        LIMIT ?
-        "#,
-    )
-    .bind(limit)
-    .fetch_all(pool)
-    .await
-}
-
-pub async fn set_meeting_auto_join(
-    pool: &SqlitePool,
-    meeting_id: &str,
-    auto_join: bool,
-) -> sqlx::Result<u64> {
-    let now = now_unix();
-    let flag = if auto_join { 1 } else { 0 };
-    let result = sqlx::query(
-        r#"
-        UPDATE meetings
-        SET auto_join = ?, updated_at = ?
-        WHERE id = ?
-        "#,
-    )
-    .bind(flag)
-    .bind(now)
-    .bind(meeting_id)
-    .execute(pool)
-    .await?;
-    Ok(result.rows_affected())
-}
-
 pub async fn list_recent_for_user(
     pool: &SqlitePool,
     user_id: &str,

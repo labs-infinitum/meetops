@@ -1,5 +1,6 @@
 [server]
 host = "127.0.0.1"
+# OAuth callback only (React UI is served separately on :5173)
 port = 8080
 
 [grpc]
@@ -20,7 +21,6 @@ log_line = true
 data_dir = "./data"
 
 [storage.recordings]
-backend = "s3"
 delete_local_after_upload = true
 
 [storage.recordings.s3]

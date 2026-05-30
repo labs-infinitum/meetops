@@ -101,7 +101,7 @@ async fn main() -> anyhow::Result<()> {
     };
     let app = web::router(state);
 
-    tracing::info!(%http_addr, "HTTP server listening");
+    tracing::info!(%http_addr, "HTTP server listening (health + OAuth callback)");
     axum::serve(http_listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await?;

@@ -135,15 +135,6 @@ pub async fn list_all_for_sync(pool: &SqlitePool) -> sqlx::Result<Vec<CalendarCo
     .await
 }
 
-pub async fn any_google_connected(pool: &SqlitePool) -> sqlx::Result<bool> {
-    let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM calendar_connections WHERE provider = 'google'",
-    )
-    .fetch_one(pool)
-    .await?;
-    Ok(count > 0)
-}
-
 pub async fn insert(
     pool: &SqlitePool,
     id: &str,

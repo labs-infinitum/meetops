@@ -36,7 +36,7 @@ tokio-stream = { version = "0.1", features = ["net"] }
 tonic = { version = "0.12", features = ["transport"] }
 tonic-web = "0.12"
 tower = "0.5"
-tower-http = { version = "0.5", features = ["compression-full", "cors", "trace"] }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 urlencoding = "2"

@@ -36,7 +36,7 @@ pub enum GoogleAuthError {
     #[error("OAuth state did not match; restart the Google connection flow")]
     StateMismatch,
     #[error(
-        "Google token response did not include a refresh token; restart auth from /auth/google/start"
+        "Google token response did not include a refresh token; restart calendar connect from the app"
     )]
     MissingRefreshToken,
     #[error("Google account email is unavailable; grant email permission and try again")]
@@ -381,22 +381,6 @@ pub async fn valid_access_token_for_connection(
     Ok(AccessToken {
         value: access_token,
     })
-}
-
-pub async fn valid_access_token(
-    pool: &SqlitePool,
-    http: &Client,
-    config: &Config,
-) -> Result<AccessToken, GoogleAuthError> {
-    let connections = calendar_connections::list_all_for_sync(pool).await?;
-    let Some(first) = connections.into_iter().next() else {
-        return Err(GoogleAuthError::NotConnected);
-    };
-    valid_access_token_for_connection(pool, http, config, &first.id).await
-}
-
-pub async fn is_connected(pool: &SqlitePool) -> sqlx::Result<bool> {
-    calendar_connections::any_google_connected(pool).await
 }
 
 async fn verify_state(pool: &SqlitePool, state: &str) -> Result<OAuthStatePayload, GoogleAuthError> {
