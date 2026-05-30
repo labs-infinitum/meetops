@@ -2,21 +2,29 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react"
-import type { AuthSession, User } from "@/types"
-import { mockUser } from "@/lib/mock-data"
+import type { AuthSession } from "@/types"
+import {
+  apiGetSession,
+  apiLogin,
+  apiLogout,
+  apiSignUp,
+  authErrorMessage,
+} from "@/lib/auth-api"
 
 const STORAGE_KEY = "amn-auth-session"
 
 type AuthContextValue = {
   session: AuthSession | null
   isAuthenticated: boolean
+  isLoading: boolean
   login: (username: string, password: string) => Promise<{ ok: true } | { ok: false; error: string }>
   signup: (name: string, email: string, username: string, password: string) => Promise<{ ok: true } | { ok: false; error: string }>
-  logout: () => void
+  logout: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -41,72 +49,88 @@ function saveSession(session: AuthSession | null) {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(() => loadSession())
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function validateStoredSession() {
+      const stored = loadSession()
+      if (!stored?.token) {
+        if (!cancelled) setIsLoading(false)
+        return
+      }
+
+      try {
+        const validated = await apiGetSession(stored.token)
+        if (!cancelled) {
+          setSession(validated)
+          saveSession(validated)
+        }
+      } catch {
+        if (!cancelled) {
+          setSession(null)
+          saveSession(null)
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false)
+      }
+    }
+
+    validateStoredSession()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const login = useCallback(async (username: string, password: string) => {
-    await new Promise((r) => setTimeout(r, 600))
-
-    if (!username.trim() || !password.trim()) {
-      return { ok: false as const, error: "Username and password are required." }
+    try {
+      const next = await apiLogin(username, password)
+      setSession(next)
+      saveSession(next)
+      return { ok: true as const }
+    } catch (error) {
+      return { ok: false as const, error: authErrorMessage(error) }
     }
-
-    if (password.length < 6) {
-      return { ok: false as const, error: "Invalid credentials." }
-    }
-
-    const user: User = {
-      ...mockUser,
-      username: username.trim(),
-      name: username.trim() === "alex" ? mockUser.name : username.trim(),
-      email: username.trim() === "alex" ? mockUser.email : `${username.trim()}@example.com`,
-    }
-
-    const next: AuthSession = { user, token: "mock-token-" + Date.now() }
-    setSession(next)
-    saveSession(next)
-    return { ok: true as const }
   }, [])
 
   const signup = useCallback(
     async (name: string, email: string, username: string, password: string) => {
-      await new Promise((r) => setTimeout(r, 800))
-
-      if (!name.trim() || !email.trim() || !username.trim() || !password.trim()) {
-        return { ok: false as const, error: "All fields are required." }
+      try {
+        const next = await apiSignUp(name, email, username, password)
+        setSession(next)
+        saveSession(next)
+        return { ok: true as const }
+      } catch (error) {
+        return { ok: false as const, error: authErrorMessage(error) }
       }
-
-      if (password.length < 8) {
-        return { ok: false as const, error: "Password must be at least 8 characters." }
-      }
-
-      const user: User = {
-        id: "user-" + Date.now(),
-        name: name.trim(),
-        email: email.trim(),
-        username: username.trim(),
-      }
-
-      const next: AuthSession = { user, token: "mock-token-" + Date.now() }
-      setSession(next)
-      saveSession(next)
-      return { ok: true as const }
     },
     [],
   )
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    const token = session?.token
     setSession(null)
     saveSession(null)
-  }, [])
+    if (token) {
+      try {
+        await apiLogout(token)
+      } catch {
+        // Local session already cleared.
+      }
+    }
+  }, [session?.token])
 
   const value = useMemo(
     () => ({
       session,
       isAuthenticated: session !== null,
+      isLoading,
       login,
       signup,
       logout,
     }),
-    [session, login, signup, logout],
+    [session, isLoading, login, signup, logout],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

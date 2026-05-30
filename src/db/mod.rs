@@ -9,6 +9,7 @@ use crate::config::Config;
 
 pub mod bot_runs;
 pub mod models;
+pub mod users;
 
 pub use models::BotRunStatus;
 

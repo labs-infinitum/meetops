@@ -2,6 +2,20 @@
 host = "127.0.0.1"
 port = 8080
 
+[grpc]
+host = "127.0.0.1"
+port = 50051
+allow_origin = "http://localhost:5173"
+
+[auth]
+session_ttl_secs = 2592000
+
+[logging]
+# Used when RUST_LOG is unset. Env override: GMR_LOGGING__FILTER
+filter = "info,google_meeting_recorder=debug,tower_http=debug,tonic=info"
+log_file = true
+log_line = true
+
 [storage]
 data_dir = "./data"
 

@@ -2,6 +2,8 @@
 name = "google-meeting-recorder"
 version = "0.1.0"
 edition = "2024"
+build = "build.rs"
+default-run = "google-meeting-recorder"
 
 [[bin]]
 name = "find-chrome-tab-allow-click"
@@ -9,6 +11,7 @@ path = "src/bin/find_chrome_tab_allow_click.rs"
 
 [dependencies]
 anyhow = "1"
+argon2 = "0.5"
 axum = "0.7"
 base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
@@ -16,7 +19,10 @@ chromiumoxide = "0.9"
 dotenvy = "0.15"
 figment = { version = "0.10", features = ["env", "toml"] }
 futures = "0.3"
+http = "1"
+hyper = "1"
 image = { version = "0.25", default-features = false, features = ["png"] }
+prost = "0.13"
 rand = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
@@ -24,7 +30,16 @@ serde_json = "1"
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite", "migrate", "macros"] }
 thiserror = "1"
 tokio = { version = "1", features = ["fs", "macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
-tower-http = { version = "0.5", features = ["compression-full", "trace"] }
+tokio-stream = { version = "0.1", features = ["net"] }
+tonic = { version = "0.12", features = ["transport"] }
+tonic-web = "0.12"
+tower = "0.5"
+tower-http = { version = "0.5", features = ["compression-full", "cors", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 urlencoding = "2"
+uuid = { version = "1", features = ["v4"] }
+
+[build-dependencies]
+tonic-build = "0.12"
+protoc-bin-vendored = "3"

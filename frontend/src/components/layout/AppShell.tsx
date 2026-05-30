@@ -105,8 +105,7 @@ export function AppShell() {
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 onClick={() => {
-                  logout()
-                  navigate("/")
+                  void logout().then(() => navigate("/"))
                 }}
               >
                 <LogOut className="size-4" />
@@ -145,8 +144,7 @@ export function AppShell() {
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 onClick={() => {
-                  logout()
-                  navigate("/")
+                  void logout().then(() => navigate("/"))
                 }}
               >
                 <LogOut className="size-4" />

@@ -96,4 +96,5 @@ export type User = {
 export type AuthSession = {
   user: User
   token: string
+  expiresAt?: number
 }

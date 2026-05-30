@@ -1,0 +1,103 @@
+import type { AuthSession, User } from "@/types"
+import { getAuthClient } from "@/lib/grpc-client"
+import type { AuthResponse } from "@/gen/notetaker/v1/auth"
+
+export class AuthApiError extends Error {
+  code: string
+
+  constructor(code: string, message: string) {
+    super(message)
+    this.code = code
+    this.name = "AuthApiError"
+  }
+}
+
+function mapUser(user: {
+  id: string
+  name: string
+  email: string
+  username: string
+}): User {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    username: user.username,
+  }
+}
+
+function parseAuthResponse(response: AuthResponse): AuthSession {
+  if (response.result.oneofKind === "success") {
+    const success = response.result.success
+    if (!success.user) {
+      throw new AuthApiError("internal_error", "Missing user in auth response.")
+    }
+    return {
+      user: mapUser(success.user),
+      token: success.token,
+      expiresAt: Number(success.expiresAt),
+    }
+  }
+
+  if (response.result.oneofKind === "error") {
+    throw new AuthApiError(response.result.error.code, response.result.error.message)
+  }
+
+  throw new AuthApiError("internal_error", "Empty auth response.")
+}
+
+export async function apiSignUp(
+  name: string,
+  email: string,
+  username: string,
+  password: string,
+): Promise<AuthSession> {
+  const client = getAuthClient()
+  const { response } = await client.signUp({ name, email, username, password })
+  return parseAuthResponse(response)
+}
+
+export async function apiLogin(username: string, password: string): Promise<AuthSession> {
+  const client = getAuthClient()
+  const { response } = await client.login({ username, password })
+  return parseAuthResponse(response)
+}
+
+export async function apiLogout(token: string): Promise<void> {
+  const client = getAuthClient()
+  await client.logout({ token })
+}
+
+export async function apiGetSession(token: string): Promise<AuthSession> {
+  const client = getAuthClient()
+  const { response } = await client.getSession({ token })
+  return parseAuthResponse(response)
+}
+
+export function authErrorMessage(error: unknown): string {
+  if (error instanceof AuthApiError) {
+    switch (error.code) {
+      case "username_taken":
+        return "That username is already taken."
+      case "email_taken":
+        return "An account with this email already exists."
+      case "invalid_credentials":
+        return "Invalid username or password."
+      case "session_not_found":
+        return "Your session has expired. Please sign in again."
+      case "invalid_input":
+        return error.message
+      default:
+        return error.message || "Authentication failed."
+    }
+  }
+
+  if (error instanceof Error) {
+    if (error.message.includes("Failed to fetch") || error.message.includes("NetworkError")) {
+      return "Cannot reach the server. Is the backend running?"
+    }
+    return error.message
+  }
+
+  return "Authentication failed."
+}

@@ -1,13 +1,15 @@
 use std::{net::SocketAddr, sync::Arc};
 
 use tokio::net::TcpListener;
-use tracing_subscriber::{EnvFilter, fmt};
 
+mod auth;
 mod bot;
 mod config;
 mod db;
 mod error;
 mod google;
+mod grpc;
+mod logging;
 mod meet_url;
 mod web;
 mod workers;
@@ -18,9 +20,8 @@ use web::AppState;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     load_dev_env();
-    init_tracing();
-
     let config = Arc::new(Config::load()?);
+    logging::init(&config.logging);
     if let Some(command) = CliCommand::parse(std::env::args().skip(1))? {
         return match command {
             CliCommand::Join { meet_url } => bot::runner::join(meet_url, &config).await,
@@ -45,17 +46,41 @@ async fn main() -> anyhow::Result<()> {
         Arc::clone(&chrome_sessions),
     );
 
-    let addr = SocketAddr::from((config.server.host, config.server.port));
+    let auth_service = auth::AuthService::new(pool.clone(), Arc::new(config.auth.clone()));
+
+    let http_addr = SocketAddr::from((config.server.host, config.server.port));
+    let grpc_addr = SocketAddr::from((config.grpc.host, config.grpc.port));
+
+    let grpc_listener = TcpListener::bind(grpc_addr).await.map_err(|error| {
+        anyhow::anyhow!(
+            "gRPC port {grpc_addr} is already in use — stop the other server first (e.g. `fuser -k {}/tcp`): {error}",
+            config.grpc.port,
+        )
+    })?;
+    let http_listener = TcpListener::bind(http_addr).await.map_err(|error| {
+        anyhow::anyhow!(
+            "HTTP port {http_addr} is already in use — stop the other server first (e.g. `fuser -k {}/tcp`): {error}",
+            config.server.port,
+        )
+    })?;
+
+    let grpc_config = Arc::new(config.grpc.clone());
+    let grpc_auth = auth_service.clone();
+    tokio::spawn(async move {
+        if let Err(error) = grpc::serve(grpc_listener, grpc_config, grpc_auth).await {
+            tracing::error!(%error, "gRPC server exited with error");
+        }
+    });
+
     let state = AppState {
         config,
         db: pool,
         http,
     };
     let app = web::router(state);
-    let listener = TcpListener::bind(addr).await?;
 
-    tracing::info!(%addr, "server listening");
-    axum::serve(listener, app)
+    tracing::info!(%http_addr, "HTTP server listening");
+    axum::serve(http_listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 
@@ -185,23 +210,6 @@ mod tests {
 
 fn load_dev_env() {
     let _ = dotenvy::dotenv();
-}
-
-fn init_tracing() {
-    let filter = EnvFilter::new(log_filter());
-
-    fmt().with_env_filter(filter).init();
-}
-
-fn log_filter() -> String {
-    let filter = std::env::var("RUST_LOG")
-        .unwrap_or_else(|_| "info,google_meeting_recorder=debug,tower_http=info".to_owned());
-
-    if filter.contains("chromiumoxide::handler") {
-        filter
-    } else {
-        format!("{filter},chromiumoxide::handler=error")
-    }
 }
 
 async fn shutdown_signal() {

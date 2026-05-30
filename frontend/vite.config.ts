@@ -11,4 +11,12 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  server: {
+    proxy: {
+      "/notetaker.v1.AuthService": {
+        target: "http://127.0.0.1:50051",
+        changeOrigin: true,
+      },
+    },
+  },
 })

@@ -9,6 +9,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
     pub server: ServerConfig,
+    pub grpc: GrpcConfig,
+    pub auth: AuthConfig,
+    pub logging: LoggingConfig,
     pub storage: StorageConfig,
     pub google: GoogleConfig,
     pub bot: BotConfig,
@@ -19,6 +22,37 @@ pub struct Config {
 pub struct ServerConfig {
     pub host: IpAddr,
     pub port: u16,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GrpcConfig {
+    pub host: IpAddr,
+    pub port: u16,
+    /// CORS allow-origin for grpc-web (browser frontend).
+    pub allow_origin: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AuthConfig {
+    /// Session lifetime in seconds (default 30 days).
+    pub session_ttl_secs: u64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct LoggingConfig {
+    /// tracing-subscriber filter (used when `RUST_LOG` is unset). Env: `GMR_LOGGING__FILTER`.
+    #[serde(default = "default_log_filter")]
+    pub filter: String,
+    /// Include source file paths in log output.
+    #[serde(default)]
+    pub log_file: bool,
+    /// Include source line numbers in log output.
+    #[serde(default)]
+    pub log_line: bool,
+}
+
+fn default_log_filter() -> String {
+    "info,google_meeting_recorder=debug,tower_http=debug,tonic=info".to_owned()
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -76,6 +110,19 @@ impl Default for Config {
             server: ServerConfig {
                 host: "127.0.0.1".parse().expect("static IP address is valid"),
                 port: 8080,
+            },
+            grpc: GrpcConfig {
+                host: "127.0.0.1".parse().expect("static IP address is valid"),
+                port: 50051,
+                allow_origin: "http://localhost:5173".to_owned(),
+            },
+            auth: AuthConfig {
+                session_ttl_secs: 60 * 60 * 24 * 30,
+            },
+            logging: LoggingConfig {
+                filter: default_log_filter(),
+                log_file: true,
+                log_line: true,
             },
             storage: StorageConfig {
                 data_dir: PathBuf::from("./data"),

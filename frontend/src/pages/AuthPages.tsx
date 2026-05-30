@@ -85,7 +85,8 @@ export function LoginPage() {
         </p>
 
         <p className="text-muted-foreground rounded-lg border border-dashed p-3 text-center text-xs">
-          Demo: use any username with a password of 6+ characters
+          Connects to the Rust backend via gRPC (port 50051). Start the server with{" "}
+          <code className="font-mono">cargo run</code>.
         </p>
       </div>
     </AuthLayout>
