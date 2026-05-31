@@ -78,9 +78,27 @@ export function parseTimelinePayload(
     }
     case "screen_share_started": {
       const source = readString(parsed, "source")
+      const presentationId = readString(parsed, "presentationId")
       const presenterName = readString(parsed, "presenterName")
-      if (!source || !presenterName) return undefined
-      const payload: ScreenShareStartedPayload = { source, presenterName }
+      if (!source || !presentationId || !presenterName) return undefined
+      const presenterParticipantId = parsed.presenterParticipantId
+      const payload: ScreenShareStartedPayload = {
+        source,
+        presentationId,
+        presenterParticipantId:
+          presenterParticipantId === null
+            ? null
+            : readString(parsed, "presenterParticipantId") ?? null,
+        presenterName,
+      }
+      const presenterMatch = readString(parsed, "presenterMatch")
+      if (presenterMatch) payload.presenterMatch = presenterMatch
+      const candidateIds = parsed.presenterCandidateIds
+      if (Array.isArray(candidateIds)) {
+        payload.presenterCandidateIds = candidateIds.filter(
+          (id): id is string => typeof id === "string",
+        )
+      }
       const scrollTarget = parsed.scrollTarget
       if (scrollTarget === null) {
         payload.scrollTarget = null
@@ -92,9 +110,27 @@ export function parseTimelinePayload(
     }
     case "screen_share_stopped": {
       const source = readString(parsed, "source")
+      const presentationId = readString(parsed, "presentationId")
       const presenterName = readString(parsed, "presenterName")
-      if (!source || !presenterName) return undefined
-      const payload: ScreenShareStoppedPayload = { source, presenterName }
+      if (!source || !presentationId || !presenterName) return undefined
+      const presenterParticipantId = parsed.presenterParticipantId
+      const payload: ScreenShareStoppedPayload = {
+        source,
+        presentationId,
+        presenterParticipantId:
+          presenterParticipantId === null
+            ? null
+            : readString(parsed, "presenterParticipantId") ?? null,
+        presenterName,
+      }
+      const presenterMatch = readString(parsed, "presenterMatch")
+      if (presenterMatch) payload.presenterMatch = presenterMatch
+      const candidateIds = parsed.presenterCandidateIds
+      if (Array.isArray(candidateIds)) {
+        payload.presenterCandidateIds = candidateIds.filter(
+          (id): id is string => typeof id === "string",
+        )
+      }
       return payload
     }
     case "active_speaker_changed": {

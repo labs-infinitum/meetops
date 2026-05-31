@@ -19,13 +19,21 @@ export type ParticipantLeftPayload = {
 
 export type ScreenShareStartedPayload = {
   source: string
+  presentationId: string
+  presenterParticipantId: string | null
   presenterName: string
+  presenterMatch?: string | null
+  presenterCandidateIds?: string[]
   scrollTarget?: string | null
 }
 
 export type ScreenShareStoppedPayload = {
   source: string
+  presentationId: string
+  presenterParticipantId: string | null
   presenterName: string
+  presenterMatch?: string | null
+  presenterCandidateIds?: string[]
 }
 
 export type ActiveSpeakerChangedPayload = {

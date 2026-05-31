@@ -29,6 +29,122 @@ async function() {
     return false;
   }
 
+  function gmrNormalizeName(name) {
+    return (name || '').trim().toLowerCase();
+  }
+
+  /** Meet ids look like `spaces/{space}/devices/{device}` — same space, different device rows. */
+  function gmrParticipantSpacePrefix(id) {
+    if (!id) {
+      return null;
+    }
+    const marker = '/devices/';
+    const idx = id.indexOf(marker);
+    return idx > 0 ? id.slice(0, idx) : null;
+  }
+
+  function gmrNormalizeAvatarUrl(row) {
+    const img = row.querySelector('img[src]');
+    if (!img || !img.src) {
+      return null;
+    }
+    try {
+      const url = new URL(img.src);
+      return `${url.origin}${url.pathname}`;
+    } catch {
+      return img.src.split('?')[0];
+    }
+  }
+
+  /**
+   * Map a presentation listitem to the in-call person row (disambiguates duplicate names).
+   * Order: unique name → same Meet space → avatar → nearest person row above in roster.
+   */
+  function gmrResolvePresenterParticipantId(presentation, people) {
+    const targetName = gmrNormalizeName(presentation.presenterName || presentation.name);
+    let candidates = people.filter((person) => gmrNormalizeName(person.name) === targetName);
+
+    const presSpace = gmrParticipantSpacePrefix(presentation.id);
+    if (presSpace && candidates.length > 1) {
+      const inSpace = candidates.filter(
+        (person) => gmrParticipantSpacePrefix(person.id) === presSpace
+      );
+      if (inSpace.length > 0) {
+        candidates = inSpace;
+      }
+    }
+
+    if (presentation.avatarUrl && candidates.length > 1) {
+      const byAvatar = candidates.filter((person) => person.avatarUrl === presentation.avatarUrl);
+      if (byAvatar.length > 0) {
+        candidates = byAvatar;
+      }
+    }
+
+    if (candidates.length > 1 && presentation.rowIndex != null) {
+      const above = candidates.filter((person) => person.rowIndex < presentation.rowIndex);
+      if (above.length > 0) {
+        candidates = [
+          above.reduce((nearest, person) =>
+            person.rowIndex > nearest.rowIndex ? person : nearest
+          )
+        ];
+      }
+    }
+
+    if (candidates.length === 1) {
+      return {
+        presenterParticipantId: candidates[0].id,
+        presenterMatch: 'linked'
+      };
+    }
+    if (candidates.length > 1) {
+      return {
+        presenterParticipantId: null,
+        presenterMatch: 'ambiguous',
+        presenterCandidateIds: candidates.map((person) => person.id)
+      };
+    }
+
+    if (presentation.avatarUrl && presSpace) {
+      const byAvatarSpace = people.filter(
+        (person) =>
+          person.avatarUrl === presentation.avatarUrl &&
+          gmrParticipantSpacePrefix(person.id) === presSpace
+      );
+      if (byAvatarSpace.length === 1) {
+        return {
+          presenterParticipantId: byAvatarSpace[0].id,
+          presenterMatch: 'avatar_space'
+        };
+      }
+    }
+
+    return { presenterParticipantId: null, presenterMatch: 'unresolved' };
+  }
+
+  function gmrScreenShareEventSubject(presentation) {
+    return {
+      id: presentation.presenterParticipantId || presentation.id,
+      name: presentation.presenterName || presentation.name
+    };
+  }
+
+  function gmrScreenSharePayload(presentation) {
+    const payload = {
+      source: presentation.source,
+      presentationId: presentation.id,
+      presenterParticipantId: presentation.presenterParticipantId || null,
+      presenterName: presentation.presenterName || presentation.name,
+      presenterMatch: presentation.presenterMatch || null,
+      scrollTarget: presentation.scrollTarget || null
+    };
+    if (presentation.presenterCandidateIds && presentation.presenterCandidateIds.length > 0) {
+      payload.presenterCandidateIds = presentation.presenterCandidateIds;
+    }
+    return payload;
+  }
+
   /** In-call roster rows (`[role="listitem"][data-participant-id]`); primed once after join via `prime_participant_roster.js`. */
   function gmrParseMeetRoster() {
     const rows = [...document.querySelectorAll('[role="listitem"][data-participant-id]')];
@@ -46,7 +162,8 @@ async function() {
     const getName = (row) => row.getAttribute('aria-label')?.trim() || '';
     const people = [];
     const presentations = [];
-    for (const row of rows) {
+    for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+      const row = rows[rowIndex];
       if (isSelfRow(row) || isNotInMeetingYet(row)) {
         continue;
       }
@@ -60,7 +177,9 @@ async function() {
         name,
         source: 'listitem',
         scrollTarget: row.getAttribute('data-scroll-target') || null,
-        ariaLabel: name
+        ariaLabel: name,
+        avatarUrl: gmrNormalizeAvatarUrl(row),
+        rowIndex
       };
       if (gmrIsPresentationRosterRow(row)) {
         presentations.push({ ...base, presenterName: name });
@@ -69,7 +188,12 @@ async function() {
       }
     }
     const dedupe = (items) => [...new Map(items.map((p) => [p.id, p])).values()];
-    return { people: dedupe(people), presentations: dedupe(presentations) };
+    const dedupedPeople = dedupe(people);
+    const dedupedPresentations = dedupe(presentations).map((presentation) => ({
+      ...presentation,
+      ...gmrResolvePresenterParticipantId(presentation, dedupedPeople)
+    }));
+    return { people: dedupedPeople, presentations: dedupedPresentations };
   }
 
   function gmrListMeetParticipants() {
@@ -105,19 +229,24 @@ async function() {
     const current = new Map(presentations.map((p) => [p.id, p]));
     for (const presentation of presentations) {
       if (!previousPresentations.has(presentation.id)) {
-        events.push(makeEvent('screen_share_started', presentation, {
-          source: presentation.source,
-          presenterName: presentation.presenterName || presentation.name,
-          scrollTarget: presentation.scrollTarget || null
-        }));
+        events.push(
+          makeEvent(
+            'screen_share_started',
+            gmrScreenShareEventSubject(presentation),
+            gmrScreenSharePayload(presentation)
+          )
+        );
       }
     }
     for (const [id, presentation] of previousPresentations.entries()) {
       if (!current.has(id)) {
-        events.push(makeEvent('screen_share_stopped', presentation, {
-          source: presentation.source,
-          presenterName: presentation.presenterName || presentation.name
-        }));
+        events.push(
+          makeEvent(
+            'screen_share_stopped',
+            gmrScreenShareEventSubject(presentation),
+            gmrScreenSharePayload(presentation)
+          )
+        );
       }
     }
     return { events, current };
@@ -201,6 +330,7 @@ async function() {
                 id: presentation.id,
                 name: presentation.name,
                 presenterName: presentation.presenterName || presentation.name,
+                presenterParticipantId: presentation.presenterParticipantId || null,
                 source: presentation.source
               })),
               activeSpeakerId
