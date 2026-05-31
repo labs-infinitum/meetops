@@ -13,7 +13,6 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { PageHeader } from "@/components/shared/PageHeader"
 import { StatCard } from "@/components/shared/StatCard"
-import { mockActionItems, mockNotes } from "@/lib/mock-data"
 import {
   apiGetDashboardSummary,
   meetingErrorMessage,
@@ -34,11 +33,10 @@ export function DashboardPage() {
     upcoming7d: 0,
     connectedCalendars: 0,
     completedRecordings: 0,
-    openTodos: mockActionItems.filter((t) => !t.completed).length,
+    openTodos: 0,
   })
 
   const [recentRuns, setRecentRuns] = useState<BotRun[]>([])
-  const latestNote = mockNotes[0]
 
   useEffect(() => {
     if (!session?.token) return
@@ -163,33 +161,6 @@ export function DashboardPage() {
           </CardContent>
         </Card>
       </div>
-
-      {latestNote && (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle className="text-base">Latest AI summary</CardTitle>
-              <CardDescription>{latestNote.meetingTitle}</CardDescription>
-            </div>
-            <Button variant="ghost" size="sm" asChild>
-              <Link to={`/app/notes/${latestNote.id}`}>
-                Read full note
-                <ChevronRight className="size-4" />
-              </Link>
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm leading-relaxed">{latestNote.tldr}</p>
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {latestNote.tags.map((tag) => (
-                <Badge key={tag} variant="outline" className="text-xs">
-                  {tag}
-                </Badge>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   )
 }

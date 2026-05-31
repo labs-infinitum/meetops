@@ -61,7 +61,7 @@ impl MeetingService {
     }
 
     pub async fn list_meetings(&self, token: &str) -> Result<Vec<MeetingRow>, MeetingError> {
-        let user_id = self.require_user_id(token).await?;
+        let user_id = self.auth.require_user_id(token).await?;
         db::meetings::list_for_user(&self.db, &user_id)
             .await
             .map_err(Into::into)
@@ -72,7 +72,7 @@ impl MeetingService {
         token: &str,
         meeting_id: &str,
     ) -> Result<MeetingRow, MeetingError> {
-        let user_id = self.require_user_id(token).await?;
+        let user_id = self.auth.require_user_id(token).await?;
         db::meetings::get_for_user(&self.db, &user_id, meeting_id)
             .await?
             .ok_or(MeetingError::NotFound)
@@ -84,7 +84,7 @@ impl MeetingService {
         meeting_id: &str,
         auto_record: bool,
     ) -> Result<bool, MeetingError> {
-        let user_id = self.require_user_id(token).await?;
+        let user_id = self.auth.require_user_id(token).await?;
         let updated =
             db::meetings::set_auto_join_for_user(&self.db, &user_id, meeting_id, auto_record)
                 .await?;
@@ -95,7 +95,7 @@ impl MeetingService {
     }
 
     pub async fn dashboard_summary(&self, token: &str) -> Result<DashboardSummary, MeetingError> {
-        let user_id = self.require_user_id(token).await?;
+        let user_id = self.auth.require_user_id(token).await?;
         let now = db::now_unix();
         let week_ahead = now + 7 * 24 * 60 * 60;
 
@@ -122,9 +122,6 @@ impl MeetingService {
         })
     }
 
-    async fn require_user_id(&self, token: &str) -> Result<String, MeetingError> {
-        Ok(self.auth.get_session(token).await?.user.id)
-    }
 }
 
 pub fn row_to_proto_fields(row: &MeetingRow) -> (Vec<String>, String, String) {

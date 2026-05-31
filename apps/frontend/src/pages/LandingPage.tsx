@@ -111,7 +111,6 @@ export function LandingPage() {
     <div className="min-h-svh">
       <MarketingNav />
 
-      {/* Hero */}
       <section className="relative overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-violet-500/10 via-transparent to-transparent" />
         <div className="absolute inset-0 bg-[linear-gradient(to_right,var(--border)_1px,transparent_1px),linear-gradient(to_bottom,var(--border)_1px,transparent_1px)] bg-[size:64px_64px] [mask-image:radial-gradient(ellipse_at_center,black_20%,transparent_75%)]" />
@@ -148,7 +147,6 @@ export function LandingPage() {
             </p>
           </div>
 
-          {/* Dashboard preview mockup */}
           <div className="relative mx-auto mt-16 max-w-4xl">
             <div className="from-violet-500/20 to-indigo-500/20 absolute -inset-4 rounded-2xl bg-gradient-to-r blur-2xl" />
             <Card className="relative overflow-hidden shadow-2xl">
@@ -181,7 +179,6 @@ export function LandingPage() {
         </div>
       </section>
 
-      {/* Features */}
       <section id="features" className="border-t py-24">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <div className="mx-auto max-w-2xl text-center">
@@ -208,7 +205,6 @@ export function LandingPage() {
         </div>
       </section>
 
-      {/* How it works */}
       <section id="how-it-works" className="bg-muted/30 border-t py-24">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <div className="mx-auto max-w-2xl text-center">
@@ -227,7 +223,6 @@ export function LandingPage() {
         </div>
       </section>
 
-      {/* Pricing */}
       <section id="pricing" className="border-t py-24">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <div className="mx-auto max-w-2xl text-center">
@@ -280,7 +275,6 @@ export function LandingPage() {
         </div>
       </section>
 
-      {/* CTA */}
       <section className="border-t py-24">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <Card className="overflow-hidden border-0 bg-zinc-950 text-white">

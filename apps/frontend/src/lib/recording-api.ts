@@ -1,6 +1,10 @@
-import type { BotRun, BotRunStatus, MeetingTimelineEvent } from "@/types"
+import type { BotRun, MeetingTimelineEvent } from "@/types"
+import { isBotRunStatus } from "@/types/constants"
 import { getRecordingClient } from "@/lib/grpc-client"
-import { withAuthGuard } from "@/lib/session-guard"
+import { parseTimelinePayloadJson } from "@/lib/timeline-payload"
+import { protoInt64, protoOptionalString } from "@/lib/proto-fields"
+import { formatGrpcApiError, GrpcApiError, unwrapGrpcOneof } from "@/lib/api-errors"
+import { withAuthGuard, SESSION_EXPIRED_MESSAGE } from "@/lib/session-guard"
 import type {
   BotRun as ProtoBotRun,
   GetBotRunResponse,
@@ -13,53 +17,39 @@ import type {
   StopRecordingResponse,
 } from "@/gen/notetaker/v1/recording"
 
-export class RecordingApiError extends Error {
-  code: string
-
+export class RecordingApiError extends GrpcApiError {
   constructor(code: string, message: string) {
-    super(message)
-    this.code = code
-    this.name = "RecordingApiError"
+    super(code, message, "RecordingApiError")
   }
 }
 
 function mapRun(row: ProtoBotRun): BotRun {
   return {
-    id: Number(row.id),
+    id: protoInt64(row.id)!,
     meetingId: row.meetingId,
     meetingTitle: row.meetingTitle,
-    status: row.status as BotRunStatus,
-    error: row.error || undefined,
-    meetingStartAt: Number(row.meetingStartAt),
-    startedAt: row.startedAt ? Number(row.startedAt) : undefined,
-    endedAt: row.endedAt ? Number(row.endedAt) : undefined,
-    createdAt: Number(row.createdAt),
-    recordingPath: row.recordingPath || undefined,
-    durationSecs: row.durationSecs ? Number(row.durationSecs) : undefined,
-  }
-}
-
-function parsePayload(payloadJson: string): Record<string, unknown> | undefined {
-  if (!payloadJson) return undefined
-  try {
-    const parsed = JSON.parse(payloadJson)
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : undefined
-  } catch {
-    return undefined
+    status: isBotRunStatus(row.status) ? row.status : "failed",
+    error: protoOptionalString(row.error),
+    meetingStartAt: protoInt64(row.meetingStartAt)!,
+    startedAt: protoInt64(row.startedAt, true),
+    endedAt: protoInt64(row.endedAt, true),
+    createdAt: protoInt64(row.createdAt)!,
+    recordingPath: protoOptionalString(row.recordingPath),
+    durationSecs: protoInt64(row.durationSecs, true),
   }
 }
 
 function mapTimelineEvent(row: ProtoMeetingTimelineEvent): MeetingTimelineEvent {
   return {
-    id: Number(row.id),
-    botRunId: Number(row.botRunId),
+    id: protoInt64(row.id)!,
+    botRunId: protoInt64(row.botRunId)!,
     eventType: row.eventType,
-    occurredAt: Number(row.occurredAt),
-    relativeMs: Number(row.relativeMs),
-    participantId: row.participantId || undefined,
-    participantName: row.participantName || undefined,
-    payload: parsePayload(row.payloadJson),
-    createdAt: Number(row.createdAt),
+    occurredAt: protoInt64(row.occurredAt)!,
+    relativeMs: protoInt64(row.relativeMs)!,
+    participantId: protoOptionalString(row.participantId),
+    participantName: protoOptionalString(row.participantName),
+    payload: parseTimelinePayloadJson(row.eventType, row.payloadJson),
+    createdAt: protoInt64(row.createdAt)!,
   }
 }
 
@@ -68,80 +58,76 @@ function parseError(error: RecordingError): RecordingApiError {
 }
 
 function unwrapList(response: ListBotRunsResponse): BotRun[] {
-  if (response.result.oneofKind === "success") {
-    return response.result.success.runs.map(mapRun)
-  }
-  if (response.result.oneofKind === "error") {
-    throw parseError(response.result.error)
-  }
-  throw new RecordingApiError("internal_error", "Empty recordings list response.")
+  return unwrapGrpcOneof(response.result, {
+    success: (s) => s.runs.map(mapRun),
+    error: parseError,
+    emptyMessage: "Empty recordings list response.",
+    EmptyError: RecordingApiError,
+  })
 }
 
 function unwrapGet(response: GetBotRunResponse): BotRun {
-  if (response.result.oneofKind === "success") {
-    return mapRun(response.result.success)
-  }
-  if (response.result.oneofKind === "error") {
-    throw parseError(response.result.error)
-  }
-  throw new RecordingApiError("internal_error", "Empty recording response.")
+  return unwrapGrpcOneof(response.result, {
+    success: mapRun,
+    error: parseError,
+    emptyMessage: "Empty recording response.",
+    EmptyError: RecordingApiError,
+  })
 }
 
 function unwrapPlayback(response: GetPlaybackUrlResponse): { url: string; expiresAt: number } {
-  if (response.result.oneofKind === "success") {
-    return {
-      url: response.result.success.url,
-      expiresAt: Number(response.result.success.expiresAt),
-    }
-  }
-  if (response.result.oneofKind === "error") {
-    throw parseError(response.result.error)
-  }
-  throw new RecordingApiError("internal_error", "Empty playback URL response.")
+  return unwrapGrpcOneof(response.result, {
+    success: (s) => ({
+      url: s.url,
+      expiresAt: Number(s.expiresAt),
+    }),
+    error: parseError,
+    emptyMessage: "Empty playback URL response.",
+    EmptyError: RecordingApiError,
+  })
 }
 
 function unwrapTimeline(response: ListMeetingTimelineEventsResponse): MeetingTimelineEvent[] {
-  if (response.result.oneofKind === "success") {
-    return response.result.success.events.map(mapTimelineEvent)
-  }
-  if (response.result.oneofKind === "error") {
-    throw parseError(response.result.error)
-  }
-  throw new RecordingApiError("internal_error", "Empty meeting timeline response.")
+  return unwrapGrpcOneof(response.result, {
+    success: (s) => s.events.map(mapTimelineEvent),
+    error: parseError,
+    emptyMessage: "Empty meeting timeline response.",
+    EmptyError: RecordingApiError,
+  })
 }
 
 function unwrapStartAdHoc(response: StartAdHocRecordingResponse): BotRun {
-  if (response.result.oneofKind === "success") {
-    const run = response.result.success.run
-    if (run) return mapRun(run)
-    return mapRun({
-      id: response.result.success.runId,
-      meetingId: "",
-      meetingTitle: "",
-      status: "queued",
-      error: "",
-      meetingStartAt: BigInt(0),
-      startedAt: BigInt(0),
-      endedAt: BigInt(0),
-      createdAt: BigInt(0),
-      recordingPath: "",
-      durationSecs: BigInt(0),
-    })
-  }
-  if (response.result.oneofKind === "error") {
-    throw parseError(response.result.error)
-  }
-  throw new RecordingApiError("internal_error", "Empty ad-hoc recording response.")
+  return unwrapGrpcOneof(response.result, {
+    success: (s) => {
+      const run = s.run
+      if (run) return mapRun(run)
+      return mapRun({
+        id: s.runId,
+        meetingId: "",
+        meetingTitle: "",
+        status: "queued",
+        error: "",
+        meetingStartAt: BigInt(0),
+        startedAt: BigInt(0),
+        endedAt: BigInt(0),
+        createdAt: BigInt(0),
+        recordingPath: "",
+        durationSecs: BigInt(0),
+      })
+    },
+    error: parseError,
+    emptyMessage: "Empty ad-hoc recording response.",
+    EmptyError: RecordingApiError,
+  })
 }
 
 function unwrapStop(response: StopRecordingResponse): void {
-  if (response.result.oneofKind === "success") {
-    return
-  }
-  if (response.result.oneofKind === "error") {
-    throw parseError(response.result.error)
-  }
-  throw new RecordingApiError("internal_error", "Empty stop recording response.")
+  unwrapGrpcOneof(response.result, {
+    success: () => undefined,
+    error: parseError,
+    emptyMessage: "Empty stop recording response.",
+    EmptyError: RecordingApiError,
+  })
 }
 
 export async function apiListBotRuns(token: string, limit = 50): Promise<BotRun[]> {
@@ -208,29 +194,26 @@ export function isActiveBotRun(status: BotRun["status"]): boolean {
 }
 
 export function recordingErrorMessage(error: unknown): string {
-  if (error instanceof RecordingApiError) {
-    switch (error.code) {
-      case "session_not_found":
-        return "Your session has expired. Please sign in again."
-      case "not_found":
-        return "Recording not found."
-      case "not_available":
-        return "Recording is not available for playback yet."
-      case "invalid_meet_url":
-        return "Enter a valid Google Meet link (https://meet.google.com/…)."
-      case "bot_busy":
-        return "The bot is already recording another meeting. Try again when it finishes."
-      case "not_active":
-        return "This recording is not active anymore."
-      default:
-        return error.message
-    }
-  }
-  if (error instanceof Error) {
-    if (error.message.includes("Failed to fetch") || error.message.includes("NetworkError")) {
-      return "Cannot reach the server. Is the backend running?"
-    }
-    return error.message
-  }
-  return "Could not load recordings."
+  return formatGrpcApiError(
+    error,
+    (code) => {
+      switch (code) {
+        case "session_not_found":
+          return SESSION_EXPIRED_MESSAGE
+        case "not_found":
+          return "Recording not found."
+        case "not_available":
+          return "Recording is not available for playback yet."
+        case "invalid_meet_url":
+          return "Enter a valid Google Meet link (https://meet.google.com/…)."
+        case "bot_busy":
+          return "The bot is already recording another meeting. Try again when it finishes."
+        case "not_active":
+          return "This recording is not active anymore."
+        default:
+          return null
+      }
+    },
+    "Could not load recordings.",
+  )
 }

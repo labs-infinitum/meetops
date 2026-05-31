@@ -77,13 +77,8 @@ pub async fn run_with_permit(
     active_recordings.unregister(run_id);
 
     match result {
-        Ok(raw_path) => {
-            let user_id = bot_runs::get_user_id(&pool, run_id)
-                .await
-                .ok()
-                .flatten()
-                .unwrap_or_else(|| "unknown".to_owned());
-            match recordings
+        Ok(raw_path) => match require_user_id(&pool, run_id).await {
+            Ok(user_id) => match recordings
                 .persist_bot_recording(&raw_path, &user_id, run_id)
                 .await
             {
@@ -102,8 +97,19 @@ pub async fn run_with_permit(
                     finalize_run_logged(&pool, run_id, BotRunStatus::Failed, Some(&message), None)
                         .await;
                 }
+            },
+            Err(error) => {
+                tracing::error!(%error, run_id, "cannot upload recording without user_id");
+                finalize_run_logged(
+                    &pool,
+                    run_id,
+                    BotRunStatus::Failed,
+                    Some(&error.to_string()),
+                    None,
+                )
+                .await;
             }
-        }
+        },
         Err(error) => {
             let message = error.to_string();
             if let Ok(user_id) = bot_runs::get_user_id(&pool, run_id).await {
@@ -145,11 +151,7 @@ async fn run_with_permit_inner(
         anyhow::bail!("could not update run status to joining");
     }
 
-    let user_id = bot_runs::get_user_id(pool, run_id)
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or_else(|| "unknown".to_owned());
+    let user_id = require_user_id(pool, run_id).await?;
     let recording_dir = recordings.staging_dir(&user_id, run_id);
     let pool_joined = pool.clone();
 
@@ -168,6 +170,13 @@ async fn run_with_permit_inner(
         },
     )
     .await
+}
+
+async fn require_user_id(pool: &SqlitePool, run_id: i64) -> anyhow::Result<String> {
+    let user_id = bot_runs::get_user_id(pool, run_id)
+        .await
+        .map_err(|error| anyhow::anyhow!("failed to load user_id for bot run {run_id}: {error}"))?;
+    user_id.ok_or_else(|| anyhow::anyhow!("bot run {run_id} has no user_id"))
 }
 
 async fn finalize_run_logged(

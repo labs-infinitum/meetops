@@ -1,82 +1,41 @@
-export type BotRunStatus =
-  | "queued"
-  | "joining"
-  | "in_meeting"
-  | "recording"
-  | "completed"
-  | "failed"
+import type { CalendarConnectErrorCode, CalendarProvider } from "./constants"
 
-export type CalendarProvider = "google" | "outlook" | "apple" | "caldav"
+export type {
+  BotRunStatus,
+  CalendarConnectErrorCode,
+  CalendarProvider,
+} from "./constants"
+export {
+  BOT_RUN_STATUSES,
+  CALENDAR_CONNECT_ERROR_CODES,
+  CALENDAR_PROVIDERS,
+  isBotRunStatus,
+  isCalendarConnectErrorCode,
+  isCalendarProvider,
+} from "./constants"
 
-export type CalendarConnectErrorCode =
-  | "already_connected_by_other_user"
-  | "already_connected_by_you"
-  | "oauth_denied"
-  | "oauth_failed"
-  | "invalid_account"
-  | "provider_unavailable"
-  | "sync_failed"
+export type {
+  AuthSession,
+  BotRun,
+  CalendarConnection,
+  Meeting,
+  MeetingTimelineEvent,
+  User,
+} from "./domain"
 
+export type { MeetingTimelineEventPayload } from "./timeline"
+
+/** UI-enriched calendar connect error (titles/messages); codes align with `CalendarError` proto. */
 export type CalendarConnectError = {
   code: CalendarConnectErrorCode
   title: string
   message: string
   email?: string
   provider: CalendarProvider
-  /** Hint shown when another platform user owns the account */
   otherAccountHint?: string
 }
 
-export type CalendarConnection = {
-  id: string
-  provider: CalendarProvider
-  email: string
-  label: string
-  connected: boolean
-  lastSyncedAt?: number
-  meetingCount: number
-  color: string
-}
-
-export type Meeting = {
-  id: string
-  title: string
-  meetUrl: string
-  startAt: number
-  endAt: number
-  autoRecord: boolean
-  calendarId: string
-  calendarLabel?: string
-  attendees: string[]
-  description?: string
-}
-
-export type BotRun = {
-  id: number
-  meetingId: string
-  meetingTitle: string
-  status: BotRunStatus
-  error?: string
-  meetingStartAt: number
-  startedAt?: number
-  endedAt?: number
-  createdAt: number
-  recordingPath?: string
-  durationSecs?: number
-}
-
-export type MeetingTimelineEvent = {
-  id: number
-  botRunId: number
-  eventType: string
-  occurredAt: number
-  relativeMs: number
-  participantId?: string
-  participantName?: string
-  payload?: Record<string, unknown>
-  createdAt: number
-}
-
+/** UI-only types (no proto yet). */
 export type ActionItem = {
   id: string
   text: string
@@ -96,18 +55,4 @@ export type Note = {
   summaryMd: string
   actionItems: ActionItem[]
   tags: string[]
-}
-
-export type User = {
-  id: string
-  name: string
-  email: string
-  username: string
-  avatarUrl?: string
-}
-
-export type AuthSession = {
-  user: User
-  token: string
-  expiresAt?: number
 }

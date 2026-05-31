@@ -119,7 +119,7 @@ impl CalendarService {
         &self,
         token: &str,
     ) -> Result<Vec<CalendarConnectionListItem>, CalendarConnectError> {
-        let user_id = self.require_user_id(token).await?;
+        let user_id = self.auth.require_user_id(token).await?;
         calendar_connections::list_for_user(&self.db, &user_id)
             .await
             .map_err(CalendarConnectError::from)
@@ -132,7 +132,7 @@ impl CalendarService {
         label: Option<&str>,
         color: Option<&str>,
     ) -> Result<String, CalendarConnectError> {
-        let user_id = self.require_user_id(token).await?;
+        let user_id = self.auth.require_user_id(token).await?;
 
         if provider != "google" {
             return Err(CalendarConnectError::UnsupportedProvider(
@@ -159,7 +159,7 @@ impl CalendarService {
         token: &str,
         connection_id: &str,
     ) -> Result<bool, CalendarConnectError> {
-        let user_id = self.require_user_id(token).await?;
+        let user_id = self.auth.require_user_id(token).await?;
         Ok(calendar_connections::delete_for_user(&self.db, connection_id, &user_id).await?)
     }
 
@@ -168,7 +168,7 @@ impl CalendarService {
         token: &str,
         connection_id: &str,
     ) -> Result<(calendar::SyncStats, i64), CalendarConnectError> {
-        let user_id = self.require_user_id(token).await?;
+        let user_id = self.auth.require_user_id(token).await?;
         let connection =
             calendar_connections::get_by_id_for_user(&self.db, connection_id, &user_id)
                 .await?
@@ -222,7 +222,4 @@ impl CalendarService {
         }
     }
 
-    async fn require_user_id(&self, token: &str) -> Result<String, CalendarConnectError> {
-        Ok(self.auth.get_session(token).await?.user.id)
-    }
 }

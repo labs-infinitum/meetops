@@ -108,6 +108,10 @@ impl AuthService {
         })
     }
 
+    pub async fn require_user_id(&self, token: &str) -> Result<String, AuthError> {
+        Ok(self.get_session(token).await?.user.id)
+    }
+
     async fn create_session_for_user(&self, user: &UserRow) -> Result<AuthSession, AuthError> {
         let token = Uuid::new_v4().to_string();
         let expires_at = crate::db::now_unix() + self.config.session_ttl_secs as i64;

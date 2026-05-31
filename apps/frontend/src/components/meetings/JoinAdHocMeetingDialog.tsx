@@ -17,6 +17,7 @@ import {
   RecordingApiError,
   recordingErrorMessage,
 } from "@/lib/recording-api"
+import { SESSION_EXPIRED_MESSAGE } from "@/lib/session-guard"
 import { toast } from "sonner"
 
 type JoinAdHocMeetingDialogProps = {
@@ -57,7 +58,7 @@ export function JoinAdHocMeetingDialog({
 
   async function submit() {
     if (!sessionToken) {
-      toast.error("Your session has expired. Please sign in again.")
+      toast.error(SESSION_EXPIRED_MESSAGE)
       return
     }
 

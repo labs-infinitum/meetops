@@ -1,6 +1,8 @@
 import type { Meeting } from "@/types"
 import { getMeetingClient } from "@/lib/grpc-client"
-import { withAuthGuard } from "@/lib/session-guard"
+import { protoInt64, protoOptionalString } from "@/lib/proto-fields"
+import { formatGrpcApiError, GrpcApiError, unwrapGrpcOneof } from "@/lib/api-errors"
+import { withAuthGuard, SESSION_EXPIRED_MESSAGE } from "@/lib/session-guard"
 import type {
   DashboardSummary,
   GetDashboardSummaryResponse,
@@ -11,13 +13,9 @@ import type {
   SetAutoRecordResponse,
 } from "@/gen/notetaker/v1/meeting"
 
-export class MeetingApiError extends Error {
-  code: string
-
+export class MeetingApiError extends GrpcApiError {
   constructor(code: string, message: string) {
-    super(message)
-    this.code = code
-    this.name = "MeetingApiError"
+    super(code, message, "MeetingApiError")
   }
 }
 
@@ -26,13 +24,13 @@ function mapMeeting(row: ProtoMeeting): Meeting {
     id: row.id,
     title: row.title,
     meetUrl: row.meetUrl,
-    startAt: Number(row.startAt),
-    endAt: Number(row.endAt),
+    startAt: protoInt64(row.startAt)!,
+    endAt: protoInt64(row.endAt)!,
     autoRecord: row.autoRecord,
     calendarId: row.calendarId,
     attendees: [...row.attendees],
-    description: row.description || undefined,
-    calendarLabel: row.calendarLabel || undefined,
+    description: protoOptionalString(row.description),
+    calendarLabel: protoOptionalString(row.calendarLabel),
   }
 }
 
@@ -41,33 +39,30 @@ function parseError(error: MeetingError): MeetingApiError {
 }
 
 function unwrapList(response: ListMeetingsResponse): Meeting[] {
-  if (response.result.oneofKind === "success") {
-    return response.result.success.meetings.map(mapMeeting)
-  }
-  if (response.result.oneofKind === "error") {
-    throw parseError(response.result.error)
-  }
-  throw new MeetingApiError("internal_error", "Empty meetings list response.")
+  return unwrapGrpcOneof(response.result, {
+    success: (s) => s.meetings.map(mapMeeting),
+    error: parseError,
+    emptyMessage: "Empty meetings list response.",
+    EmptyError: MeetingApiError,
+  })
 }
 
 function unwrapGet(response: GetMeetingResponse): Meeting {
-  if (response.result.oneofKind === "success") {
-    return mapMeeting(response.result.success)
-  }
-  if (response.result.oneofKind === "error") {
-    throw parseError(response.result.error)
-  }
-  throw new MeetingApiError("internal_error", "Empty meeting response.")
+  return unwrapGrpcOneof(response.result, {
+    success: mapMeeting,
+    error: parseError,
+    emptyMessage: "Empty meeting response.",
+    EmptyError: MeetingApiError,
+  })
 }
 
 function unwrapSetAutoRecord(response: SetAutoRecordResponse): boolean {
-  if (response.result.oneofKind === "success") {
-    return response.result.success.ok
-  }
-  if (response.result.oneofKind === "error") {
-    throw parseError(response.result.error)
-  }
-  throw new MeetingApiError("internal_error", "Empty set auto-record response.")
+  return unwrapGrpcOneof(response.result, {
+    success: (s) => s.ok,
+    error: parseError,
+    emptyMessage: "Empty set auto-record response.",
+    EmptyError: MeetingApiError,
+  })
 }
 
 function unwrapDashboard(response: GetDashboardSummaryResponse): {
@@ -76,19 +71,17 @@ function unwrapDashboard(response: GetDashboardSummaryResponse): {
   completedRecordings: number
   upcomingMeetings: Meeting[]
 } {
-  if (response.result.oneofKind === "success") {
-    const summary: DashboardSummary = response.result.success
-    return {
+  return unwrapGrpcOneof(response.result, {
+    success: (summary: DashboardSummary) => ({
       upcoming7d: summary.upcoming7D,
       connectedCalendars: summary.connectedCalendars,
       completedRecordings: summary.completedRecordings,
       upcomingMeetings: summary.upcomingMeetings.map(mapMeeting),
-    }
-  }
-  if (response.result.oneofKind === "error") {
-    throw parseError(response.result.error)
-  }
-  throw new MeetingApiError("internal_error", "Empty dashboard response.")
+    }),
+    error: parseError,
+    emptyMessage: "Empty dashboard response.",
+    EmptyError: MeetingApiError,
+  })
 }
 
 export async function apiListMeetings(token: string): Promise<Meeting[]> {
@@ -132,20 +125,17 @@ export function meetingPath(id: string) {
 }
 
 export function meetingErrorMessage(error: unknown): string {
-  if (error instanceof MeetingApiError) {
-    if (error.code === "session_not_found") {
-      return "Your session has expired. Please sign in again."
-    }
-    if (error.code === "not_found") {
-      return "Meeting not found."
-    }
-    return error.message
-  }
-  if (error instanceof Error) {
-    if (error.message.includes("Failed to fetch") || error.message.includes("NetworkError")) {
-      return "Cannot reach the server. Is the backend running?"
-    }
-    return error.message
-  }
-  return "Could not load meetings."
+  return formatGrpcApiError(
+    error,
+    (code) => {
+      if (code === "session_not_found") {
+        return SESSION_EXPIRED_MESSAGE
+      }
+      if (code === "not_found") {
+        return "Meeting not found."
+      }
+      return null
+    },
+    "Could not load meetings.",
+  )
 }

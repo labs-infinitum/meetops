@@ -131,7 +131,6 @@ impl RecordingsStore {
         Ok(key)
     }
 
-    /// Uploads `tab-capture.png` from a bot run staging directory when present.
     pub async fn persist_tab_capture_if_present(
         &self,
         staging_dir: &Path,

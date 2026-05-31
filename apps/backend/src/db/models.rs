@@ -27,6 +27,19 @@ impl BotRunStatus {
             Self::Failed => "failed",
         }
     }
+
+    /// Parse a DB/API status string (proto `BotRun.status` wire values).
+    pub fn from_db_str(s: &str) -> Option<Self> {
+        match s {
+            "queued" => Some(Self::Queued),
+            "joining" => Some(Self::Joining),
+            "in_meeting" => Some(Self::InMeeting),
+            "recording" => Some(Self::Recording),
+            "completed" => Some(Self::Completed),
+            "failed" => Some(Self::Failed),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]

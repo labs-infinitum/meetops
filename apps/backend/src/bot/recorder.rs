@@ -241,12 +241,8 @@ where
 
                     match chromium::meet_participant_count(&session.page).await {
                         Ok(Some(count)) if count <= 1 => {
-                            solo_since.get_or_insert_with(Instant::now);
-                            if solo_since
-                                .expect("solo_since set when count <= 1")
-                                .elapsed()
-                                >= solo_threshold
-                            {
+                            let since = solo_since.get_or_insert_with(Instant::now);
+                            if since.elapsed() >= solo_threshold {
                                 exit_reason = Some(RecordExitReason::SoloParticipant);
                                 break;
                             }

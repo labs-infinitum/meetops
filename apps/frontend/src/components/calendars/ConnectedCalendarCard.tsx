@@ -62,9 +62,10 @@ export function ConnectedCalendarsSummary({
 }) {
   const connected = calendars.filter((c) => c.connected)
   const totalMeetings = connected.reduce((sum, c) => sum + c.meetingCount, 0)
-  const byProvider = connected.reduce(
+  const byProvider = connected.reduce<Record<CalendarProvider, number>>(
     (acc, c) => {
-      acc[c.provider] = (acc[c.provider] ?? 0) + 1
+      const provider = c.provider
+      acc[provider] = (acc[provider] ?? 0) + 1
       return acc
     },
     {} as Record<CalendarProvider, number>,

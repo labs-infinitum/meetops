@@ -1,7 +1,5 @@
 use sqlx::SqlitePool;
 
-use crate::db;
-
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct UserRow {
     pub id: String,
@@ -26,7 +24,7 @@ pub async fn create_user(
     name: &str,
     password_hash: &str,
 ) -> sqlx::Result<UserRow> {
-    let now = db::now_unix();
+    let now = super::now_unix();
     sqlx::query(
         r#"
         INSERT INTO users (id, username, email, name, password_hash, created_at, updated_at)
@@ -82,7 +80,7 @@ pub async fn create_session(
     user_id: &str,
     expires_at: i64,
 ) -> sqlx::Result<SessionRow> {
-    let now = db::now_unix();
+    let now = super::now_unix();
     sqlx::query(
         r#"
         INSERT INTO sessions (token, user_id, expires_at, created_at, last_used_at)
@@ -111,14 +109,14 @@ pub async fn get_session(pool: &SqlitePool, token: &str) -> sqlx::Result<Option<
         "#,
     )
     .bind(token)
-    .bind(db::now_unix())
+    .bind(super::now_unix())
     .fetch_optional(pool)
     .await
 }
 
 pub async fn touch_session(pool: &SqlitePool, token: &str) -> sqlx::Result<()> {
     sqlx::query("UPDATE sessions SET last_used_at = ? WHERE token = ?")
-        .bind(db::now_unix())
+        .bind(super::now_unix())
         .bind(token)
         .execute(pool)
         .await?;
@@ -135,7 +133,7 @@ pub async fn delete_session(pool: &SqlitePool, token: &str) -> sqlx::Result<bool
 
 pub async fn delete_expired_sessions(pool: &SqlitePool) -> sqlx::Result<u64> {
     let result = sqlx::query("DELETE FROM sessions WHERE expires_at <= ?")
-        .bind(db::now_unix())
+        .bind(super::now_unix())
         .execute(pool)
         .await?;
     Ok(result.rows_affected())

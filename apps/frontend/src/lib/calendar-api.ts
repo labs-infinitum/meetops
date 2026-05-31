@@ -1,5 +1,8 @@
 import type { CalendarConnectError, CalendarConnection, CalendarProvider } from "@/types"
+import { isCalendarConnectErrorCode, isCalendarProvider } from "@/types/constants"
+import { formatGrpcApiError, GrpcApiError, unwrapGrpcOneof } from "@/lib/api-errors"
 import { getCalendarClient } from "@/lib/grpc-client"
+import { protoInt64 } from "@/lib/proto-fields"
 import { buildConnectError } from "@/lib/calendar-connect"
 import { withAuthGuard } from "@/lib/session-guard"
 import type {
@@ -11,8 +14,7 @@ import type {
   SyncNowResponse,
 } from "@/gen/notetaker/v1/calendar"
 
-export class CalendarApiError extends Error {
-  code: string
+export class CalendarApiError extends GrpcApiError {
   email?: string
   provider?: CalendarProvider
   otherAccountHint?: string
@@ -26,9 +28,7 @@ export class CalendarApiError extends Error {
       otherAccountHint?: string
     },
   ) {
-    super(message)
-    this.code = code
-    this.name = "CalendarApiError"
+    super(code, message, "CalendarApiError")
     this.email = extras?.email
     this.provider = extras?.provider
     this.otherAccountHint = extras?.otherAccountHint
@@ -36,17 +36,8 @@ export class CalendarApiError extends Error {
 
   toConnectError(): CalendarConnectError {
     const provider = this.provider ?? "google"
-    const code = this.code as CalendarConnectError["code"]
-    if (
-      code === "already_connected_by_other_user" ||
-      code === "already_connected_by_you" ||
-      code === "oauth_denied" ||
-      code === "oauth_failed" ||
-      code === "invalid_account" ||
-      code === "provider_unavailable" ||
-      code === "sync_failed"
-    ) {
-      return buildConnectError(code, provider, {
+    if (isCalendarConnectErrorCode(this.code)) {
+      return buildConnectError(this.code, provider, {
         email: this.email,
         otherAccountHint: this.otherAccountHint,
       })
@@ -58,11 +49,11 @@ export class CalendarApiError extends Error {
 function mapConnection(row: ProtoConnection): CalendarConnection {
   return {
     id: row.id,
-    provider: row.provider as CalendarProvider,
+    provider: isCalendarProvider(row.provider) ? row.provider : "google",
     email: row.email,
     label: row.label,
     connected: row.connected,
-    lastSyncedAt: row.lastSyncedAt ? Number(row.lastSyncedAt) : undefined,
+    lastSyncedAt: protoInt64(row.lastSyncedAt, true),
     meetingCount: row.meetingCount,
     color: row.color,
   }
@@ -71,39 +62,36 @@ function mapConnection(row: ProtoConnection): CalendarConnection {
 function parseCalendarError(error: CalendarError): CalendarApiError {
   return new CalendarApiError(error.code, error.message, {
     email: error.email || undefined,
-    provider: (error.provider || "google") as CalendarProvider,
+    provider: isCalendarProvider(error.provider) ? error.provider : "google",
     otherAccountHint: error.otherAccountHint || undefined,
   })
 }
 
 function unwrapListResponse(response: ListConnectionsResponse): CalendarConnection[] {
-  if (response.result.oneofKind === "success") {
-    return response.result.success.connections.map(mapConnection)
-  }
-  if (response.result.oneofKind === "error") {
-    throw parseCalendarError(response.result.error)
-  }
-  throw new CalendarApiError("internal_error", "Empty calendar list response.")
+  return unwrapGrpcOneof(response.result, {
+    success: (s) => s.connections.map(mapConnection),
+    error: parseCalendarError,
+    emptyMessage: "Empty calendar list response.",
+    EmptyError: CalendarApiError,
+  })
 }
 
 function unwrapStartOAuth(response: StartOAuthResponse): string {
-  if (response.result.oneofKind === "success") {
-    return response.result.success.redirectUrl
-  }
-  if (response.result.oneofKind === "error") {
-    throw parseCalendarError(response.result.error)
-  }
-  throw new CalendarApiError("internal_error", "Empty StartOAuth response.")
+  return unwrapGrpcOneof(response.result, {
+    success: (s) => s.redirectUrl,
+    error: parseCalendarError,
+    emptyMessage: "Empty StartOAuth response.",
+    EmptyError: CalendarApiError,
+  })
 }
 
 function unwrapDisconnect(response: DisconnectResponse): boolean {
-  if (response.result.oneofKind === "success") {
-    return response.result.success.ok
-  }
-  if (response.result.oneofKind === "error") {
-    throw parseCalendarError(response.result.error)
-  }
-  throw new CalendarApiError("internal_error", "Empty disconnect response.")
+  return unwrapGrpcOneof(response.result, {
+    success: (s) => s.ok,
+    error: parseCalendarError,
+    emptyMessage: "Empty disconnect response.",
+    EmptyError: CalendarApiError,
+  })
 }
 
 function unwrapSyncNow(response: SyncNowResponse): {
@@ -112,19 +100,17 @@ function unwrapSyncNow(response: SyncNowResponse): {
   deleted: number
   lastSyncedAt: number
 } {
-  if (response.result.oneofKind === "success") {
-    const success = response.result.success
-    return {
+  return unwrapGrpcOneof(response.result, {
+    success: (success) => ({
       seen: success.seen,
       upserted: success.upserted,
       deleted: success.deleted,
       lastSyncedAt: Number(success.lastSyncedAt),
-    }
-  }
-  if (response.result.oneofKind === "error") {
-    throw parseCalendarError(response.result.error)
-  }
-  throw new CalendarApiError("internal_error", "Empty sync response.")
+    }),
+    error: parseCalendarError,
+    emptyMessage: "Empty sync response.",
+    EmptyError: CalendarApiError,
+  })
 }
 
 export async function apiListConnections(token: string): Promise<CalendarConnection[]> {
@@ -178,13 +164,7 @@ export function calendarErrorMessage(error: unknown): string {
   if (error instanceof CalendarApiError) {
     return error.toConnectError().message
   }
-  if (error instanceof Error) {
-    if (error.message.includes("Failed to fetch") || error.message.includes("NetworkError")) {
-      return "Cannot reach the server. Is the backend running?"
-    }
-    return error.message
-  }
-  return "Calendar request failed."
+  return formatGrpcApiError(error, () => null, "Calendar request failed.")
 }
 
 export function parseOAuthCallbackParams(search: string): CalendarConnectError | null {
@@ -192,7 +172,8 @@ export function parseOAuthCallbackParams(search: string): CalendarConnectError |
   const oauth = params.get("oauth")
   if (!oauth) return null
 
-  const provider = (params.get("provider") ?? "google") as CalendarProvider
+  const providerParam = params.get("provider") ?? "google"
+  const provider = isCalendarProvider(providerParam) ? providerParam : "google"
   const email = params.get("email") ?? undefined
   const otherHint = params.get("other_hint") ?? undefined
 
@@ -200,13 +181,8 @@ export function parseOAuthCallbackParams(search: string): CalendarConnectError |
     return null
   }
 
-  const code = oauth as CalendarConnectError["code"]
-  if (
-    code === "already_connected_by_other_user" ||
-    code === "already_connected_by_you" ||
-    code === "oauth_denied" ||
-    code === "oauth_failed"
-  ) {
+  if (isCalendarConnectErrorCode(oauth)) {
+    const code = oauth
     return buildConnectError(code, provider, {
       email,
       otherAccountHint: otherHint,

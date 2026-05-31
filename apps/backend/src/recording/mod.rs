@@ -101,7 +101,7 @@ impl RecordingService {
         token: &str,
         limit: i32,
     ) -> Result<Vec<BotRunListItem>, RecordingServiceError> {
-        let user_id = self.require_user_id(token).await?;
+        let user_id = self.auth.require_user_id(token).await?;
         let limit = i64::from(limit.clamp(1, 100));
         db::bot_runs::list_recent_for_user(&self.db, &user_id, limit)
             .await
@@ -113,7 +113,7 @@ impl RecordingService {
         token: &str,
         run_id: i64,
     ) -> Result<BotRunListItem, RecordingServiceError> {
-        let user_id = self.require_user_id(token).await?;
+        let user_id = self.auth.require_user_id(token).await?;
         db::bot_runs::get_for_user(&self.db, &user_id, run_id)
             .await?
             .ok_or(RecordingServiceError::NotFound)
@@ -148,7 +148,7 @@ impl RecordingService {
         run_id: i64,
         limit: i32,
     ) -> Result<Vec<db::models::MeetingTimelineEvent>, RecordingServiceError> {
-        let user_id = self.require_user_id(token).await?;
+        let user_id = self.auth.require_user_id(token).await?;
         let limit = i64::from(limit.clamp(1, 1000));
         let run_exists = db::bot_runs::get_for_user(&self.db, &user_id, run_id)
             .await?
@@ -166,7 +166,7 @@ impl RecordingService {
         token: &str,
         meet_url_raw: &str,
     ) -> Result<BotRunListItem, RecordingServiceError> {
-        let user_id = self.require_user_id(token).await?;
+        let user_id = self.auth.require_user_id(token).await?;
         let meet_url = MeetUrl::parse(meet_url_raw)?;
         let title = meet_url.ad_hoc_title();
         let now = db::now_unix();
@@ -223,7 +223,7 @@ impl RecordingService {
         token: &str,
         run_id: i64,
     ) -> Result<(), RecordingServiceError> {
-        let user_id = self.require_user_id(token).await?;
+        let user_id = self.auth.require_user_id(token).await?;
         let run = db::bot_runs::get_for_user(&self.db, &user_id, run_id)
             .await?
             .ok_or(RecordingServiceError::NotFound)?;
@@ -243,9 +243,6 @@ impl RecordingService {
         self.store.presigned_url_ttl_secs() as i64
     }
 
-    async fn require_user_id(&self, token: &str) -> Result<String, RecordingServiceError> {
-        Ok(self.auth.get_session(token).await?.user.id)
-    }
 }
 
 pub fn duration_secs(run: &BotRunListItem) -> i64 {

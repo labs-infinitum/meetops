@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "deps:circular": "dpdm --no-warning --circular src/main.tsx",
     "preview": "vite preview",
     "proto:generate": "protoc --plugin=protoc-gen-ts=./node_modules/.bin/protoc-gen-ts --ts_out ./src/gen --ts_opt generate_dependencies,ts_nocheck --proto_path ../../packages/proto ../../packages/proto/notetaker/v1/auth.proto ../../packages/proto/notetaker/v1/calendar.proto ../../packages/proto/notetaker/v1/meeting.proto ../../packages/proto/notetaker/v1/recording.proto"
   },
@@ -38,6 +39,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "dpdm": "3.14.0",
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",

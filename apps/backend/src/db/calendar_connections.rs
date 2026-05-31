@@ -1,6 +1,6 @@
 use sqlx::SqlitePool;
 
-use crate::{crypto::tokens, db};
+use crate::crypto::tokens;
 
 fn token_protocol_error(error: anyhow::Error) -> sqlx::Error {
     sqlx::Error::Protocol(error.to_string())
@@ -16,7 +16,7 @@ fn decrypt_row(mut row: CalendarConnectionRow) -> sqlx::Result<CalendarConnectio
     Ok(row)
 }
 
-#[allow(dead_code)]
+#[allow(dead_code)] // sqlx row: not every column is read in Rust after decrypt
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct CalendarConnectionRow {
     pub id: String,
@@ -168,7 +168,7 @@ pub async fn insert(
     expires_at: i64,
     scope: &str,
 ) -> sqlx::Result<CalendarConnectionRow> {
-    let now = db::now_unix();
+    let now = super::now_unix();
     let access_token = encrypt_token(access_token)?;
     let refresh_token = encrypt_token(refresh_token)?;
     sqlx::query(
@@ -207,7 +207,7 @@ pub async fn update_tokens(
     expires_at: i64,
     scope: &str,
 ) -> sqlx::Result<()> {
-    let now = db::now_unix();
+    let now = super::now_unix();
     let access_token = encrypt_token(access_token)?;
     let refresh_token = encrypt_token(refresh_token)?;
     sqlx::query(
@@ -234,7 +234,7 @@ pub async fn update_sync_state(
     sync_token: Option<&str>,
     last_synced_at: i64,
 ) -> sqlx::Result<()> {
-    let now = db::now_unix();
+    let now = super::now_unix();
     sqlx::query(
         r#"
         UPDATE calendar_connections
@@ -253,7 +253,7 @@ pub async fn update_sync_state(
 
 pub async fn delete_sync_token(pool: &SqlitePool, connection_id: &str) -> sqlx::Result<()> {
     sqlx::query("UPDATE calendar_connections SET sync_token = NULL, updated_at = ? WHERE id = ?")
-        .bind(db::now_unix())
+        .bind(super::now_unix())
         .bind(connection_id)
         .execute(pool)
         .await?;

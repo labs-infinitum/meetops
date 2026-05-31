@@ -1,4 +1,9 @@
+import { hasStringProperty } from "@/lib/type-guards"
+
 const SESSION_INVALID_CODE = "session_not_found"
+
+export const SESSION_EXPIRED_MESSAGE =
+  "Your session has expired. Please sign in again."
 
 let sessionInvalidHandler: (() => void) | null = null
 
@@ -18,10 +23,7 @@ export function isSessionExpired(expiresAt: number | undefined): boolean {
 }
 
 export function isSessionInvalidError(error: unknown): boolean {
-  if (error && typeof error === "object" && "code" in error) {
-    return (error as { code: string }).code === SESSION_INVALID_CODE
-  }
-  return false
+  return hasStringProperty(error, "code") && error.code === SESSION_INVALID_CODE
 }
 
 export function guardApiError(error: unknown): never {

@@ -27,6 +27,7 @@ import {
 } from "@/lib/recording-api"
 import { formatDate, formatDateTime, formatDuration } from "@/lib/format"
 import { useAuth } from "@/lib/auth-context"
+import { snapshotParticipantCount } from "@/lib/timeline-payload"
 import type { BotRun, MeetingTimelineEvent } from "@/types"
 import { toast } from "sonner"
 
@@ -43,7 +44,7 @@ function eventTitle(event: MeetingTimelineEvent): string {
     case "active_speaker_changed":
       return `${event.participantName || "Unknown speaker"} started speaking`
     case "participant_snapshot": {
-      const count = typeof event.payload?.count === "number" ? event.payload.count : undefined
+      const count = snapshotParticipantCount(event.payload)
       return count === undefined ? "Participant snapshot" : `${count} participants in meeting`
     }
     default:

@@ -1,14 +1,12 @@
 import type { AuthSession, User } from "@/types"
 import { getAuthClient } from "@/lib/grpc-client"
+import { formatGrpcApiError, GrpcApiError } from "@/lib/api-errors"
+import { SESSION_EXPIRED_MESSAGE } from "@/lib/session-guard"
 import type { AuthResponse } from "@/gen/notetaker/v1/auth"
 
-export class AuthApiError extends Error {
-  code: string
-
+export class AuthApiError extends GrpcApiError {
   constructor(code: string, message: string) {
-    super(message)
-    this.code = code
-    this.name = "AuthApiError"
+    super(code, message, "AuthApiError")
   }
 }
 
@@ -75,29 +73,24 @@ export async function apiGetSession(token: string): Promise<AuthSession> {
 }
 
 export function authErrorMessage(error: unknown): string {
-  if (error instanceof AuthApiError) {
-    switch (error.code) {
-      case "username_taken":
-        return "That username is already taken."
-      case "email_taken":
-        return "An account with this email already exists."
-      case "invalid_credentials":
-        return "Invalid username or password."
-      case "session_not_found":
-        return "Your session has expired. Please sign in again."
-      case "invalid_input":
-        return error.message
-      default:
-        return error.message || "Authentication failed."
-    }
-  }
-
-  if (error instanceof Error) {
-    if (error.message.includes("Failed to fetch") || error.message.includes("NetworkError")) {
-      return "Cannot reach the server. Is the backend running?"
-    }
-    return error.message
-  }
-
-  return "Authentication failed."
+  return formatGrpcApiError(
+    error,
+    (code, message) => {
+      switch (code) {
+        case "username_taken":
+          return "That username is already taken."
+        case "email_taken":
+          return "An account with this email already exists."
+        case "invalid_credentials":
+          return "Invalid username or password."
+        case "session_not_found":
+          return SESSION_EXPIRED_MESSAGE
+        case "invalid_input":
+          return message
+        default:
+          return null
+      }
+    },
+    "Authentication failed.",
+  )
 }

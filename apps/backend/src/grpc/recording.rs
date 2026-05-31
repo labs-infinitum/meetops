@@ -1,7 +1,10 @@
 use tonic::{Request, Response, Status};
 
-use crate::recording::{
-    RecordingService as DomainRecordingService, RecordingServiceError, duration_secs,
+use crate::{
+    db::BotRunStatus,
+    recording::{
+        RecordingService as DomainRecordingService, RecordingServiceError, duration_secs,
+    },
 };
 
 pub mod proto {
@@ -162,7 +165,9 @@ fn to_proto_run(run: &crate::db::models::BotRunListItem) -> BotRun {
         id: run.id,
         meeting_id: run.meeting_id.clone(),
         meeting_title: run.title.clone(),
-        status: run.status.clone(),
+        status: BotRunStatus::from_db_str(&run.status)
+            .map(|s| s.as_str().to_string())
+            .unwrap_or_else(|| run.status.clone()),
         error: run.error.clone().unwrap_or_default(),
         meeting_start_at: run.meeting_start_at,
         started_at: run.started_at.unwrap_or(0),

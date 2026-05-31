@@ -71,7 +71,6 @@ impl JoinOptions {
 pub struct ProfileOptions {
     pub chromium_path: PathBuf,
     pub user_data_dir: PathBuf,
-    /// Same as [`JoinOptions.x11_display`]: virtual X/Xvfb/Xvnc display (`":1"`).
     pub x11_display: Option<String>,
 }
 
@@ -89,7 +88,6 @@ pub struct MeetingSession {
     browser: Browser,
     handler_task: JoinHandle<()>,
     pub page: Page,
-    /// Copy of configured display for [`start_tab_recording`] / xdotool.
     pub x11_display: Option<String>,
 }
 
@@ -839,7 +837,7 @@ fn spawn_tab_capture_prompt_acceptor_after_recorder_click(
         tracing::info!(
             x11_display_explicit = ?xdot_disp,
             process_display_env = ?std::env::var("DISPLAY").ok(),
-            "auto-accepting tab-capture sheet in the background (macOS/other; template image unused)"
+            "auto-accepting tab-capture sheet in the background (macOS/other; osascript/heuristic)"
         );
 
         for attempt in 1..=48 {
@@ -1293,18 +1291,13 @@ async fn install_recording_binding(
                         );
                     }
 
-                    if audio_file.is_none() {
-                        audio_file = Some(
-                            tokio::fs::OpenOptions::new()
-                                .create(true)
-                                .append(true)
-                                .open(&audio_webm_path)
-                                .await?,
-                        );
-                    }
-                    let file = audio_file
-                        .as_mut()
-                        .expect("audio_file initialized before write");
+                    let file = audio_file.get_or_insert(
+                        tokio::fs::OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open(&audio_webm_path)
+                            .await?,
+                    );
                     file.write_all(&decoded).await?;
                     file.flush().await?;
                     audio_chunks += 1;

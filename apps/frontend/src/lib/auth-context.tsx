@@ -15,6 +15,7 @@ import {
   apiSignUp,
   authErrorMessage,
 } from "@/lib/auth-api"
+import { parseStoredAuthSession } from "@/lib/domain-validators"
 import {
   isSessionExpired,
   isSessionInvalidError,
@@ -35,17 +36,13 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 function loadSession(): AuthSession | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return null
-    const session = JSON.parse(raw) as AuthSession
-    if (isSessionExpired(session.expiresAt)) {
-      return null
-    }
-    return session
-  } catch {
+  const raw = localStorage.getItem(STORAGE_KEY)
+  if (!raw) return null
+  const session = parseStoredAuthSession(raw)
+  if (!session || isSessionExpired(session.expiresAt)) {
     return null
   }
+  return session
 }
 
 function saveSession(session: AuthSession | null) {
@@ -67,9 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (token) {
       try {
         await apiLogout(token)
-      } catch {
-        // Local session already cleared.
-      }
+      } catch {}
     }
   }, [session?.token])
 
