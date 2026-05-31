@@ -79,7 +79,12 @@ jobs:
         run: |
           set -euo pipefail
           short_sha="${GITHUB_SHA::12}"
+          should_push=false
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ] && [ "${{ inputs.push_images || false }}" = "true" ] && [ -n "${ECR_REGISTRY}" ]; then
+            should_push=true
+          fi
           echo "short_sha=${short_sha}" >> "${GITHUB_OUTPUT}"
+          echo "should_push=${should_push}" >> "${GITHUB_OUTPUT}"
           {
             echo "backend_tags<<EOF"
             echo "ai-meeting-notetaker-rs-backend:${short_sha}"
@@ -117,21 +122,21 @@ jobs:
 
             echo "backend_cache_to<<EOF"
             echo "type=local,dest=${BUILDX_CACHE_DIR}/backend-new,mode=max"
-            if [ "${{ inputs.push_images || false }}" = "true" ] && [ -n "${ECR_REGISTRY}" ]; then
+            if [ "${should_push}" = "true" ]; then
               echo "type=registry,ref=${ECR_REGISTRY}/${BACKEND_REPOSITORY}:buildcache,mode=max"
             fi
             echo "EOF"
 
             echo "frontend_cache_to<<EOF"
             echo "type=local,dest=${BUILDX_CACHE_DIR}/frontend-new,mode=max"
-            if [ "${{ inputs.push_images || false }}" = "true" ] && [ -n "${ECR_REGISTRY}" ]; then
+            if [ "${should_push}" = "true" ]; then
               echo "type=registry,ref=${ECR_REGISTRY}/${FRONTEND_REPOSITORY}:buildcache,mode=max"
             fi
             echo "EOF"
           } >> "${GITHUB_OUTPUT}"
 
       - name: Validate ECR configuration
-        if: ${{ inputs.push_images && env.ECR_REGISTRY == '' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.push_images && env.ECR_REGISTRY == '' }}
         shell: bash
         run: |
           echo "push_images=true requires workflow input ecr_registry or repository variable ECR_REGISTRY" >&2
@@ -149,7 +154,7 @@ jobs:
           context: .
           file: apps/backend/Dockerfile
           target: runtime
-          push: ${{ inputs.push_images && env.ECR_REGISTRY != '' }}
+          push: ${{ steps.meta.outputs.should_push }}
           tags: ${{ steps.meta.outputs.backend_tags }}
           cache-from: ${{ steps.meta.outputs.backend_cache_from }}
           cache-to: ${{ steps.meta.outputs.backend_cache_to }}
@@ -159,7 +164,7 @@ jobs:
         with:
           context: .
           file: apps/frontend/Dockerfile
-          push: ${{ inputs.push_images && env.ECR_REGISTRY != '' }}
+          push: ${{ steps.meta.outputs.should_push }}
           tags: ${{ steps.meta.outputs.frontend_tags }}
           cache-from: ${{ steps.meta.outputs.frontend_cache_from }}
           cache-to: ${{ steps.meta.outputs.frontend_cache_to }}
