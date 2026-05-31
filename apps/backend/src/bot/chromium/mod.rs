@@ -586,6 +586,7 @@ async fn run_join_flow(browser: &Browser, options: &JoinOptions) -> anyhow::Resu
             JoinState::Joined => {
                 close_other_pages(browser, &page).await?;
                 activate_page(&page).await?;
+                prime_participant_roster(&page).await;
                 return Ok(page);
             }
             JoinState::AskedToJoin => {
@@ -640,6 +641,51 @@ async fn activate_page(page: &Page) -> anyhow::Result<()> {
 async fn attempt_join(page: &Page, display_name: &str) -> anyhow::Result<JoinAttempt> {
     let script = scripts::attempt_join(display_name)?;
     Ok(page.evaluate_function(script).await?.into_value()?)
+}
+
+#[derive(Debug, Deserialize)]
+struct PrimeParticipantRosterResult {
+    opened: bool,
+    closed: bool,
+    #[serde(rename = "rosterCount")]
+    roster_count: u64,
+    error: Option<String>,
+}
+
+/// Open Meet's People panel once after admission so roster listitems mount, then close it.
+async fn prime_participant_roster(page: &Page) {
+    let eval_result: anyhow::Result<PrimeParticipantRosterResult> = async {
+        let value: serde_json::Value = page
+            .evaluate_function(scripts::prime_participant_roster())
+            .await?
+            .into_value()?;
+        Ok(serde_json::from_value(value)?)
+    }
+    .await;
+
+    match eval_result {
+        Ok(result) => {
+            if let Some(error) = result.error.as_deref() {
+                tracing::warn!(
+                    %error,
+                    opened = result.opened,
+                    closed = result.closed,
+                    roster_count = result.roster_count,
+                    "Meet participant roster prime incomplete"
+                );
+            } else {
+                tracing::info!(
+                    opened = result.opened,
+                    closed = result.closed,
+                    roster_count = result.roster_count,
+                    "primed Meet participant roster (open then close People panel)"
+                );
+            }
+        }
+        Err(error) => {
+            tracing::warn!(error = %error, "failed to run participant roster prime script");
+        }
+    }
 }
 
 pub async fn start_tab_recording(

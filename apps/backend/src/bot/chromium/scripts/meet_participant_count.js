@@ -1,6 +1,29 @@
 function() {
   const out = { count: null, source: null, raw: null };
   try {
+    const rosterRows = [...document.querySelectorAll('[role="listitem"][data-participant-id]')];
+    const inCallRows = rosterRows.filter((row) => {
+      const label = row.getAttribute('aria-label') || '';
+      if (!label.trim()) {
+        return false;
+      }
+      if (/\(\s*you\s*\)/i.test(label)) {
+        return false;
+      }
+      const childLabels = [...row.querySelectorAll('[aria-label]')].map((el) =>
+        (el.getAttribute('aria-label') || '').trim()
+      );
+      if (childLabels.some((text) => /^admit\b/i.test(text) || /^deny\b/i.test(text))) {
+        return false;
+      }
+      return true;
+    });
+    if (inCallRows.length > 0) {
+      out.count = inCallRows.length;
+      out.source = 'listitem';
+      return out;
+    }
+
     const withLabels = document.querySelectorAll('[aria-label]');
     for (let i = 0; i < withLabels.length; i++) {
       const label = (withLabels[i].getAttribute('aria-label') || '').trim();

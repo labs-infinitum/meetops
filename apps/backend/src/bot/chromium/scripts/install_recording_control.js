@@ -1,5 +1,5 @@
 async function() {
-  /** In-call roster rows (`[role="listitem"][data-participant-id]`); usually present even when the People UI is collapsed. */
+  /** In-call roster rows (`[role="listitem"][data-participant-id]`); primed once after join via `prime_participant_roster.js`. */
   function gmrListMeetParticipants() {
     const rows = [...document.querySelectorAll('[role="listitem"][data-participant-id]')];
     const isSelfRow = (row) => /\(\s*You\s*\)/i.test(row.textContent || '');

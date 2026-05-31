@@ -7,6 +7,7 @@ Each `.js` file is the **full function expression** passed to Chromium CDP `Page
 | File | When it runs |
 |------|----------------|
 | `attempt_join.js` | Poll loop while joining Meet (`__DISPLAY_NAME_JSON__` replaced with JSON string) |
+| `prime_participant_roster.js` | Once after admission (~3s): `toggleParticipantPanel()` open → wait for roster → close |
 | `install_recording_control.js` | Once before recording: MediaRecorder, timeline collector, hidden start button |
 | `recording_status.js` | Poll `window.__gmrRecordingStatus` |
 | `recording_runtime_status.js` | Poll status + upload counters |
@@ -29,13 +30,24 @@ for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.js'))) {
 
 `cargo test` also runs `scripts::tests::all_scripts_are_valid_function_expressions`.
 
+## Selector policy (Meet vs bot-owned)
+
+| OK to use | Avoid |
+|-----------|--------|
+| ARIA roles/states: `role`, `aria-label`, `aria-labelledby`, `aria-expanded`, `aria-haspopup` | `jsname`, `jscontroller`, `jsaction` (obfuscated per build) |
+| Stable Meet data attrs: `data-participant-id`, `data-requested-participant-id` | Random `class` names, dynamic element `id` literals (e.g. `DPUxh-nav9Xe`) |
+| Visible copy: “People”, “Show everyone”, “Leave call”, … | CSS module hashes / `class="JgybGf"` style tokens |
+| Bot-owned: `#gmr-start-recording`, `window.__gmr*` | — |
+
+Runtime `getElementById` is only used to resolve **whatever** id Meet puts in `aria-labelledby` at that moment—we never hardcode those ids in selectors.
+
 ## Participant list (`gmrListMeetParticipants`)
 
-Queries `[role="listitem"][data-participant-id]` anywhere in the document (Meet’s participant roster, not only when the People side sheet is visibly open). In practice Meet usually keeps these nodes mounted while in a call, so a collapsed/hidden People UI still returns correct ids/names—matching manual testing.
+Queries `[role="listitem"][data-participant-id]` in the document. Meet must **hydrate the roster at least once** per call: `prime_participant_roster.js` runs right after join, finds the People control via **accessible name** (`aria-labelledby` → “People”, or `aria-label` / tooltip), toggles open, waits for rows, toggles closed within **3 seconds**. After that, diffs work with the panel collapsed.
 
 Excludes **(You)** and lobby rows (**Admit** / **Deny** / **Ask to join**). Join/leave diffs run on each **video chunk (~1s)** and on a **5s** interval (snapshots + active speaker).
 
-**Edge cases (rare):** false `participant_left` bursts are still possible if Meet unmounts roster nodes (navigation, reconnection, layout experiments) or the roster is empty before anyone else joins. No need to force-open the People panel for normal recordings.
+**Edge cases:** if the People toggle cannot be found or `rosterCount` stays 0, join still succeeds but timeline participant events may be wrong until the panel is opened manually.
 
 ## Global state (`window.__gmr*`)
 

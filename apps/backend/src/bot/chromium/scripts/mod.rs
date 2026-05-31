@@ -4,6 +4,9 @@
 //! Edit scripts here for syntax highlighting and review; Rust embeds them at compile time via `include_str!`.
 //!
 //! Validate syntax: `node -e "new Function('return ('+require('fs').readFileSync('attempt_join.js','utf8')+')')"`
+//!
+//! Meet UI selectors must use roles, ARIA, stable `data-*` attributes, and user-visible
+//! strings—not `jsname` / obfuscated class names (see `scripts/README.md`).
 
 const ATTEMPT_JOIN: &str = include_str!("attempt_join.js");
 const INSTALL_RECORDING_CONTROL: &str = include_str!("install_recording_control.js");
@@ -11,6 +14,7 @@ const RECORDING_STATUS: &str = include_str!("recording_status.js");
 const MEET_PARTICIPANT_COUNT: &str = include_str!("meet_participant_count.js");
 const RECORDING_RUNTIME_STATUS: &str = include_str!("recording_runtime_status.js");
 const STOP_TAB_RECORDING: &str = include_str!("stop_tab_recording.js");
+const PRIME_PARTICIPANT_ROSTER: &str = include_str!("prime_participant_roster.js");
 
 /// Placeholder replaced with a JSON-string literal for the bot display name.
 const DISPLAY_NAME_PLACEHOLDER: &str = "__DISPLAY_NAME_JSON__";
@@ -42,6 +46,10 @@ pub fn recording_runtime_status() -> &'static str {
 
 pub fn stop_tab_recording() -> &'static str {
     STOP_TAB_RECORDING
+}
+
+pub fn prime_participant_roster() -> &'static str {
+    PRIME_PARTICIPANT_ROSTER
 }
 
 #[cfg(test)]
@@ -86,6 +94,7 @@ mod tests {
         assert_valid_function_expression(MEET_PARTICIPANT_COUNT, "meet_participant_count.js");
         assert_valid_function_expression(RECORDING_RUNTIME_STATUS, "recording_runtime_status.js");
         assert_valid_function_expression(STOP_TAB_RECORDING, "stop_tab_recording.js");
+        assert_valid_function_expression(PRIME_PARTICIPANT_ROSTER, "prime_participant_roster.js");
     }
 
     #[test]
