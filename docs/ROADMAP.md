@@ -1,6 +1,8 @@
-# Roadmap — AI Meeting Notetaker
+# Roadmap — MeetOps.Pro
 
-Planned work for the monorepo (`apps/backend`, `apps/frontend`, `packages/proto`). For setup and architecture, see the root [README](../README.md).
+Planned work for the monorepo (`apps/backend`, `apps/frontend`, `packages/proto`) — product domain **[MeetOps.Pro](https://meetops.pro)**. Repo name may remain `ai-meeting-notetaker-rs` internally. For setup and architecture, see the root [README](../README.md).
+
+**Active product task:** [MeetOps.Pro rebrand (landing + project-wide)](tasks/meetops-pro-rebrand.md)
 
 **North star:** Full product loop (record → transcribe → summarize → notes/todos), settings persisted per user, and **N concurrent recordings** on one machine (isolated Xvfb displays + Chrome profiles).
 
@@ -10,15 +12,16 @@ Planned work for the monorepo (`apps/backend`, `apps/frontend`, `packages/proto`
 
 ## Recommended order
 
-1. **AI pipeline** — Groq workers, then Notes/Todos/Dashboard APIs
-2. **Live recording preview** — Bot-view frames on active runs (see [Recordings UI](#recordings-ui-playback--live-preview)); replaces “Recording in progress…” placeholder
-3. **Frontend wiring** — Replace remaining mocks; delete `mock-data.ts`
-4. **Settings API** — Profile and prefs end-to-end
-5. **Concurrent recording** — Raise `concurrency_max` incrementally (1 → 2 → N)
-6. **Bot Google sessions** — Profile health checks, automatic sign-in (no manual `profile` CLI)
-7. **Telemetry & alerts** — Structured ops signals + developer notifications on failures
-8. **Production** — HTTPS, prod OAuth/CORS, deploy scripts, broaden CI beyond Docker images
-9. **Hardening** — Rate limits, S3 CORS/retention, optional Postgres
+1. **MeetOps.Pro rebrand** — Landing page, app chrome, SEO, production OAuth/CORS for `meetops.pro` — [task doc](tasks/meetops-pro-rebrand.md)
+2. **AI pipeline** — Groq workers, then Notes/Todos/Dashboard APIs
+3. **Live recording preview** — Bot-view frames on active runs (see [Recordings UI](#recordings-ui-playback--live-preview)); replaces “Recording in progress…” placeholder
+4. **Frontend wiring** — Replace remaining mocks; delete `mock-data.ts`
+5. **Settings API** — Profile and prefs end-to-end
+6. **Concurrent recording** — Raise `concurrency_max` incrementally (1 → 2 → N)
+7. **Bot Google sessions** — Profile health checks, automatic sign-in (no manual `profile` CLI)
+8. **Telemetry & alerts** — Structured ops signals + developer notifications on failures
+9. **Production** — HTTPS on MeetOps.Pro, deploy scripts, broaden CI beyond Docker images (overlaps rebrand Phase 3)
+10. **Hardening** — Rate limits, S3 CORS/retention, optional Postgres
 
 Meeting timeline and recordings detail (playback + events) are largely in place; reliability polish continues under [Meeting timeline](#meeting-timeline-in-call-events).
 
@@ -29,7 +32,7 @@ Meeting timeline and recordings detail (playback + events) are largely in place;
 - [ ] **`NoteService`** — `ListNotes`, `GetNote` (tldr, summary markdown, tags)
 - [ ] **`TodoService`** — `ListActionItems`, `UpdateActionItem` (complete, assignee, due date)
 - [ ] **`SettingsService`** — `GetSettings`, `UpdateProfile`, `UpdateRecordingPrefs`, `UpdateNotificationPrefs`
-- [ ] Production **`GMR_GRPC__ALLOW_ORIGIN`** and Google OAuth redirect URIs per deploy environment
+- [ ] Production **`GMR_GRPC__ALLOW_ORIGIN`** and Google OAuth redirect URIs for **meetops.pro** / **app.meetops.pro** — see [rebrand task](tasks/meetops-pro-rebrand.md)
 
 `RecordingService` already exposes bot runs, playback URLs, ad-hoc start/stop, and meeting timeline events (`ListMeetingTimelineEvents`).
 
