@@ -36,3 +36,4 @@ async function() {
     window.__gmrRecordChunk(JSON.stringify({ kind: 'done' }));
   }
   return { status: 'stopped', errors: window.__gmrUploadErrors || [] };
+}

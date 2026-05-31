@@ -11,3 +11,4 @@ function() {
     lastParticipantCount: typeof window.__gmrLastParticipantCount === 'number' ? window.__gmrLastParticipantCount : null,
     lastParticipantSource: window.__gmrLastParticipantSource || null
   };
+}

@@ -83,4 +83,5 @@ async function() {
   }
 
   return { state: 'needs_action', message: 'Waiting for Meet join controls', title: document.title || '', controls: visibleControls };
+}
 

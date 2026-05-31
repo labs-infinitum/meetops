@@ -68,9 +68,9 @@ async function() {
       const ariaLabels = [...row.querySelectorAll('[aria-label]')]
         .map((el) => el.getAttribute('aria-label') || '');
       return ariaLabels.some((label) =>
-        /^Admit\\b/i.test(label) ||
-        /^Deny\\b/i.test(label) ||
-        /^Ask to join\\b/i.test(label)
+        /^Admit\b/i.test(label) ||
+        /^Deny\b/i.test(label) ||
+        /^Ask to join\b/i.test(label)
       );
     };
     const getName = (row) => row.getAttribute('aria-label')?.trim() || '';
@@ -477,3 +477,4 @@ async function() {
   };
 
   return window.__gmrRecordingStatus;
+}

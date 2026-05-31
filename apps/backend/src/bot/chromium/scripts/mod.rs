@@ -2,6 +2,8 @@
 //!
 //! Each `.js` file is the full expression passed to `Page::evaluate_function` (e.g. `async function() { … }`).
 //! Edit scripts here for syntax highlighting and review; Rust embeds them at compile time via `include_str!`.
+//!
+//! Validate syntax: `node -e "new Function('return ('+require('fs').readFileSync('attempt_join.js','utf8')+')')"`
 
 const ATTEMPT_JOIN: &str = include_str!("attempt_join.js");
 const INSTALL_RECORDING_CONTROL: &str = include_str!("install_recording_control.js");
