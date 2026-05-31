@@ -8,7 +8,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use crate::{
     bot::{active_recordings::ActiveRecordings, runner},
     config::Config,
-    db::{bot_runs, BotRunStatus},
+    db::{BotRunStatus, bot_runs},
     meet_url::MeetUrl,
     storage::RecordingsStore,
 };
@@ -99,21 +99,29 @@ pub async fn run_with_permit(
                 }
                 Err(error) => {
                     let message = format!("S3 upload failed: {error}");
-                    finalize_run_logged(
-                        &pool,
-                        run_id,
-                        BotRunStatus::Failed,
-                        Some(&message),
-                        None,
-                    )
-                    .await;
+                    finalize_run_logged(&pool, run_id, BotRunStatus::Failed, Some(&message), None)
+                        .await;
                 }
             }
         }
         Err(error) => {
             let message = error.to_string();
-            finalize_run_logged(&pool, run_id, BotRunStatus::Failed, Some(&message), None)
-                .await;
+            if let Ok(user_id) = bot_runs::get_user_id(&pool, run_id).await {
+                if let Some(user_id) = user_id {
+                    let staging_dir = recordings.staging_dir(&user_id, run_id);
+                    if let Err(upload_err) = recordings
+                        .persist_tab_capture_if_present(&staging_dir, &user_id, run_id)
+                        .await
+                    {
+                        tracing::warn!(
+                            %upload_err,
+                            run_id,
+                            "failed to upload tab-capture.png after bot run failure"
+                        );
+                    }
+                }
+            }
+            finalize_run_logged(&pool, run_id, BotRunStatus::Failed, Some(&message), None).await;
         }
     }
 }
@@ -169,15 +177,7 @@ async fn finalize_run_logged(
     error: Option<&str>,
     recording_path: Option<&str>,
 ) {
-    if let Err(err) = bot_runs::finalize_run(
-        pool,
-        run_id,
-        status,
-        error,
-        recording_path,
-    )
-    .await
-    {
+    if let Err(err) = bot_runs::finalize_run(pool, run_id, status, error, recording_path).await {
         tracing::error!(%err, run_id, status = status.as_str(), "failed to finalize bot run");
     }
 }

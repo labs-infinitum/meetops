@@ -134,12 +134,17 @@ pub async fn sync_connection(
         oauth::valid_access_token_for_connection(pool, http, config, &connection.id).await?;
     let sync_token = connection.sync_token.clone();
 
-    match sync_with_token(pool, http, connection, &access_token.value, sync_token.as_deref()).await
+    match sync_with_token(
+        pool,
+        http,
+        connection,
+        &access_token.value,
+        sync_token.as_deref(),
+    )
+    .await
     {
         Ok(stats) => Ok(stats),
-        Err(CalendarError::Api(message))
-            if message.contains("410") && sync_token.is_some() =>
-        {
+        Err(CalendarError::Api(message)) if message.contains("410") && sync_token.is_some() => {
             tracing::warn!(
                 connection_id = %connection.id,
                 "Google Calendar sync token expired; running a full sync"

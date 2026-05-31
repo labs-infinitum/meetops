@@ -61,7 +61,6 @@ RUN apt-get update \
 WORKDIR /app
 
 COPY apps/backend/config.docker.toml /app/config.toml
-COPY apps/backend/assets/allow-button-template.png /app/allow-button-template.png
 COPY apps/backend/docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 COPY --from=builder /app/bin/google-meeting-recorder /usr/local/bin/google-meeting-recorder
 COPY --from=builder /app/bin/find-chrome-tab-allow-click /usr/local/bin/find-chrome-tab-allow-click

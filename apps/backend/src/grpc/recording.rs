@@ -1,6 +1,8 @@
 use tonic::{Request, Response, Status};
 
-use crate::recording::{duration_secs, RecordingService as DomainRecordingService, RecordingServiceError};
+use crate::recording::{
+    RecordingService as DomainRecordingService, RecordingServiceError, duration_secs,
+};
 
 pub mod proto {
     tonic::include_proto!("notetaker.v1");
@@ -35,9 +37,9 @@ impl RecordingService for RecordingGrpcService {
                 )),
             })),
             Err(error) => Ok(Response::new(ListBotRunsResponse {
-                result: Some(proto::list_bot_runs_response::Result::Error(to_proto_error(
-                    &error,
-                ))),
+                result: Some(proto::list_bot_runs_response::Result::Error(
+                    to_proto_error(&error),
+                )),
             })),
         }
     }
@@ -49,7 +51,9 @@ impl RecordingService for RecordingGrpcService {
         let req = request.into_inner();
         match self.inner.get_bot_run(&req.token, req.run_id).await {
             Ok(run) => Ok(Response::new(GetBotRunResponse {
-                result: Some(proto::get_bot_run_response::Result::Success(to_proto_run(&run))),
+                result: Some(proto::get_bot_run_response::Result::Success(to_proto_run(
+                    &run,
+                ))),
             })),
             Err(error) => Ok(Response::new(GetBotRunResponse {
                 result: Some(proto::get_bot_run_response::Result::Error(to_proto_error(
@@ -71,9 +75,9 @@ impl RecordingService for RecordingGrpcService {
                 )),
             })),
             Err(error) => Ok(Response::new(GetPlaybackUrlResponse {
-                result: Some(proto::get_playback_url_response::Result::Error(to_proto_error(
-                    &error,
-                ))),
+                result: Some(proto::get_playback_url_response::Result::Error(
+                    to_proto_error(&error),
+                )),
             })),
         }
     }
@@ -83,7 +87,11 @@ impl RecordingService for RecordingGrpcService {
         request: Request<StartAdHocRecordingRequest>,
     ) -> Result<Response<StartAdHocRecordingResponse>, Status> {
         let req = request.into_inner();
-        match self.inner.start_ad_hoc_recording(&req.token, &req.meet_url).await {
+        match self
+            .inner
+            .start_ad_hoc_recording(&req.token, &req.meet_url)
+            .await
+        {
             Ok(run) => Ok(Response::new(StartAdHocRecordingResponse {
                 result: Some(proto::start_ad_hoc_recording_response::Result::Success(
                     StartAdHocRecordingSuccess {
@@ -112,9 +120,9 @@ impl RecordingService for RecordingGrpcService {
                 )),
             })),
             Err(error) => Ok(Response::new(StopRecordingResponse {
-                result: Some(proto::stop_recording_response::Result::Error(to_proto_error(
-                    &error,
-                ))),
+                result: Some(proto::stop_recording_response::Result::Error(
+                    to_proto_error(&error),
+                )),
             })),
         }
     }

@@ -14,10 +14,7 @@ use sqlx::SqlitePool;
 use tower_http::trace::TraceLayer;
 
 use crate::{
-    auth::AuthService,
-    calendar::CalendarService,
-    config::Config,
-    error::AppError,
+    auth::AuthService, calendar::CalendarService, config::Config, error::AppError,
     google::oauth::GoogleAuthError,
 };
 
@@ -75,10 +72,7 @@ async fn auth_google_callback(
         state.auth.clone(),
     );
 
-    match calendar
-        .finish_oauth_callback(&code, &state_value)
-        .await
-    {
+    match calendar.finish_oauth_callback(&code, &state_value).await {
         Ok(connection) => Ok(Redirect::temporary(&oauth_redirect_url(
             &state.config,
             "connected",

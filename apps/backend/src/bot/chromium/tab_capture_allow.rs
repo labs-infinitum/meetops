@@ -1,6 +1,5 @@
 //! Linux-only: wait after `getDisplayMedia`, screenshot the Chrome window via X11 tooling, locate
-//! the pale-blue \"Allow\" pill with [`allow_button_detect`], optionally refine with
-//! `allow_button_template_png`, then fall back to heuristic `xdotool`.
+//! the pale-blue \"Allow\" pill with [`allow_button_detect`], then fall back to heuristic `xdotool`.
 
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -8,7 +7,6 @@ use std::time::Duration;
 
 use crate::bot::{allow_button_detect, xdotool_geom};
 use anyhow::Context;
-use image::GrayImage;
 use tokio::process::Command;
 use tokio::sync::oneshot::Receiver;
 use tokio::task::JoinHandle;
@@ -19,13 +17,49 @@ use super::{
 };
 
 const WAIT_AFTER_CAPTURE_REQUEST: Duration = Duration::from_secs(3);
-const TEMPLATE_RETRY_INTERVAL: Duration = Duration::from_millis(400);
-const TEMPLATE_ATTEMPTS: usize = 14;
-/// Normalized-cross-correlation score threshold for template refinement (similar idea to tuning OpenCV TM_CCOEFF_NORMED).
-const MIN_TEMPLATE_MATCH_SCORE: f64 = 0.72;
+const SCREENSHOT_RETRY_INTERVAL: Duration = Duration::from_millis(400);
+const SCREENSHOT_ATTEMPTS: usize = 14;
 
 const SCREENSHOT_TIMEOUT: Duration = Duration::from_secs(30);
 const XDOTOOL_SUBPROCESS_TIMEOUT: Duration = Duration::from_secs(5);
+
+async fn maybe_dismiss_restore_pages_from_png(
+    shot_path: &Path,
+    wid_str: &str,
+    display: Option<&str>,
+) -> anyhow::Result<bool> {
+    let path_owned = shot_path.to_path_buf();
+    let center = tokio::task::spawn_blocking(move || {
+        let img = image::open(&path_owned).ok()?;
+        let popup = allow_button_detect::detect_restore_pages_popup(&img)?;
+        Some(popup.close_button_center())
+    })
+    .await
+    .map_err(|_| anyhow::anyhow!("Restore pages blob task aborted"))?;
+
+    let Some((cx_u, cy_u)) = center else {
+        tracing::trace!(
+            screenshot_png = %shot_path.display(),
+            "Restore pages blob: no top-right title card matched"
+        );
+        return Ok(false);
+    };
+
+    let cx = i32::try_from(cx_u).context("Restore close x overflows i32")?;
+    let cy = i32::try_from(cy_u).context("Restore close y overflows i32")?;
+
+    tracing::info!(
+        screenshot_png = %shot_path.display(),
+        xdotool_window_id = %wid_str,
+        center_x_window_relative = cx,
+        center_y_window_relative = cy,
+        method = "restore_pages_blob",
+        "Restore pages? close (×) from PNG title-card blob",
+    );
+
+    xdot_mousemove_click_window_relative(wid_str, cx, cy, display).await?;
+    Ok(true)
+}
 
 async fn maybe_click_allow_from_color_blob_png(
     shot_path: &Path,
@@ -80,8 +114,8 @@ async fn maybe_click_allow_from_color_blob_png(
 pub(super) fn spawn(
     wait_for_click: Receiver<()>,
     linux_xdotool_display: Option<String>,
-    allow_button_template_png: Option<PathBuf>,
     tab_capture_screenshot_dir: PathBuf,
+    tab_capture_png: PathBuf,
     launched_chrome_pid: Option<u32>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
@@ -96,10 +130,10 @@ pub(super) fn spawn(
         tracing::info!(
             x11_display_explicit = ?x11_display_opt,
             process_display_env = ?std::env::var("DISPLAY").ok(),
-            button_template_png = ?allow_button_template_png,
             launched_chrome_pid = ?launched_chrome_pid,
             tab_capture_shots_dir = %tab_capture_screenshot_dir.display(),
-            "Linux tab-share auto-accept: 3s pause after capture request — PNG color blob, optional template refinement, heuristic xdotool"
+            tab_capture_png = %tab_capture_png.display(),
+            "Linux tab-share auto-accept: dismiss restore bubble, 3s pause — PNG color blob, heuristic xdotool"
         );
 
         tokio::time::sleep(WAIT_AFTER_CAPTURE_REQUEST).await;
@@ -112,28 +146,17 @@ pub(super) fn spawn(
             );
         }
 
-        let template_path = resolve_template_path_with_warning(allow_button_template_png.as_ref());
-        let screenshot_attempts = if template_path.is_some() {
-            TEMPLATE_ATTEMPTS
-        } else {
-            1
-        };
-
-        for attempt in 1..=screenshot_attempts {
+        for attempt in 1..=SCREENSHOT_ATTEMPTS {
             match attempt_click_allow_via_screenshot(
                 x11_display_opt,
-                template_path.as_deref(),
                 tab_capture_screenshot_dir.as_path(),
+                tab_capture_png.as_path(),
                 launched_chrome_pid,
             )
             .await
             {
                 Ok(()) => {
-                    tracing::info!(
-                        attempt,
-                        template = ?template_path.as_ref().map(|p| p.display().to_string()),
-                        "Allow click attempted (screenshot + color blob, optional template)"
-                    );
+                    tracing::info!(attempt, "tab-capture prompt detection pass finished");
                 }
                 Err(error) => {
                     tracing::warn!(
@@ -143,13 +166,7 @@ pub(super) fn spawn(
                     );
                 }
             }
-            tokio::time::sleep(TEMPLATE_RETRY_INTERVAL).await;
-        }
-
-        if template_path.is_some() {
-            tracing::warn!(
-                "template-assisted Allow retries exhausted; falling back to heuristic xdotool"
-            );
+            tokio::time::sleep(SCREENSHOT_RETRY_INTERVAL).await;
         }
 
         for attempt in 1..=48 {
@@ -165,32 +182,10 @@ pub(super) fn spawn(
     })
 }
 
-fn resolve_template_path_with_warning(candidate: Option<&PathBuf>) -> Option<PathBuf> {
-    let p = candidate?.clone();
-    if p.is_file() {
-        Some(p)
-    } else {
-        tracing::warn!(
-            path = %p.display(),
-            "allow_button_template_png missing or not a file; disabling template match"
-        );
-        None
-    }
-}
-
-#[derive(Debug)]
-struct TemplateMatch {
-    x: u32,
-    y: u32,
-    tw: u32,
-    th: u32,
-    score: f64,
-}
-
 async fn attempt_click_allow_via_screenshot(
     display: Option<&str>,
-    template_png_path: Option<&Path>,
     screenshot_dir: &Path,
+    tab_capture_png: &Path,
     launched_chrome_pid: Option<u32>,
 ) -> anyhow::Result<()> {
     let (shot_path, wid_str) = chrome_window_focus_and_capture_png(
@@ -201,11 +196,24 @@ async fn attempt_click_allow_via_screenshot(
     )
     .await?;
 
+    persist_tab_capture_png_copy(shot_path.as_path(), tab_capture_png).await?;
+
     tracing::info!(
         screenshot_png = %shot_path.display(),
+        tab_capture_png = %tab_capture_png.display(),
         xdotool_window_id = %wid_str,
         "saved Chrome window screenshot for tab-share Allow detection",
     );
+
+    if maybe_dismiss_restore_pages_from_png(shot_path.as_path(), &wid_str, display).await? {
+        tracing::info!(
+            screenshot_png = %shot_path.display(),
+            xdotool_window_id = %wid_str,
+            "Dismissed Restore pages? via blob detector before Allow search",
+        );
+        tokio::time::sleep(Duration::from_millis(350)).await;
+        return Ok(());
+    }
 
     if maybe_click_allow_from_color_blob_png(shot_path.as_path(), &wid_str, display).await? {
         tracing::info!(
@@ -216,61 +224,10 @@ async fn attempt_click_allow_via_screenshot(
         return Ok(());
     }
 
-    let Some(template_png) = template_png_path else {
-        tracing::debug!(
-            screenshot_png = %shot_path.display(),
-            "color blob missed and allow_button_template_png is not configured"
-        );
-        return Ok(());
-    };
-
     tracing::debug!(
         screenshot_png = %shot_path.display(),
-        template = %template_png.display(),
-        "color blob missed — correlating Allow template PNG",
+        "Allow color blob missed"
     );
-
-    let tmpl_path_owned = template_png.to_path_buf();
-    let screenshot_path_for_match = shot_path.clone();
-    let m = tokio::task::spawn_blocking(move || {
-        let scene_dyn = image::open(&screenshot_path_for_match).with_context(|| {
-            format!(
-                "read screenshot PNG {}",
-                screenshot_path_for_match.display()
-            )
-        })?;
-        let tmpl_dyn = image::open(&tmpl_path_owned)
-            .with_context(|| format!("{}", tmpl_path_owned.display()))?;
-        let scene = scene_dyn.into_luma8();
-        let tmpl = tmpl_dyn.into_luma8();
-        let m = match_template_ncc(&scene, &tmpl)?;
-        anyhow::ensure!(
-            m.score >= MIN_TEMPLATE_MATCH_SCORE,
-            "weak match {:.3}",
-            m.score
-        );
-        Ok::<TemplateMatch, anyhow::Error>(m)
-    })
-    .await??;
-
-    let cx = i32::try_from(m.x + m.tw / 2)?;
-    let cy = i32::try_from(m.y + m.th / 2)?;
-
-    tracing::info!(
-        screenshot_png = %shot_path.display(),
-        xdotool_window_id = %wid_str,
-        bbox_x = m.x,
-        bbox_y = m.y,
-        bbox_w = m.tw,
-        bbox_h = m.th,
-        center_x_window_relative = cx,
-        center_y_window_relative = cy,
-        match_score_ncc = %format!("{:.5}", m.score),
-        "Allow button pose from screenshot + template (window-relative coords; pass to xdotool --window)",
-    );
-
-    xdot_mousemove_click_window_relative(&wid_str, cx, cy, display).await?;
-
     Ok(())
 }
 
@@ -304,6 +261,17 @@ async fn chrome_window_focus_and_capture_png(
     Ok((shot_path, wid_str))
 }
 
+async fn persist_tab_capture_png_copy(
+    shot_path: &Path,
+    tab_capture_png: &Path,
+) -> anyhow::Result<()> {
+    if let Some(parent) = tab_capture_png.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+    tokio::fs::copy(shot_path, tab_capture_png).await?;
+    Ok(())
+}
+
 fn unique_timestamp_suffix() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
@@ -313,103 +281,6 @@ fn unique_timestamp_suffix() -> String {
             tracing::warn!(%error, "system clock before UNIX epoch; using fallback screenshot suffix");
             "0".into()
         })
-}
-
-fn match_template_ncc(scene: &GrayImage, tpl: &GrayImage) -> anyhow::Result<TemplateMatch> {
-    let sw = scene.width();
-    let sh = scene.height();
-    let tw = tpl.width();
-    let th = tpl.height();
-    anyhow::ensure!(
-        tw <= sw && th <= sh,
-        "template exceeds screenshot dimensions"
-    );
-
-    let area = tw * th;
-    let n = f64::from(area);
-
-    let mut t_dc: Vec<f64> = Vec::with_capacity(area as usize);
-    let mut sum_t = 0.0_f64;
-    for y in 0..th {
-        for x in 0..tw {
-            let v = f64::from(tpl.get_pixel(x, y).0[0]);
-            sum_t += v;
-        }
-    }
-    let mean_t = sum_t / n;
-
-    let mut t_norm_sq = 0.0_f64;
-    for y in 0..th {
-        for x in 0..tw {
-            let v = f64::from(tpl.get_pixel(x, y).0[0]);
-            let d = v - mean_t;
-            t_dc.push(d);
-            t_norm_sq += d * d;
-        }
-    }
-    anyhow::ensure!(t_norm_sq > 1e-9, "degenerate flat template");
-
-    let max_sy = sh - th;
-    let max_sx = sw - tw;
-    let mut best_score = f64::NEG_INFINITY;
-    let mut bx = 0u32;
-    let mut by = 0u32;
-    let mut matched_any = false;
-
-    for sy in 0..=max_sy {
-        for sx in 0..=max_sx {
-            let mut sum_p = 0.0_f64;
-            let mut scratch: Vec<f64> = Vec::with_capacity(area as usize);
-            for y in 0..th {
-                for x in 0..tw {
-                    let v = f64::from(scene.get_pixel(sx + x, sy + y).0[0]);
-                    scratch.push(v);
-                    sum_p += v;
-                }
-            }
-            let mean_p = sum_p / n;
-
-            let mut dot = 0.0_f64;
-            let mut p_norm_sq = 0.0_f64;
-
-            if t_dc.len() != scratch.len() {
-                anyhow::bail!("internal template/patch length mismatch");
-            }
-
-            for (t_d, p_raw) in t_dc.iter().zip(scratch.iter()) {
-                let p_d = *p_raw - mean_p;
-                dot += (*t_d) * p_d;
-                p_norm_sq += p_d * p_d;
-            }
-
-            if p_norm_sq < 1e-9 {
-                continue;
-            }
-            let denom = (t_norm_sq * p_norm_sq).sqrt();
-            if denom < 1e-18 {
-                continue;
-            }
-            let score = dot / denom;
-            if score > best_score {
-                best_score = score;
-                bx = sx;
-                by = sy;
-                matched_any = true;
-            }
-        }
-    }
-
-    anyhow::ensure!(
-        matched_any && best_score.is_finite(),
-        "ncc had no usable match"
-    );
-    Ok(TemplateMatch {
-        x: bx,
-        y: by,
-        tw,
-        th,
-        score: best_score,
-    })
 }
 
 async fn screenshot_chrome_window_to_png(
@@ -554,7 +425,10 @@ async fn ffmpeg_x11grab_window(wid: u32, display: Option<&str>, out: &Path) -> a
     }
 }
 
-async fn grab_window_geom(wid: u32, display: Option<&str>) -> anyhow::Result<xdotool_geom::ShellGeom> {
+async fn grab_window_geom(
+    wid: u32,
+    display: Option<&str>,
+) -> anyhow::Result<xdotool_geom::ShellGeom> {
     let wid_s = wid.to_string();
     let out = tokio::time::timeout(XDOTOOL_SUBPROCESS_TIMEOUT, {
         let mut c = Command::new("xdotool");
@@ -564,9 +438,9 @@ async fn grab_window_geom(wid: u32, display: Option<&str>) -> anyhow::Result<xdo
     .await??;
 
     anyhow::ensure!(out.status.success(), "getwindowgeometry failed");
-    Ok(xdotool_geom::parse_geom_shell_stdout(&String::from_utf8_lossy(
-        &out.stdout,
-    )))
+    Ok(xdotool_geom::parse_geom_shell_stdout(
+        &String::from_utf8_lossy(&out.stdout),
+    ))
 }
 
 async fn xdot_mousemove_click_window_relative(
@@ -595,13 +469,13 @@ async fn xdot_mousemove_click_window_relative(
 
     let mut clk = Command::new("xdotool");
     linux_xdotool_apply_display(&mut clk, display);
-    clk.args(["click", "--window", wid_str, "1"]);
+    clk.args(["click", "1"]);
 
     anyhow::ensure!(
         tokio::time::timeout(XDOTOOL_SUBPROCESS_TIMEOUT, clk.status())
             .await??
             .success(),
-        "xdotool click --window failed"
+        "xdotool click failed"
     );
 
     Ok(())

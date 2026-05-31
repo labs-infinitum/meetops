@@ -8,8 +8,7 @@ pub mod proto {
 
 use proto::{
     AuthError as ProtoAuthError, AuthResponse, AuthSuccess, GetSessionRequest, LoginRequest,
-    LogoutRequest, LogoutResponse, SignUpRequest, User,
-    auth_service_server::AuthService,
+    LogoutRequest, LogoutResponse, SignUpRequest, User, auth_service_server::AuthService,
 };
 
 pub struct AuthGrpcService {

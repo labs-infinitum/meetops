@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use aws_sdk_s3::Client as S3Client;
 use aws_sdk_s3::presigning::PresigningConfig;
 use aws_sdk_s3::primitives::ByteStream;
-use aws_sdk_s3::Client as S3Client;
 
 use crate::config::StorageConfig;
 
@@ -71,6 +71,15 @@ impl RecordingsStore {
         )
     }
 
+    pub fn object_key_for_tab_capture(&self, user_id: &str, run_id: i64) -> String {
+        let prefix = normalized_prefix(&self.config.recordings.s3.prefix);
+        format!(
+            "{prefix}/{}/{}/tab-capture.png",
+            sanitize_path_segment(user_id),
+            run_id
+        )
+    }
+
     pub fn object_key_for_manual(&self, recording_id: &str) -> String {
         let prefix = normalized_prefix(&self.config.recordings.s3.prefix);
         format!(
@@ -86,11 +95,33 @@ impl RecordingsStore {
         run_id: i64,
     ) -> anyhow::Result<String> {
         let key = self.object_key_for_bot_run(user_id, run_id);
-        self.upload_file(&self.s3, local_path, &key).await?;
+        self.upload_file(&self.s3, local_path, &key, "video/webm")
+            .await?;
+        if let Some(staging_dir) = local_path.parent() {
+            self.persist_tab_capture_if_present(staging_dir, user_id, run_id)
+                .await?;
+        }
         if self.config.recordings.delete_local_after_upload {
             self.remove_staging_artifacts(local_path).await;
         }
         Ok(key)
+    }
+
+    /// Uploads `tab-capture.png` from a bot run staging directory when present.
+    pub async fn persist_tab_capture_if_present(
+        &self,
+        staging_dir: &Path,
+        user_id: &str,
+        run_id: i64,
+    ) -> anyhow::Result<()> {
+        let local_path = staging_dir.join("tab-capture.png");
+        if tokio::fs::metadata(&local_path).await.is_err() {
+            return Ok(());
+        }
+        let key = self.object_key_for_tab_capture(user_id, run_id);
+        self.upload_file(&self.s3, &local_path, &key, "image/png")
+            .await?;
+        Ok(())
     }
 
     pub async fn persist_manual_recording(
@@ -99,7 +130,8 @@ impl RecordingsStore {
         recording_id: &str,
     ) -> anyhow::Result<String> {
         let key = self.object_key_for_manual(recording_id);
-        self.upload_file(&self.s3, local_path, &key).await?;
+        self.upload_file(&self.s3, local_path, &key, "video/webm")
+            .await?;
         if self.config.recordings.delete_local_after_upload {
             self.remove_staging_artifacts(local_path).await;
         }
@@ -118,13 +150,19 @@ impl RecordingsStore {
         Ok(presigned.uri().to_string())
     }
 
-    async fn upload_file(&self, client: &S3Client, local_path: &Path, key: &str) -> anyhow::Result<()> {
+    async fn upload_file(
+        &self,
+        client: &S3Client,
+        local_path: &Path,
+        key: &str,
+        content_type: &str,
+    ) -> anyhow::Result<()> {
         let body = ByteStream::from_path(local_path).await?;
         client
             .put_object()
             .bucket(&self.config.recordings.s3.bucket)
             .key(key)
-            .content_type("video/webm")
+            .content_type(content_type)
             .body(body)
             .send()
             .await?;

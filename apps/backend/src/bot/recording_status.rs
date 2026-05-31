@@ -15,6 +15,12 @@ pub enum RecordingStatus {
     Recording {
         #[serde(default, rename = "mimeType")]
         mime_type: Option<String>,
+        #[serde(default, rename = "audioTrackCount")]
+        audio_track_count: Option<u64>,
+        #[serde(default, rename = "videoTrackCount")]
+        video_track_count: Option<u64>,
+        #[serde(default, rename = "audioSource")]
+        audio_source: Option<String>,
     },
     Failed {
         name: String,
@@ -65,19 +71,41 @@ pub struct RecordingRuntimeStatus {
     pub last_participant_count: Option<u64>,
     #[serde(default, rename = "lastParticipantSource")]
     pub last_participant_source: Option<String>,
+    #[serde(default, rename = "audioTrackCount")]
+    pub audio_track_count: Option<u64>,
+    #[serde(default, rename = "videoTrackCount")]
+    pub video_track_count: Option<u64>,
+    #[serde(default, rename = "audioSource")]
+    pub audio_source: Option<String>,
 }
 
 impl fmt::Display for RecordingRuntimeStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "phase={:?} chunks={} uploaded_bytes={} accepted_chunks={} upload_errors={} binding={} participants={:?} participant_source={:?}",
+            "phase={:?} chunks={} uploaded_bytes={} accepted_chunks={} upload_errors={} binding={} audio_tracks={:?} video_tracks={:?} audio_source={:?} participants={:?} participant_source={:?}",
             self.status.phase(),
             self.chunk_count,
             self.uploaded_bytes,
             self.accepted_chunks,
             self.upload_errors.len(),
             self.binding_available,
+            self.audio_track_count.or_else(|| match &self.status {
+                RecordingStatus::Recording {
+                    audio_track_count, ..
+                } => *audio_track_count,
+                _ => None,
+            }),
+            self.video_track_count.or_else(|| match &self.status {
+                RecordingStatus::Recording {
+                    video_track_count, ..
+                } => *video_track_count,
+                _ => None,
+            }),
+            self.audio_source.as_deref().or_else(|| match &self.status {
+                RecordingStatus::Recording { audio_source, .. } => audio_source.as_deref(),
+                _ => None,
+            }),
             self.last_participant_count,
             self.last_participant_source,
         )
@@ -104,8 +132,10 @@ mod tests {
 
     #[test]
     fn deserializes_recording_status_variants() {
-        let recording: RecordingStatus =
-            serde_json::from_str(r#"{"status":"recording","mimeType":"video/webm"}"#).unwrap();
+        let recording: RecordingStatus = serde_json::from_str(
+            r#"{"status":"recording","mimeType":"video/webm","audioTrackCount":1,"videoTrackCount":1,"audioSource":"meet_element_audio"}"#,
+        )
+        .unwrap();
         assert!(matches!(recording, RecordingStatus::Recording { .. }));
 
         let failed: RecordingStatus = serde_json::from_str(
@@ -134,8 +164,7 @@ mod tests {
         .unwrap();
         assert!(matches!(chunk, RecordingBindingPayload::Chunk { .. }));
 
-        let done: RecordingBindingPayload =
-            serde_json::from_str(r#"{"kind":"done"}"#).unwrap();
+        let done: RecordingBindingPayload = serde_json::from_str(r#"{"kind":"done"}"#).unwrap();
         assert!(matches!(done, RecordingBindingPayload::Done));
     }
 

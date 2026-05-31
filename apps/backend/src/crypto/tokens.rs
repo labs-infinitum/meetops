@@ -64,7 +64,9 @@ pub fn decrypt(stored: &str) -> anyhow::Result<String> {
     }
 
     let key = key_bytes().ok_or_else(|| {
-        anyhow::anyhow!("encrypted calendar token found but GMR_STORAGE__TOKEN_ENCRYPTION_KEY is not set")
+        anyhow::anyhow!(
+            "encrypted calendar token found but GMR_STORAGE__TOKEN_ENCRYPTION_KEY is not set"
+        )
     })?;
 
     let bytes = STANDARD

@@ -20,10 +20,7 @@ impl MeetUrl {
     }
 
     pub fn ad_hoc_title(&self) -> String {
-        let code = self
-            .0
-            .strip_prefix(PREFIX)
-            .unwrap_or("meeting");
+        let code = self.0.strip_prefix(PREFIX).unwrap_or("meeting");
         format!("Ad-hoc · {code}")
     }
 

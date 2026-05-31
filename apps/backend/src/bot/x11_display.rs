@@ -286,7 +286,8 @@ fn remove_stale_x11_socket(display: &str) -> bool {
     match std::fs::remove_file(&path) {
         Ok(()) => true,
         Err(error) => {
-            warn!(display = %display, path = %path.display(), %error, "could not remove stale X11 socket");
+            let x11 = display;
+            warn!(x11_display = %x11, socket_path = ?path, %error, "could not remove stale X11 socket");
             false
         }
     }
@@ -379,11 +380,7 @@ fn which_executable(name: &str) -> Option<String> {
         return None;
     }
     let path = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-    if path.is_empty() {
-        None
-    } else {
-        Some(path)
-    }
+    if path.is_empty() { None } else { Some(path) }
 }
 
 fn read_child_stderr(child: &mut Child) -> String {

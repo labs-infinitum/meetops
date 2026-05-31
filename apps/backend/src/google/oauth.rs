@@ -5,13 +5,12 @@ use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
-use crate::{config::Config, db::calendar_connections, db};
+use crate::{config::Config, db, db::calendar_connections};
 
 const GOOGLE_AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 const GOOGLE_USERINFO_URL: &str = "https://www.googleapis.com/oauth2/v2/userinfo";
-pub const OAUTH_SCOPES: &str =
-    "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.email";
+pub const OAUTH_SCOPES: &str = "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.email";
 
 fn oauth_state_key(state: &str) -> String {
     format!("oauth_state:{state}")
@@ -185,9 +184,9 @@ pub async fn finish_callback(
         .unwrap_or_else(|| email.split('@').next().unwrap_or("Google").to_owned());
 
     let existing_for_user = calendar_connections::list_for_user(pool, user_id).await?;
-    let color = payload.color.unwrap_or_else(|| {
-        calendar_connections::next_google_color(&existing_for_user).to_owned()
-    });
+    let color = payload
+        .color
+        .unwrap_or_else(|| calendar_connections::next_google_color(&existing_for_user).to_owned());
 
     let connection_id = Uuid::new_v4().to_string();
     calendar_connections::insert(
@@ -282,7 +281,10 @@ pub async fn valid_access_token_for_connection(
     })
 }
 
-async fn verify_state(pool: &SqlitePool, state: &str) -> Result<OAuthStatePayload, GoogleAuthError> {
+async fn verify_state(
+    pool: &SqlitePool,
+    state: &str,
+) -> Result<OAuthStatePayload, GoogleAuthError> {
     let stored = db::get_kv(pool, &oauth_state_key(state)).await?;
     let Some(json) = stored else {
         return Err(GoogleAuthError::StateMismatch);

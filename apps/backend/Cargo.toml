@@ -9,6 +9,10 @@ default-run = "google-meeting-recorder"
 name = "find-chrome-tab-allow-click"
 path = "src/bin/find_chrome_tab_allow_click.rs"
 
+[[bin]]
+name = "preview-tab-capture-clicks"
+path = "src/bin/preview_tab_capture_clicks.rs"
+
 [dependencies]
 aes-gcm = "0.10"
 anyhow = "1"

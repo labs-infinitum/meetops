@@ -37,7 +37,11 @@ pub struct GrpcState {
     pub active_recordings: Arc<ActiveRecordings>,
 }
 
-pub async fn serve(listener: TcpListener, grpc_config: Arc<GrpcConfig>, state: GrpcState) -> anyhow::Result<()> {
+pub async fn serve(
+    listener: TcpListener,
+    grpc_config: Arc<GrpcConfig>,
+    state: GrpcState,
+) -> anyhow::Result<()> {
     let addr = listener.local_addr()?;
     let auth_service = auth::AuthGrpcService {
         inner: state.auth.clone(),
@@ -121,7 +125,9 @@ pub async fn serve(listener: TcpListener, grpc_config: Arc<GrpcConfig>, state: G
             meeting::proto::meeting_service_server::MeetingServiceServer::new(meeting_service),
         ))
         .add_service(tonic_web::enable(
-            recording::proto::recording_service_server::RecordingServiceServer::new(recording_service),
+            recording::proto::recording_service_server::RecordingServiceServer::new(
+                recording_service,
+            ),
         ))
         .serve_with_incoming(TcpListenerStream::new(listener))
         .await?;

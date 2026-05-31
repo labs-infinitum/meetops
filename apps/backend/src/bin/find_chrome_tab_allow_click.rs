@@ -36,9 +36,9 @@ fn xdot_window_geometry_shell(wid: u32, display: Option<&str>) -> Result<xdotool
         out.status.code()
     );
 
-    Ok(xdotool_geom::parse_geom_shell_stdout(&String::from_utf8_lossy(
-        &out.stdout,
-    )))
+    Ok(xdotool_geom::parse_geom_shell_stdout(
+        &String::from_utf8_lossy(&out.stdout),
+    ))
 }
 
 fn usage() -> ! {

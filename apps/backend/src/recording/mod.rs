@@ -192,16 +192,18 @@ impl RecordingService {
         let url = meet_url.clone();
 
         tokio::spawn(async move {
-            bot_runner::run_with_permit(
-                permit, cfg, pool, recordings, active, run_id, url, end_at,
-            )
-            .await;
+            bot_runner::run_with_permit(permit, cfg, pool, recordings, active, run_id, url, end_at)
+                .await;
         });
 
         Ok(run)
     }
 
-    pub async fn stop_recording(&self, token: &str, run_id: i64) -> Result<(), RecordingServiceError> {
+    pub async fn stop_recording(
+        &self,
+        token: &str,
+        run_id: i64,
+    ) -> Result<(), RecordingServiceError> {
         let user_id = self.require_user_id(token).await?;
         let run = db::bot_runs::get_for_user(&self.db, &user_id, run_id)
             .await?
@@ -235,8 +237,5 @@ pub fn duration_secs(run: &BotRunListItem) -> i64 {
 }
 
 fn is_stoppable_status(status: &str) -> bool {
-    matches!(
-        status,
-        "queued" | "joining" | "in_meeting" | "recording"
-    )
+    matches!(status, "queued" | "joining" | "in_meeting" | "recording")
 }

@@ -7,10 +7,10 @@ pub mod proto {
 }
 
 use proto::{
-    CalendarConnection, CalendarError, DisconnectRequest, DisconnectResponse,
-    DisconnectSuccess, ListConnectionsRequest, ListConnectionsResponse, ListConnectionsSuccess,
-    StartOAuthRequest, StartOAuthResponse, StartOAuthSuccess, SyncNowRequest, SyncNowResponse,
-    SyncNowSuccess, calendar_service_server::CalendarService,
+    CalendarConnection, CalendarError, DisconnectRequest, DisconnectResponse, DisconnectSuccess,
+    ListConnectionsRequest, ListConnectionsResponse, ListConnectionsSuccess, StartOAuthRequest,
+    StartOAuthResponse, StartOAuthSuccess, SyncNowRequest, SyncNowResponse, SyncNowSuccess,
+    calendar_service_server::CalendarService,
 };
 
 pub struct CalendarGrpcService {
@@ -88,9 +88,9 @@ impl CalendarService for CalendarGrpcService {
         let req = request.into_inner();
         match self.inner.disconnect(&req.token, &req.connection_id).await {
             Ok(ok) => Ok(Response::new(DisconnectResponse {
-                result: Some(proto::disconnect_response::Result::Success(DisconnectSuccess {
-                    ok,
-                })),
+                result: Some(proto::disconnect_response::Result::Success(
+                    DisconnectSuccess { ok },
+                )),
             })),
             Err(error) => Ok(Response::new(DisconnectResponse {
                 result: Some(proto::disconnect_response::Result::Error(to_proto_error(
@@ -105,11 +105,7 @@ impl CalendarService for CalendarGrpcService {
         request: Request<SyncNowRequest>,
     ) -> Result<Response<SyncNowResponse>, Status> {
         let req = request.into_inner();
-        match self
-            .inner
-            .sync_now(&req.token, &req.connection_id)
-            .await
-        {
+        match self.inner.sync_now(&req.token, &req.connection_id).await {
             Ok((stats, last_synced_at)) => Ok(Response::new(SyncNowResponse {
                 result: Some(proto::sync_now_response::Result::Success(SyncNowSuccess {
                     seen: stats.seen as i32,

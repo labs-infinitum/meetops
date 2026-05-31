@@ -8,11 +8,15 @@ use tokio::time::{Duration, Instant};
 use crate::{
     bot::{chromium, x11_display},
     config::Config,
-    meet_url::MeetUrl,
     db::bot_runs,
+    meet_url::MeetUrl,
 };
 
-pub async fn record(meet_url: MeetUrl, config: &Config, recording_dir: PathBuf) -> anyhow::Result<PathBuf> {
+pub async fn record(
+    meet_url: MeetUrl,
+    config: &Config,
+    recording_dir: PathBuf,
+) -> anyhow::Result<PathBuf> {
     let (_tx, stop_rx) = watch::channel(false);
     let raw = record_inner(
         meet_url,
@@ -92,9 +96,10 @@ where
     }
 
     let tab_capture_screenshot_dir = recording_dir.join("tab-capture-screenshots");
+    let tab_capture_png = recording_dir.join("tab-capture.png");
+    let _ = tokio::fs::remove_file(&tab_capture_png).await;
 
-    let join_options =
-        chromium::JoinOptions::from_config(meet_url, config, x11_display.clone());
+    let join_options = chromium::JoinOptions::from_config(meet_url, config, x11_display.clone());
 
     let mut session = chromium::open_joined_meeting(join_options).await?;
 
@@ -130,8 +135,8 @@ where
         &session.page,
         &raw_webm_path,
         session.x11_display.clone(),
-        config.bot.allow_button_template_png.clone(),
         tab_capture_screenshot_dir,
+        tab_capture_png,
         chrome_pid,
     )
     .await

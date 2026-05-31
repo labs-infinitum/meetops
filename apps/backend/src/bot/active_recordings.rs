@@ -11,12 +11,18 @@ pub struct ActiveRecordings {
 impl ActiveRecordings {
     pub fn register(&self, run_id: i64) -> watch::Receiver<bool> {
         let (tx, rx) = watch::channel(false);
-        self.inner.lock().expect("active recordings lock").insert(run_id, tx);
+        self.inner
+            .lock()
+            .expect("active recordings lock")
+            .insert(run_id, tx);
         rx
     }
 
     pub fn unregister(&self, run_id: i64) {
-        self.inner.lock().expect("active recordings lock").remove(&run_id);
+        self.inner
+            .lock()
+            .expect("active recordings lock")
+            .remove(&run_id);
     }
 
     pub fn request_stop(&self, run_id: i64) -> bool {

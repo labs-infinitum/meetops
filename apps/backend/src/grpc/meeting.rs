@@ -7,10 +7,10 @@ pub mod proto {
 }
 
 use proto::{
-    DashboardSummary, GetDashboardSummaryRequest, GetDashboardSummaryResponse,
-    GetMeetingRequest, GetMeetingResponse, ListMeetingsRequest, ListMeetingsResponse,
-    ListMeetingsSuccess, Meeting, MeetingError as ProtoMeetingError, SetAutoRecordRequest,
-    SetAutoRecordResponse, SetAutoRecordSuccess, meeting_service_server::MeetingService,
+    DashboardSummary, GetDashboardSummaryRequest, GetDashboardSummaryResponse, GetMeetingRequest,
+    GetMeetingResponse, ListMeetingsRequest, ListMeetingsResponse, ListMeetingsSuccess, Meeting,
+    MeetingError as ProtoMeetingError, SetAutoRecordRequest, SetAutoRecordResponse,
+    SetAutoRecordSuccess, meeting_service_server::MeetingService,
 };
 
 pub struct MeetingGrpcService {
@@ -50,9 +50,9 @@ impl MeetingService for MeetingGrpcService {
         let req = request.into_inner();
         match self.inner.get_meeting(&req.token, &req.meeting_id).await {
             Ok(row) => Ok(Response::new(GetMeetingResponse {
-                result: Some(proto::get_meeting_response::Result::Success(to_proto_meeting(
-                    &row,
-                ))),
+                result: Some(proto::get_meeting_response::Result::Success(
+                    to_proto_meeting(&row),
+                )),
             })),
             Err(error) => Ok(Response::new(GetMeetingResponse {
                 result: Some(proto::get_meeting_response::Result::Error(to_proto_error(
@@ -78,9 +78,9 @@ impl MeetingService for MeetingGrpcService {
                 )),
             })),
             Err(error) => Ok(Response::new(SetAutoRecordResponse {
-                result: Some(proto::set_auto_record_response::Result::Error(to_proto_error(
-                    &error,
-                ))),
+                result: Some(proto::set_auto_record_response::Result::Error(
+                    to_proto_error(&error),
+                )),
             })),
         }
     }
@@ -115,8 +115,7 @@ impl MeetingService for MeetingGrpcService {
 }
 
 fn to_proto_meeting(row: &crate::db::meetings::MeetingRow) -> Meeting {
-    let (attendees, calendar_id, calendar_label) =
-        crate::meeting::row_to_proto_fields(row);
+    let (attendees, calendar_id, calendar_label) = crate::meeting::row_to_proto_fields(row);
     Meeting {
         id: row.id.clone(),
         title: row.title.clone(),

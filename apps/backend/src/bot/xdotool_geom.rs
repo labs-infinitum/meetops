@@ -37,9 +37,8 @@ mod tests {
 
     #[test]
     fn parses_xdotool_shell_geometry() {
-        let g = parse_geom_shell_stdout(
-            "WINDOW=12345\nX=10\nY=20\nWIDTH=800\nHEIGHT=600\nSCREEN=0\n",
-        );
+        let g =
+            parse_geom_shell_stdout("WINDOW=12345\nX=10\nY=20\nWIDTH=800\nHEIGHT=600\nSCREEN=0\n");
         assert_eq!(g.x, Some(10));
         assert_eq!(g.y, Some(20));
         assert_eq!(g.width, Some(800));

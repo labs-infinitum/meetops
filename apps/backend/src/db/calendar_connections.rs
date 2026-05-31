@@ -94,13 +94,11 @@ pub async fn get_by_id_for_user(
     connection_id: &str,
     user_id: &str,
 ) -> sqlx::Result<Option<CalendarConnectionRow>> {
-    let row = sqlx::query_as(
-        "SELECT * FROM calendar_connections WHERE id = ? AND user_id = ?",
-    )
-    .bind(connection_id)
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await?;
+    let row = sqlx::query_as("SELECT * FROM calendar_connections WHERE id = ? AND user_id = ?")
+        .bind(connection_id)
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await?;
 
     row.map(decrypt_row).transpose()
 }
@@ -198,9 +196,7 @@ pub async fn insert(
     .execute(pool)
     .await?;
 
-    get_by_id(pool, id)
-        .await?
-        .ok_or(sqlx::Error::RowNotFound)
+    get_by_id(pool, id).await?.ok_or(sqlx::Error::RowNotFound)
 }
 
 pub async fn update_tokens(
@@ -256,13 +252,11 @@ pub async fn update_sync_state(
 }
 
 pub async fn delete_sync_token(pool: &SqlitePool, connection_id: &str) -> sqlx::Result<()> {
-    sqlx::query(
-        "UPDATE calendar_connections SET sync_token = NULL, updated_at = ? WHERE id = ?",
-    )
-    .bind(db::now_unix())
-    .bind(connection_id)
-    .execute(pool)
-    .await?;
+    sqlx::query("UPDATE calendar_connections SET sync_token = NULL, updated_at = ? WHERE id = ?")
+        .bind(db::now_unix())
+        .bind(connection_id)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
@@ -271,13 +265,11 @@ pub async fn delete_for_user(
     connection_id: &str,
     user_id: &str,
 ) -> sqlx::Result<bool> {
-    let result = sqlx::query(
-        "DELETE FROM calendar_connections WHERE id = ? AND user_id = ?",
-    )
-    .bind(connection_id)
-    .bind(user_id)
-    .execute(pool)
-    .await?;
+    let result = sqlx::query("DELETE FROM calendar_connections WHERE id = ? AND user_id = ?")
+        .bind(connection_id)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
     Ok(result.rows_affected() > 0)
 }
 

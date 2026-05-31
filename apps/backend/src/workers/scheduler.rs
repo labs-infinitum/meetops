@@ -9,7 +9,7 @@ use tokio::sync::Semaphore;
 use crate::{
     bot::active_recordings::ActiveRecordings,
     config::Config,
-    db::{bot_runs, BotRunStatus},
+    db::{BotRunStatus, bot_runs},
     meet_url::MeetUrl,
     storage::RecordingsStore,
 };
@@ -26,8 +26,14 @@ pub fn spawn(
     let poll_secs = config.bot.scheduler_poll_interval_secs.max(1);
     tokio::spawn(async move {
         loop {
-            if let Err(error) =
-                run_tick(&config, &db, &chrome_sessions, &recordings, &active_recordings).await
+            if let Err(error) = run_tick(
+                &config,
+                &db,
+                &chrome_sessions,
+                &recordings,
+                &active_recordings,
+            )
+            .await
             {
                 tracing::error!(%error, "scheduler tick failed");
             }

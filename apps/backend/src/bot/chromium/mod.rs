@@ -4,6 +4,7 @@ use std::{
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use chromiumoxide::browser::BrowserConfigBuilder;
 use chromiumoxide::cdp::browser_protocol::browser::{
     PermissionDescriptor, PermissionSetting, SetPermissionParams,
 };
@@ -267,7 +268,9 @@ pub async fn open_profile(options: ProfileOptions) -> anyhow::Result<()> {
             .arg("--no-sandbox")
             .arg("--disable-dev-shm-usage")
             .arg("--disable-gpu");
-        tracing::info!("Chrome profile container flags enabled (--no-sandbox, --disable-dev-shm-usage)");
+        tracing::info!(
+            "Chrome profile container flags enabled (--no-sandbox, --disable-dev-shm-usage)"
+        );
     }
     if let Some(disp) = resolved_chrome_display(options.x11_display.as_deref())? {
         child_cmd.env("DISPLAY", disp);
@@ -319,31 +322,39 @@ fn browser_config(
         .with_head()
         .user_data_dir(user_data_dir)
         .viewport(None)
-        .window_size(1920, 1080)
-        .arg("--profile-directory=Default")
-        .arg("--new-window")
-        .arg("--window-position=0,0")
-        .arg("--no-first-run")
-        .arg("--no-default-browser-check")
-        .arg("--disable-session-crashed-bubble")
-        .arg("--disable-features=DefaultBrowserPrompt")
-        .arg("--disable-infobars")
-        .arg("--disable-notifications")
-        .arg("--use-fake-ui-for-media-stream")
-        .arg("--auto-accept-this-tab-capture")
-        .arg("--auto-select-desktop-capture-source=Google Meet")
-        .arg("--auto-select-tab-capture-source-by-title=Google Meet")
-        .arg("--autoplay-policy=no-user-gesture-required")
-        .arg("--mute-audio=false");
+        .window_size(1920, 1080);
+    builder = apply_chromeoxide_flags(
+        builder,
+        &[
+            "--profile-directory=Default",
+            "--new-window",
+            "--window-position=0,0",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-session-crashed-bubble",
+            "--disable-restore-session-state",
+            "--noerrdialogs",
+            "--disable-features=DefaultBrowserPrompt,TranslateUI",
+            "--disable-infobars",
+            "--disable-notifications",
+            "--use-fake-ui-for-media-stream",
+            "--auto-accept-this-tab-capture",
+            "--auto-select-desktop-capture-source=Google Meet",
+            "--auto-select-tab-capture-source-by-title=Google Meet",
+            "--autoplay-policy=no-user-gesture-required",
+            "--mute-audio=false",
+        ],
+    );
     #[cfg(target_os = "linux")]
     {
-        builder = builder.arg(LINUX_CHROME_PASSWORD_STORE_ARG);
+        builder = apply_chromeoxide_flags(builder, &[LINUX_CHROME_PASSWORD_STORE_ARG]);
         if running_in_container() {
             builder = builder
-                .arg("--no-sandbox")
-                .arg("--disable-dev-shm-usage")
-                .arg("--disable-gpu");
-            tracing::info!("Chrome container flags enabled (--no-sandbox, --disable-dev-shm-usage)");
+                .no_sandbox()
+                .arg("disable-dev-shm-usage")
+                .arg("disable-gpu")
+                .arg("no-zygote");
+            tracing::info!("Chrome container flags enabled (no_sandbox, disable-dev-shm-usage)");
         }
         tracing::info!(
             flag = LINUX_CHROME_PASSWORD_STORE_ARG,
@@ -366,6 +377,22 @@ fn browser_config(
     builder = builder.chrome_executable(chrome_path);
 
     builder.build().map_err(anyhow::Error::msg)
+}
+
+/// Chromiumoxide adds `--` itself; passing `"--no-sandbox"` would become `----no-sandbox`.
+fn apply_chromeoxide_flags(
+    mut builder: BrowserConfigBuilder,
+    flags: &[&str],
+) -> BrowserConfigBuilder {
+    for flag in flags {
+        let stripped = flag.strip_prefix("--").unwrap_or(flag);
+        builder = if let Some((key, value)) = stripped.split_once('=') {
+            builder.arg((key, value))
+        } else {
+            builder.arg(stripped)
+        };
+    }
+    builder
 }
 
 /// Value for the Chrome child `DISPLAY` env var.
@@ -399,8 +426,98 @@ fn resolved_chrome_display(x11_display: Option<&str>) -> anyhow::Result<Option<S
 
 fn ensure_profile_dir(user_data_dir: &PathBuf) -> anyhow::Result<()> {
     std::fs::create_dir_all(user_data_dir)?;
+    clear_stale_chrome_profile_locks(user_data_dir);
+    clear_chrome_session_restore_artifacts(user_data_dir);
     std::fs::write(user_data_dir.join(PROFILE_MARKER), b"bot profile\n")?;
     Ok(())
+}
+
+/// Remove stale Chrome profile locks left behind by previous Docker containers.
+///
+/// Chrome's `SingletonLock` is stored inside the persisted user data dir. With `./data` bind-mounted,
+/// an unclean container shutdown can leave a lock like `old-container-hostname-85`, causing the next
+/// container to fail before DevTools is available. If the lock points at a live Chrome process on this
+/// same host/container we keep it and let Chrome fail loudly.
+fn clear_stale_chrome_profile_locks(user_data_dir: &Path) {
+    let singleton_lock = user_data_dir.join("SingletonLock");
+    if std::fs::symlink_metadata(&singleton_lock).is_err() {
+        return;
+    }
+
+    if chrome_singleton_lock_appears_live(singleton_lock.as_path()) {
+        tracing::warn!(
+            lock = %singleton_lock.display(),
+            "bot Chrome profile appears to be in use by a live Chrome process; not removing lock"
+        );
+        return;
+    }
+
+    for name in ["SingletonLock", "SingletonSocket", "SingletonCookie"] {
+        let path = user_data_dir.join(name);
+        if std::fs::symlink_metadata(&path).is_err() {
+            continue;
+        }
+        match std::fs::remove_file(&path) {
+            Ok(()) => tracing::info!(
+                path = %path.display(),
+                "removed stale Chrome profile singleton lock"
+            ),
+            Err(error) => tracing::warn!(
+                path = %path.display(),
+                %error,
+                "could not remove stale Chrome profile singleton lock"
+            ),
+        }
+    }
+}
+
+fn chrome_singleton_lock_appears_live(lock: &Path) -> bool {
+    let Ok(target) = std::fs::read_link(lock) else {
+        // A non-symlink lock in a container profile is more likely stale than intentionally live.
+        return false;
+    };
+    let Some(target) = target.file_name().and_then(|s| s.to_str()) else {
+        return false;
+    };
+    let Some((host, pid_s)) = target.rsplit_once('-') else {
+        return false;
+    };
+    let Ok(pid) = pid_s.parse::<u32>() else {
+        return false;
+    };
+
+    let current_host = std::fs::read_to_string("/proc/sys/kernel/hostname")
+        .ok()
+        .map(|s| s.trim().to_owned())
+        .unwrap_or_default();
+    host == current_host && Path::new("/proc").join(pid.to_string()).exists()
+}
+
+/// Remove files Chrome uses to show "Restore pages?" after an unclean shutdown.
+fn clear_chrome_session_restore_artifacts(user_data_dir: &Path) {
+    let default_profile = user_data_dir.join("Default");
+    for name in [
+        "Last Session",
+        "Last Tabs",
+        "Current Session",
+        "Current Tabs",
+    ] {
+        let path = default_profile.join(name);
+        if !path.is_file() {
+            continue;
+        }
+        match std::fs::remove_file(&path) {
+            Ok(()) => tracing::debug!(
+                path = %path.display(),
+                "removed Chrome session restore artifact"
+            ),
+            Err(error) => tracing::debug!(
+                path = %path.display(),
+                %error,
+                "could not remove Chrome session restore artifact"
+            ),
+        }
+    }
 }
 
 fn profile_dir(configured_dir: &PathBuf) -> anyhow::Result<PathBuf> {
@@ -616,8 +733,8 @@ pub async fn start_tab_recording(
     page: &Page,
     raw_webm_path: impl AsRef<Path>,
     linux_xdotool_display: Option<String>,
-    allow_button_template_png: Option<PathBuf>,
     tab_capture_screenshot_dir: PathBuf,
+    tab_capture_png: PathBuf,
     launched_chrome_pid: Option<u32>,
 ) -> anyhow::Result<BrowserRecording> {
     activate_page(page).await?;
@@ -627,8 +744,8 @@ pub async fn start_tab_recording(
     let prompt_acceptor = spawn_tab_capture_prompt_acceptor_after_recorder_click(
         click_rx,
         linux_xdotool_display,
-        allow_button_template_png,
         tab_capture_screenshot_dir,
+        tab_capture_png,
         launched_chrome_pid,
     );
 
@@ -677,15 +794,15 @@ pub async fn start_tab_recording(
 fn spawn_tab_capture_prompt_acceptor_after_recorder_click(
     wait_for_click: tokio::sync::oneshot::Receiver<()>,
     linux_xdotool_display: Option<String>,
-    allow_button_template_png: Option<PathBuf>,
     tab_capture_screenshot_dir: PathBuf,
+    tab_capture_png: PathBuf,
     launched_chrome_pid: Option<u32>,
 ) -> JoinHandle<()> {
     tab_capture_allow::spawn(
         wait_for_click,
         linux_xdotool_display,
-        allow_button_template_png,
         tab_capture_screenshot_dir,
+        tab_capture_png,
         launched_chrome_pid,
     )
 }
@@ -694,8 +811,8 @@ fn spawn_tab_capture_prompt_acceptor_after_recorder_click(
 fn spawn_tab_capture_prompt_acceptor_after_recorder_click(
     wait_for_click: tokio::sync::oneshot::Receiver<()>,
     linux_xdotool_display: Option<String>,
-    #[allow(unused_variables)] allow_button_template_png: Option<PathBuf>,
     #[allow(unused_variables)] tab_capture_screenshot_dir: PathBuf,
+    #[allow(unused_variables)] tab_capture_png: PathBuf,
     #[allow(unused_variables)] launched_chrome_pid: Option<u32>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
@@ -987,8 +1104,7 @@ async fn xdotool_window_width_height_shell(display: Option<&str>, wid: u32) -> O
         return None;
     }
 
-    let geom =
-        xdotool_geom::parse_geom_shell_stdout(&String::from_utf8_lossy(&out.stdout));
+    let geom = xdotool_geom::parse_geom_shell_stdout(&String::from_utf8_lossy(&out.stdout));
     match (geom.width, geom.height) {
         (Some(w), Some(h)) if w > 0 && h > 0 => Some((w, h)),
         _ => None,
@@ -1033,7 +1149,8 @@ pub(super) async fn linux_find_largest_chromium_window(
 
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
-            if let Some((wid, _)) = linux_pick_largest_window_by_area(display, stdout.as_ref()).await
+            if let Some((wid, _)) =
+                linux_pick_largest_window_by_area(display, stdout.as_ref()).await
             {
                 tracing::debug!(
                     window_id = wid,
@@ -1206,7 +1323,14 @@ async fn install_recording_button(page: &Page) -> anyhow::Result<()> {
   }
   window.__gmrRecordingStatus = { status: 'waiting_for_click' };
   if (window.__gmrRecorder && window.__gmrRecorder.state === 'recording') {
-    window.__gmrRecordingStatus = { status: 'recording', mimeType: window.__gmrRecorder.mimeType || '' };
+    window.__gmrRecordingStatus = {
+      status: 'recording',
+      mimeType: window.__gmrRecorder.mimeType || '',
+      audioTrackCount: window.__gmrRecorderStream ? window.__gmrRecorderStream.getAudioTracks().length : null,
+      videoTrackCount: window.__gmrRecorderStream ? window.__gmrRecorderStream.getVideoTracks().length : null,
+      audioSource: window.__gmrAudioSource || null,
+      streamInfo: window.__gmrStreamInfo || null
+    };
     return window.__gmrRecordingStatus;
   }
 
@@ -1241,23 +1365,20 @@ async fn install_recording_button(page: &Page) -> anyhow::Result<()> {
     window.__gmrRecordingStatus = { status: 'starting' };
 
     let stream;
+    const displayMediaBase = {
+      video: {
+        displaySurface: 'browser',
+        logicalSurface: true,
+        cursor: 'always'
+      },
+      preferCurrentTab: true,
+      selfBrowserSurface: 'include',
+      surfaceSwitching: 'exclude'
+    };
     try {
       stream = await navigator.mediaDevices.getDisplayMedia({
-        video: {
-          displaySurface: 'browser',
-          logicalSurface: true,
-          cursor: 'always'
-        },
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-          suppressLocalAudioPlayback: false
-        },
-        preferCurrentTab: true,
-        selfBrowserSurface: 'include',
-        systemAudio: 'include',
-        surfaceSwitching: 'exclude'
+        ...displayMediaBase,
+        audio: false
       });
     } catch (error) {
       window.__gmrRecordingStatus = {
@@ -1272,31 +1393,90 @@ async fn install_recording_button(page: &Page) -> anyhow::Result<()> {
 
     button.remove();
 
-    const mimeTypes = [
-      'video/webm;codecs=vp8,opus',
-      'video/webm;codecs=vp9,opus',
-      'video/webm'
-    ];
-    const mimeType = mimeTypes.find((candidate) => MediaRecorder.isTypeSupported(candidate)) || '';
-    const audioTracks = stream.getAudioTracks();
     const videoTracks = stream.getVideoTracks();
+    const audioWarnings = [];
+    const meetElementAudioTracks = [];
+    try {
+      for (const [elementIndex, element] of Array.from(document.querySelectorAll('audio,video')).entries()) {
+        const streamLike = element.srcObject && typeof element.srcObject.getAudioTracks === 'function'
+          ? element.srcObject
+          : (typeof element.captureStream === 'function' ? element.captureStream() : null);
+        if (!streamLike || typeof streamLike.getAudioTracks !== 'function') {
+          continue;
+        }
+        for (const [trackIndex, track] of streamLike.getAudioTracks().entries()) {
+          if (track.readyState === 'live') {
+            meetElementAudioTracks.push({ track, label: `meetElement:${elementIndex}:${trackIndex}` });
+          }
+        }
+      }
+    } catch (elementAudioError) {
+      audioWarnings.push(`Meet element audio unavailable: ${elementAudioError && elementAudioError.message ? elementAudioError.message : String(elementAudioError)}`);
+    }
+
+    const audioInputs = meetElementAudioTracks;
+    const audioInputTracks = audioInputs.map((input) => input.track);
+    let audioTracks = audioInputTracks;
+    const audioSource = audioInputs.length > 0 ? 'meet_element_audio' : 'none';
+    let audioContext = null;
+    let audioMixDestination = null;
+    let audioMixSources = [];
+    if (audioInputTracks.length > 0) {
+      const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+      if (AudioContextCtor) {
+        audioContext = new AudioContextCtor();
+        if (audioContext.state === 'suspended') {
+          await audioContext.resume();
+        }
+        audioMixDestination = audioContext.createMediaStreamDestination();
+        audioMixSources = audioInputs.map((input) => {
+          const source = audioContext.createMediaStreamSource(new MediaStream([input.track]));
+          source.connect(audioMixDestination);
+          return source;
+        });
+        audioTracks = audioMixDestination.stream.getAudioTracks();
+      }
+    }
+    const recordingStream = new MediaStream([...videoTracks, ...audioTracks]);
+    const mimeTypes = audioTracks.length > 0
+      ? [
+          'video/webm;codecs=vp8,opus',
+          'video/webm;codecs=vp9,opus',
+          'video/webm'
+        ]
+      : [
+          'video/webm;codecs=vp8',
+          'video/webm;codecs=vp9',
+          'video/webm'
+        ];
+    const mimeType = mimeTypes.find((candidate) => MediaRecorder.isTypeSupported(candidate)) || '';
     const streamInfo = {
+      audioSource,
+      meetElementAudioTracks: meetElementAudioTracks.map(({ track, label }) => ({ label, trackLabel: track.label, settings: track.getSettings ? track.getSettings() : {} })),
       audioTracks: audioTracks.map((track) => ({ label: track.label, settings: track.getSettings ? track.getSettings() : {} })),
       videoTracks: videoTracks.map((track) => ({ label: track.label, settings: track.getSettings ? track.getSettings() : {} }))
     };
-    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    const recorder = new MediaRecorder(recordingStream, mimeType ? { mimeType } : undefined);
     window.__gmrRecorder = recorder;
-    window.__gmrRecorderStream = stream;
+    window.__gmrRecorderStream = recordingStream;
+    window.__gmrCaptureStreams = [stream];
+    window.__gmrAudioContext = audioContext;
+    window.__gmrAudioMixDestination = audioMixDestination;
+    window.__gmrAudioMixSources = audioMixSources;
     window.__gmrStreamInfo = streamInfo;
+    window.__gmrAudioSource = audioSource;
     window.__gmrUploads = [];
     window.__gmrUploadErrors = [];
+    for (const warning of audioWarnings) {
+      window.__gmrUploadErrors.push(warning);
+    }
     window.__gmrChunkCount = 0;
     window.__gmrAcceptedChunks = 0;
     window.__gmrUploadedBytes = 0;
     window.__gmrPendingUpload = Promise.resolve();
     window.__gmrChunkBindingAvailable = typeof window.__gmrRecordChunk === 'function';
     if (audioTracks.length === 0) {
-      window.__gmrUploadErrors.push('capture stream has no audio track; choose the Meet tab and keep "Also share tab audio" enabled');
+      window.__gmrUploadErrors.push('Meet media elements exposed no live audio tracks; recording video only');
     }
 
     const blobToBase64 = async (blob) => {
@@ -1341,7 +1521,14 @@ async fn install_recording_button(page: &Page) -> anyhow::Result<()> {
     };
 
     recorder.start(1000);
-    window.__gmrRecordingStatus = { status: 'recording', mimeType, streamInfo };
+    window.__gmrRecordingStatus = {
+      status: 'recording',
+      mimeType,
+      streamInfo,
+      audioTrackCount: audioTracks.length,
+      videoTrackCount: videoTracks.length,
+      audioSource
+    };
   };
 
   return window.__gmrRecordingStatus;
@@ -1460,6 +1647,12 @@ pub async fn stop_tab_recording(page: &Page) -> anyhow::Result<()> {
 
   if (window.__gmrRecorderStream) {
     window.__gmrRecorderStream.getTracks().forEach((track) => track.stop());
+  }
+  if (window.__gmrCaptureStreams) {
+    window.__gmrCaptureStreams.forEach((stream) => stream.getTracks().forEach((track) => track.stop()));
+  }
+  if (window.__gmrAudioContext && window.__gmrAudioContext.state !== 'closed') {
+    await window.__gmrAudioContext.close();
   }
   await Promise.allSettled(window.__gmrUploads || []);
   if (typeof window.__gmrRecordChunk === 'function') {

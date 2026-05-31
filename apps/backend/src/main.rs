@@ -40,10 +40,7 @@ async fn main() -> anyhow::Result<()> {
         return match command {
             CliCommand::DbReset => {
                 db::reset(&config).await?;
-                println!(
-                    "Database reset at {}",
-                    config.database_path().display()
-                );
+                println!("Database reset at {}", config.database_path().display());
                 Ok(())
             }
             CliCommand::Join { meet_url } => bot::runner::join(meet_url, &config).await,

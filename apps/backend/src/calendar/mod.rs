@@ -8,7 +8,10 @@ use crate::{
     auth::{AuthError, AuthService},
     config::Config,
     db::calendar_connections::{self, CalendarConnectionListItem, CalendarConnectionRow},
-    google::{calendar, oauth::{self, OAuthStatePayload}},
+    google::{
+        calendar,
+        oauth::{self, OAuthStatePayload},
+    },
 };
 
 #[derive(Debug, Error)]
@@ -87,8 +90,7 @@ impl CalendarConnectError {
     pub fn other_account_hint(&self) -> Option<&str> {
         match self {
             Self::AlreadyConnectedByOther {
-                other_account_hint,
-                ..
+                other_account_hint, ..
             } => Some(other_account_hint.as_str()),
             _ => None,
         }
@@ -133,7 +135,9 @@ impl CalendarService {
         let user_id = self.require_user_id(token).await?;
 
         if provider != "google" {
-            return Err(CalendarConnectError::UnsupportedProvider(provider.to_owned()));
+            return Err(CalendarConnectError::UnsupportedProvider(
+                provider.to_owned(),
+            ));
         }
 
         oauth::start_url(
@@ -165,9 +169,10 @@ impl CalendarService {
         connection_id: &str,
     ) -> Result<(calendar::SyncStats, i64), CalendarConnectError> {
         let user_id = self.require_user_id(token).await?;
-        let connection = calendar_connections::get_by_id_for_user(&self.db, connection_id, &user_id)
-            .await?
-            .ok_or(CalendarConnectError::NotFound)?;
+        let connection =
+            calendar_connections::get_by_id_for_user(&self.db, connection_id, &user_id)
+                .await?
+                .ok_or(CalendarConnectError::NotFound)?;
 
         let stats =
             calendar::sync_connection(&self.db, &self.http, &self.config, &connection).await?;
@@ -176,7 +181,10 @@ impl CalendarService {
             .await?
             .ok_or(CalendarConnectError::NotFound)?;
 
-        Ok((stats, updated.last_synced_at.unwrap_or(crate::db::now_unix())))
+        Ok((
+            stats,
+            updated.last_synced_at.unwrap_or(crate::db::now_unix()),
+        ))
     }
 
     pub async fn finish_oauth_callback(
@@ -187,8 +195,7 @@ impl CalendarService {
         match oauth::finish_callback(&self.db, &self.http, &self.config, code, state).await {
             Ok(connection) => {
                 if let Err(error) =
-                    calendar::sync_connection(&self.db, &self.http, &self.config, &connection)
-                        .await
+                    calendar::sync_connection(&self.db, &self.http, &self.config, &connection).await
                 {
                     tracing::warn!(
                         connection_id = %connection.id,
@@ -199,14 +206,11 @@ impl CalendarService {
                 Ok(connection)
             }
             Err(oauth::GoogleAuthError::AccountLinkedToOtherUser { email }) => {
-                let hint = calendar_connections::find_owner_by_provider_email(
-                    &self.db,
-                    "google",
-                    &email,
-                )
-                .await?
-                .map(|owner| owner.owner_name)
-                .unwrap_or_else(|| "another user".to_owned());
+                let hint =
+                    calendar_connections::find_owner_by_provider_email(&self.db, "google", &email)
+                        .await?
+                        .map(|owner| owner.owner_name)
+                        .unwrap_or_else(|| "another user".to_owned());
 
                 Err(CalendarConnectError::AlreadyConnectedByOther {
                     email,

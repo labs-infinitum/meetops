@@ -62,7 +62,9 @@ impl MeetingService {
 
     pub async fn list_meetings(&self, token: &str) -> Result<Vec<MeetingRow>, MeetingError> {
         let user_id = self.require_user_id(token).await?;
-        db::meetings::list_for_user(&self.db, &user_id).await.map_err(Into::into)
+        db::meetings::list_for_user(&self.db, &user_id)
+            .await
+            .map_err(Into::into)
     }
 
     pub async fn get_meeting(

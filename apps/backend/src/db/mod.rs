@@ -42,9 +42,7 @@ pub async fn migrate(
         .map_err(sqlx::migrate::MigrateError::Execute)?
     {
         if !config.storage.auto_migrate_reset {
-            tracing::error!(
-                "legacy or corrupted schema detected; {RESET_HINT}"
-            );
+            tracing::error!("legacy or corrupted schema detected; {RESET_HINT}");
             return Err(migration_reset_required());
         }
 
@@ -53,7 +51,9 @@ pub async fn migrate(
         );
         pool.close().await;
         reset(config).await?;
-        return connect(config).await.map_err(sqlx::migrate::MigrateError::Execute);
+        return connect(config)
+            .await
+            .map_err(sqlx::migrate::MigrateError::Execute);
     }
 
     match MIGRATOR.run(&pool).await {
@@ -131,11 +131,10 @@ async fn needs_squash_reset(pool: &SqlitePool) -> sqlx::Result<bool> {
         return Ok(true);
     }
 
-    let has_non_init_version: Option<i64> = sqlx::query_scalar(
-        "SELECT 1 FROM _sqlx_migrations WHERE version != 1 LIMIT 1",
-    )
-    .fetch_optional(pool)
-    .await?;
+    let has_non_init_version: Option<i64> =
+        sqlx::query_scalar("SELECT 1 FROM _sqlx_migrations WHERE version != 1 LIMIT 1")
+            .fetch_optional(pool)
+            .await?;
 
     Ok(has_non_init_version.is_some())
 }
@@ -150,12 +149,11 @@ fn should_reset_on_migrate_error(error: &sqlx::migrate::MigrateError) -> bool {
 }
 
 async fn table_exists(pool: &SqlitePool, name: &str) -> sqlx::Result<bool> {
-    let exists: Option<i64> = sqlx::query_scalar(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
-    )
-    .bind(name)
-    .fetch_optional(pool)
-    .await?;
+    let exists: Option<i64> =
+        sqlx::query_scalar("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1")
+            .bind(name)
+            .fetch_optional(pool)
+            .await?;
 
     Ok(exists.is_some())
 }
@@ -291,11 +289,10 @@ mod tests {
             .await
             .expect("migrate legacy database");
 
-        let migration_count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM _sqlx_migrations")
-                .fetch_one(&pool)
-                .await
-                .expect("count migrations");
+        let migration_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM _sqlx_migrations")
+            .fetch_one(&pool)
+            .await
+            .expect("count migrations");
         assert_eq!(migration_count, 1);
 
         let version: i64 = sqlx::query_scalar("SELECT version FROM _sqlx_migrations")
@@ -335,11 +332,10 @@ mod tests {
             .await
             .expect("migrate checksum mismatch database");
 
-        let migration_count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM _sqlx_migrations")
-                .fetch_one(&pool)
-                .await
-                .expect("count migrations");
+        let migration_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM _sqlx_migrations")
+            .fetch_one(&pool)
+            .await
+            .expect("count migrations");
         assert_eq!(migration_count, 1);
 
         pool.close().await;
@@ -361,10 +357,7 @@ mod tests {
             .await
             .expect_err("migrate should fail without auto_migrate_reset");
 
-        assert!(matches!(
-            error,
-            sqlx::migrate::MigrateError::Execute(_)
-        ));
+        assert!(matches!(error, sqlx::migrate::MigrateError::Execute(_)));
 
         let _ = std::fs::remove_dir_all(data_dir);
     }

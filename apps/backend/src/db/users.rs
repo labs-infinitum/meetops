@@ -49,15 +49,16 @@ pub async fn create_user(
 }
 
 pub async fn get_user_by_id(pool: &SqlitePool, id: &str) -> sqlx::Result<Option<UserRow>> {
-    sqlx::query_as(
-        "SELECT id, username, email, name, password_hash FROM users WHERE id = ?",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await
+    sqlx::query_as("SELECT id, username, email, name, password_hash FROM users WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await
 }
 
-pub async fn get_user_by_username(pool: &SqlitePool, username: &str) -> sqlx::Result<Option<UserRow>> {
+pub async fn get_user_by_username(
+    pool: &SqlitePool,
+    username: &str,
+) -> sqlx::Result<Option<UserRow>> {
     sqlx::query_as(
         "SELECT id, username, email, name, password_hash FROM users WHERE username = ? COLLATE NOCASE",
     )

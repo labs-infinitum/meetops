@@ -4,7 +4,7 @@ use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::{
-    auth::{password, AuthError},
+    auth::{AuthError, password},
     config::AuthConfig,
     db::users::{self, UserRow},
 };
@@ -40,7 +40,10 @@ impl AuthService {
         let email = normalize_email(email);
         let name = name.trim().to_owned();
 
-        if users::get_user_by_username(&self.db, &username).await?.is_some() {
+        if users::get_user_by_username(&self.db, &username)
+            .await?
+            .is_some()
+        {
             return Err(AuthError::UsernameTaken);
         }
         if users::get_user_by_email(&self.db, &email).await?.is_some() {
@@ -49,16 +52,9 @@ impl AuthService {
 
         let password_hash = password::hash_password(password)?;
         let user_id = Uuid::new_v4().to_string();
-        let user = users::create_user(
-            &self.db,
-            &user_id,
-            &username,
-            &email,
-            &name,
-            &password_hash,
-        )
-        .await
-        .map_err(map_unique_violation)?;
+        let user = users::create_user(&self.db, &user_id, &username, &email, &name, &password_hash)
+            .await
+            .map_err(map_unique_violation)?;
 
         self.create_session_for_user(&user).await
     }
@@ -136,7 +132,9 @@ fn validate_sign_up(
         || username.trim().is_empty()
         || password.is_empty()
     {
-        return Err(AuthError::InvalidInput("all fields are required".to_owned()));
+        return Err(AuthError::InvalidInput(
+            "all fields are required".to_owned(),
+        ));
     }
     if password.len() < 8 {
         return Err(AuthError::InvalidInput(

@@ -147,10 +147,6 @@ pub struct BotConfig {
     #[serde(default = "default_true")]
     /// After resolving or starting a display, spawn `openbox` when missing (xdotool `windowactivate`).
     pub x11_start_openbox: bool,
-    #[serde(default)]
-    /// Small PNG crop of the blue Chrome tab-share Allow pill for grayscale template correlation when color-blob detection misses.
-    /// Env: `GMR_BOT__ALLOW_BUTTON_TEMPLATE_PNG`
-    pub allow_button_template_png: Option<PathBuf>,
     pub join_lead_time_secs: u64,
     pub admission_timeout_secs: u64,
     /// How often the scheduler checks for meetings to auto-join.
@@ -230,7 +226,6 @@ impl Default for Config {
                 x11_display: None,
                 x11_auto_virtual: true,
                 x11_start_openbox: true,
-                allow_button_template_png: None,
                 join_lead_time_secs: 60,
                 admission_timeout_secs: 300,
                 scheduler_poll_interval_secs: 15,

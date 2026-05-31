@@ -16,7 +16,12 @@ pub async fn join(meet_url: String, config: &Config) -> anyhow::Result<()> {
     let x11 = x11_display::prepare(&config.bot).await?;
     let x11_display = x11.as_ref().map(|s| s.display.clone());
 
-    chromium::join_meeting(chromium::JoinOptions::from_config(meet_url, config, x11_display)).await
+    chromium::join_meeting(chromium::JoinOptions::from_config(
+        meet_url,
+        config,
+        x11_display,
+    ))
+    .await
 }
 
 pub async fn open_profile(config: &Config) -> anyhow::Result<()> {
@@ -30,12 +35,18 @@ pub fn profile_status(config: &Config) -> anyhow::Result<()> {
     chromium::profile_status(&config.bot.chrome_user_data_dir)
 }
 
-pub async fn record(meet_url: String, config: &Config, store: &RecordingsStore) -> anyhow::Result<()> {
+pub async fn record(
+    meet_url: String,
+    config: &Config,
+    store: &RecordingsStore,
+) -> anyhow::Result<()> {
     let meet_url = MeetUrl::parse(&meet_url).map_err(|error| anyhow::anyhow!("{error}"))?;
     let recording_id = format!("manual-{}", Utc::now().format("%Y%m%dT%H%M%SZ"));
     let recording_dir = store.manual_staging_dir(&recording_id);
     let raw_path = recorder::record(meet_url, config, recording_dir).await?;
-    let stored = store.persist_manual_recording(&raw_path, &recording_id).await?;
+    let stored = store
+        .persist_manual_recording(&raw_path, &recording_id)
+        .await?;
     tracing::info!(path = %stored, "manual recording saved to S3");
     Ok(())
 }

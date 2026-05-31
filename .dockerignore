@@ -10,3 +10,4 @@ data
 apps/backend/config.toml
 **/*.db
 chrome-window-*.png
+apps/backend/target/detector-preview
