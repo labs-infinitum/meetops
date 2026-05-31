@@ -1,10 +1,10 @@
-import type { User as ProtoUser } from "@/gen/notetaker/v1/auth"
-import type { CalendarConnection as ProtoCalendarConnection } from "@/gen/notetaker/v1/calendar"
-import type { Meeting as ProtoMeeting } from "@/gen/notetaker/v1/meeting"
+import type { User as ProtoUser } from "@ai-meeting-notetaker/proto/notetaker/v1/auth"
+import type { CalendarConnection as ProtoCalendarConnection } from "@ai-meeting-notetaker/proto/notetaker/v1/calendar"
+import type { Meeting as ProtoMeeting } from "@ai-meeting-notetaker/proto/notetaker/v1/meeting"
 import type {
   BotRun as ProtoBotRun,
   MeetingTimelineEvent as ProtoMeetingTimelineEvent,
-} from "@/gen/notetaker/v1/recording"
+} from "@ai-meeting-notetaker/proto/notetaker/v1/recording"
 
 import type { BotRunStatus, CalendarProvider } from "./constants"
 import type { MeetingTimelineEventPayload } from "./timeline"

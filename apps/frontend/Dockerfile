@@ -18,8 +18,10 @@ RUN --mount=type=cache,target=/root/.bun/install/cache \
 COPY packages/proto packages/proto
 COPY apps/frontend apps/frontend
 
+RUN bun run proto:generate --filter=@ai-meeting-notetaker/proto
+
 WORKDIR /app/apps/frontend
-RUN bun run proto:generate && bun run build
+RUN bun run build
 
 FROM ${CADDY_IMAGE} AS runtime
 

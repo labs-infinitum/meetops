@@ -1,8 +1,8 @@
 import { GrpcWebFetchTransport } from "@protobuf-ts/grpcweb-transport"
-import { AuthServiceClient } from "@/gen/notetaker/v1/auth.client"
-import { CalendarServiceClient } from "@/gen/notetaker/v1/calendar.client"
-import { MeetingServiceClient } from "@/gen/notetaker/v1/meeting.client"
-import { RecordingServiceClient } from "@/gen/notetaker/v1/recording.client"
+import { AuthServiceClient } from "@ai-meeting-notetaker/proto/notetaker/v1/auth.client"
+import { CalendarServiceClient } from "@ai-meeting-notetaker/proto/notetaker/v1/calendar.client"
+import { MeetingServiceClient } from "@ai-meeting-notetaker/proto/notetaker/v1/meeting.client"
+import { RecordingServiceClient } from "@ai-meeting-notetaker/proto/notetaker/v1/recording.client"
 
 const grpcBaseUrl = import.meta.env.VITE_GRPC_BASE_URL ?? ""
 

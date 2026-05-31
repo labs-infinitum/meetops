@@ -12,7 +12,7 @@ Planned work: [docs/ROADMAP.md](docs/ROADMAP.md).
 │   ├── backend/      # Rust API, bot, scheduler, SQLite
 │   └── frontend/     # React + Vite UI (grpc-web)
 ├── packages/
-│   └── proto/        # Shared protobuf contracts
+│   └── proto/        # `.proto` sources + generated TS (`@ai-meeting-notetaker/proto`)
 ├── docs/
 │   └── ROADMAP.md    # Forward-looking plan
 ├── data/             # Local runtime data (gitignored)
@@ -55,7 +55,7 @@ cd apps/frontend && bun dev
 |---------|-------------|
 | `bun run dev` | Start all `dev` tasks (backend + frontend) |
 | `bun run build` | Build frontend (runs `proto:generate` first) |
-| `bun run proto:generate` | Regenerate TS clients from `packages/proto` |
+| `bun run proto:generate` | Regenerate TS clients in `packages/proto` (`@ai-meeting-notetaker/proto`) |
 | `bun run db:reset` | Reset SQLite via backend CLI |
 | `bun run test` | Run backend tests |
 

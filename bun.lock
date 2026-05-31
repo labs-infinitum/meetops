@@ -16,6 +16,7 @@
       "name": "@ai-meeting-notetaker/frontend",
       "version": "0.0.0",
       "dependencies": {
+        "@ai-meeting-notetaker/proto": "workspace:*",
         "@fontsource-variable/geist": "^5.2.9",
         "@protobuf-ts/grpcweb-transport": "^2.11.1",
         "@protobuf-ts/runtime": "^2.11.1",
@@ -37,8 +38,6 @@
       },
       "devDependencies": {
         "@eslint/js": "^10.0.1",
-        "@protobuf-ts/plugin": "^2.11.1",
-        "@protobuf-ts/protoc": "^2.11.1",
         "@types/node": "^24.12.3",
         "@types/react": "^19.2.14",
         "@types/react-dom": "^19.2.3",
@@ -56,6 +55,15 @@
     "packages/proto": {
       "name": "@ai-meeting-notetaker/proto",
       "version": "0.0.0",
+      "dependencies": {
+        "@protobuf-ts/runtime": "^2.11.1",
+        "@protobuf-ts/runtime-rpc": "^2.11.1",
+      },
+      "devDependencies": {
+        "@protobuf-ts/plugin": "^2.11.1",
+        "@protobuf-ts/protoc": "^2.11.1",
+        "typescript": "~6.0.2",
+      },
     },
   },
   "packages": {

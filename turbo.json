@@ -3,7 +3,7 @@
   "ui": "tui",
   "tasks": {
     "build": {
-      "dependsOn": ["proto:generate"],
+      "dependsOn": ["@ai-meeting-notetaker/proto#proto:generate"],
       "outputs": ["dist/**", "target/release/**"]
     },
     "dev": {

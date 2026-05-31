@@ -15,7 +15,7 @@ import type {
   RecordingError,
   StartAdHocRecordingResponse,
   StopRecordingResponse,
-} from "@/gen/notetaker/v1/recording"
+} from "@ai-meeting-notetaker/proto/notetaker/v1/recording"
 
 export class RecordingApiError extends GrpcApiError {
   constructor(code: string, message: string) {

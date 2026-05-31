@@ -11,7 +11,7 @@ import type {
   Meeting as ProtoMeeting,
   MeetingError,
   SetAutoRecordResponse,
-} from "@/gen/notetaker/v1/meeting"
+} from "@ai-meeting-notetaker/proto/notetaker/v1/meeting"
 
 export class MeetingApiError extends GrpcApiError {
   constructor(code: string, message: string) {

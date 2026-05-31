@@ -24,10 +24,9 @@ cd ../backend && cargo run
 
 ## Proto clients
 
-Shared protobuf definitions live in `../../packages/proto`. Regenerate TypeScript clients after proto changes:
+TypeScript clients are generated in `../../packages/proto` and imported as `@ai-meeting-notetaker/proto/notetaker/v1/*`. Regenerate after `.proto` changes:
 
 ```bash
+# from repo root
 bun run proto:generate
 ```
-
-From the repo root: `bun run proto:generate`

@@ -48,13 +48,13 @@ export type GrpcOneofResult<S, E> =
   | { oneofKind: "error"; error: E }
   | { oneofKind?: undefined }
 
-function isGrpcSuccessVariant<S, E>(
+export function isGrpcSuccessVariant<S, E>(
   result: GrpcOneofResult<S, E>,
 ): result is { oneofKind: "success"; success: S } {
   return result.oneofKind === "success"
 }
 
-function isGrpcErrorVariant<S, E>(
+export function isGrpcErrorVariant<S, E>(
   result: GrpcOneofResult<S, E>,
 ): result is { oneofKind: "error"; error: E } {
   return result.oneofKind === "error"

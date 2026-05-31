@@ -12,7 +12,7 @@ import type {
   StartOAuthResponse,
   DisconnectResponse,
   SyncNowResponse,
-} from "@/gen/notetaker/v1/calendar"
+} from "@ai-meeting-notetaker/proto/notetaker/v1/calendar"
 
 export class CalendarApiError extends GrpcApiError {
   email?: string

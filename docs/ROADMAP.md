@@ -141,7 +141,7 @@ Scheduler → RecordingSlotPool (size N)
 
 ### Tooling
 
-- [ ] ESLint: ignore or relax `apps/frontend/src/gen/**` so `bun run lint` is usable
+- [ ] ESLint: ignore or relax `packages/proto/src/gen/**` so `bun run lint` is usable
 - [ ] knip (or similar) for unused TS once Node ≥20.19 / ESM issue resolved
 - [ ] `ThemeProvider` for `sonner` or drop `next-themes` usage
 
