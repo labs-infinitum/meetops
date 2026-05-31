@@ -1,66 +1,5 @@
 async function() {
-  function gmrMeetParticipantCount() {
-    const out = { count: null, source: null, raw: null };
-    try {
-      const withLabels = document.querySelectorAll('[aria-label]');
-      for (let i = 0; i < withLabels.length; i++) {
-        const label = (withLabels[i].getAttribute('aria-label') || '').trim();
-        if (!label) continue;
-        let m = label.match(/(\d+)\s+(people|participants)/i);
-        if (m) { out.count = parseInt(m[1], 10); out.source = 'aria_people'; out.raw = label; return out; }
-        m = label.match(/(?:people|participants)\s*[-–—:]\s*(\d+)/i);
-        if (m) { out.count = parseInt(m[1], 10); out.source = 'aria_dash'; out.raw = label; return out; }
-        m = label.match(/(\d+)\s+joined/i);
-        if (m) { out.count = parseInt(m[1], 10); out.source = 'aria_joined'; out.raw = label; return out; }
-      }
-      const body = document.body && document.body.innerText ? document.body.innerText : '';
-      if (body) {
-        const m = body.match(/\b(\d+)\s+people\s+in\s+this\s+call\b/i);
-        if (m) { out.count = parseInt(m[1], 10); out.source = 'body_text'; return out; }
-      }
-      const tiles = document.querySelectorAll('[data-participant-id], [data-requested-participant-id]');
-      if (tiles.length) {
-        const seen = {};
-        for (let i = 0; i < tiles.length; i++) {
-          const t = tiles[i];
-          const id = t.getAttribute('data-participant-id') || t.getAttribute('data-requested-participant-id');
-          if (id) seen[id] = true;
-        }
-        const n = Object.keys(seen).length;
-        if (n > 0) { out.count = n; out.source = 'tiles'; return out; }
-      }
-    } catch (e) {
-      out.source = 'error';
-      out.raw = String(e && e.message ? e.message : e);
-    }
-    return out;
-  }
-
-  function gmrVisibleText(node) {
-    if (!node) return '';
-    const text = (node.innerText || node.textContent || '').replace(/\s+/g, ' ').trim();
-    return text.slice(0, 160);
-  }
-
-  function gmrParticipantNameFromTile(tile, fallbackId) {
-    const labelled = tile.querySelector('[aria-label]');
-    const labels = [
-      tile.getAttribute('aria-label') || '',
-      labelled ? (labelled.getAttribute('aria-label') || '') : '',
-      gmrVisibleText(tile)
-    ].filter(Boolean);
-    for (const raw of labels) {
-      const cleaned = raw
-        .replace(/\b(muted|speaking|presenting|camera is off|microphone is off)\b/ig, '')
-        .replace(/\b(pin|more options|participant|tile)\b/ig, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-      if (cleaned && !/^\d+$/.test(cleaned)) return cleaned.slice(0, 120);
-    }
-    return fallbackId || 'Unknown participant';
-  }
-
-  /** Participants from the Meet people panel (`[role="listitem"][data-participant-id]`). */
+  /** In-call roster rows (`[role="listitem"][data-participant-id]`); usually present even when the People UI is collapsed. */
   function gmrListMeetParticipants() {
     const rows = [...document.querySelectorAll('[role="listitem"][data-participant-id]')];
     const isSelfRow = (row) => /\(\s*You\s*\)/i.test(row.textContent || '');
@@ -116,27 +55,18 @@ async function() {
     return { events, current };
   }
 
-  function gmrLooksLikeActiveSpeaker(tile) {
-    const label = `${tile.getAttribute('aria-label') || ''} ${gmrVisibleText(tile)}`.toLowerCase();
-    if (/\b(speaking|is speaking|active speaker)\b/.test(label)) return true;
-    if (tile.querySelector('[aria-label*="speaking" i], [aria-label*="active speaker" i]')) return true;
-    const className = typeof tile.className === 'string' ? tile.className.toLowerCase() : '';
-    return /\b(active|speaking|speaker)\b/.test(className);
-  }
-
+  /** Active speaker from the same people list rows (IDs align with join/leave diffs). */
   function gmrExtractActiveSpeaker(participants) {
-    const tiles = Array.from(document.querySelectorAll('[data-participant-id], [data-requested-participant-id]'));
-    for (const [index, tile] of tiles.entries()) {
-      if (!gmrLooksLikeActiveSpeaker(tile)) continue;
-      const rawId = tile.getAttribute('data-participant-id') || tile.getAttribute('data-requested-participant-id') || '';
-      const name = gmrParticipantNameFromTile(tile, rawId || `tile:${index}`);
-      const id = rawId || `name:${name.toLowerCase()}`;
+    const rows = [...document.querySelectorAll('[role="listitem"][data-participant-id]')];
+    for (const row of rows) {
+      const id = row.getAttribute('data-participant-id');
+      if (!id) continue;
+      const label = `${row.getAttribute('aria-label') || ''} ${row.textContent || ''}`;
+      if (!/\b(speaking|is speaking|active speaker)\b/i.test(label)) continue;
       const participant = participants.find((p) => p.id === id);
-      return {
-        id,
-        name: participant ? participant.name : name,
-        source: rawId ? 'participant_id' : 'tile_name'
-      };
+      if (participant) {
+        return { id: participant.id, name: participant.name, source: 'listitem' };
+      }
     }
     return null;
   }

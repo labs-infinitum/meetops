@@ -7,7 +7,12 @@ async function() {
     const rect = el.getBoundingClientRect();
     return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
   };
-  const norm = (text) => (text || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const norm = (text) =>
+    (text || '')
+      .replace(/\u2019/g, "'")
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
   const bodyText = norm(document.body ? document.body.innerText : '');
   const controls = Array.from(document.querySelectorAll('button, [role="button"], a')).filter(visible);
   const inputs = Array.from(document.querySelectorAll('input')).filter(visible);
