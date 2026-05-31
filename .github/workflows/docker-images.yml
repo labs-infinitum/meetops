@@ -26,37 +26,12 @@ on:
       - "docker-compose.yml"
       - ".dockerignore"
   workflow_dispatch:
-    inputs:
-      push_images:
-        description: "Push images to ECR"
-        required: true
-        type: boolean
-        default: false
-      aws_region:
-        description: "AWS region for ECR"
-        required: false
-        type: string
-        default: "us-east-1"
-      ecr_registry:
-        description: "ECR registry, e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com"
-        required: false
-        type: string
-      backend_repository:
-        description: "ECR repository for backend image"
-        required: false
-        type: string
-        default: "ai-meeting-notetaker-rs/backend"
-      frontend_repository:
-        description: "ECR repository for frontend image"
-        required: false
-        type: string
-        default: "ai-meeting-notetaker-rs/frontend"
 
 env:
-  AWS_REGION: ${{ inputs.aws_region || vars.AWS_REGION || 'us-east-1' }}
-  ECR_REGISTRY: ${{ inputs.ecr_registry || vars.ECR_REGISTRY }}
-  BACKEND_REPOSITORY: ${{ inputs.backend_repository || vars.ECR_BACKEND_REPOSITORY || 'ai-meeting-notetaker-rs/backend' }}
-  FRONTEND_REPOSITORY: ${{ inputs.frontend_repository || vars.ECR_FRONTEND_REPOSITORY || 'ai-meeting-notetaker-rs/frontend' }}
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
+  BACKEND_REPOSITORY: ${{ vars.ECR_BACKEND_REPOSITORY || 'ai-meeting-notetaker-rs/backend' }}
+  FRONTEND_REPOSITORY: ${{ vars.ECR_FRONTEND_REPOSITORY || 'ai-meeting-notetaker-rs/frontend' }}
   BUILDX_CACHE_DIR: /tmp/.buildx-cache
 
 jobs:
@@ -79,10 +54,7 @@ jobs:
         run: |
           set -euo pipefail
           short_sha="${GITHUB_SHA::12}"
-          should_push=false
-          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ] && [ "${{ inputs.push_images || false }}" = "true" ] && [ -n "${ECR_REGISTRY}" ]; then
-            should_push=true
-          fi
+          should_push=true
           echo "short_sha=${short_sha}" >> "${GITHUB_OUTPUT}"
           echo "should_push=${should_push}" >> "${GITHUB_OUTPUT}"
           {
@@ -135,15 +107,7 @@ jobs:
             echo "EOF"
           } >> "${GITHUB_OUTPUT}"
 
-      - name: Validate ECR configuration
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.push_images && env.ECR_REGISTRY == '' }}
-        shell: bash
-        run: |
-          echo "push_images=true requires workflow input ecr_registry or repository variable ECR_REGISTRY" >&2
-          exit 1
-
       - name: Log in to Amazon ECR
-        if: ${{ env.ECR_REGISTRY != '' }}
         uses: aws-actions/amazon-ecr-login@v2
         env:
           AWS_REGION: ${{ env.AWS_REGION }}
