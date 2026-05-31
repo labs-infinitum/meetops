@@ -10,8 +10,9 @@ pub mod proto {
 
 use proto::{
     BotRun, GetBotRunRequest, GetBotRunResponse, GetPlaybackUrlRequest, GetPlaybackUrlResponse,
-    ListBotRunsRequest, ListBotRunsResponse, ListBotRunsSuccess, PlaybackUrlSuccess,
-    RecordingError, StartAdHocRecordingRequest, StartAdHocRecordingResponse,
+    ListBotRunsRequest, ListBotRunsResponse, ListBotRunsSuccess, ListMeetingTimelineEventsRequest,
+    ListMeetingTimelineEventsResponse, ListMeetingTimelineEventsSuccess, MeetingTimelineEvent,
+    PlaybackUrlSuccess, RecordingError, StartAdHocRecordingRequest, StartAdHocRecordingResponse,
     StartAdHocRecordingSuccess, StopRecordingRequest, StopRecordingResponse, StopRecordingSuccess,
     recording_service_server::RecordingService,
 };
@@ -82,6 +83,34 @@ impl RecordingService for RecordingGrpcService {
         }
     }
 
+    async fn list_meeting_timeline_events(
+        &self,
+        request: Request<ListMeetingTimelineEventsRequest>,
+    ) -> Result<Response<ListMeetingTimelineEventsResponse>, Status> {
+        let req = request.into_inner();
+        let limit = if req.limit == 0 { 500 } else { req.limit };
+        match self
+            .inner
+            .list_timeline_events(&req.token, req.run_id, limit)
+            .await
+        {
+            Ok(events) => Ok(Response::new(ListMeetingTimelineEventsResponse {
+                result: Some(
+                    proto::list_meeting_timeline_events_response::Result::Success(
+                        ListMeetingTimelineEventsSuccess {
+                            events: events.iter().map(to_proto_timeline_event).collect(),
+                        },
+                    ),
+                ),
+            })),
+            Err(error) => Ok(Response::new(ListMeetingTimelineEventsResponse {
+                result: Some(proto::list_meeting_timeline_events_response::Result::Error(
+                    to_proto_error(&error),
+                )),
+            })),
+        }
+    }
+
     async fn start_ad_hoc_recording(
         &self,
         request: Request<StartAdHocRecordingRequest>,
@@ -141,6 +170,22 @@ fn to_proto_run(run: &crate::db::models::BotRunListItem) -> BotRun {
         created_at: run.created_at,
         recording_path: run.recording_path.clone().unwrap_or_default(),
         duration_secs: duration_secs(run),
+    }
+}
+
+fn to_proto_timeline_event(
+    event: &crate::db::models::MeetingTimelineEvent,
+) -> MeetingTimelineEvent {
+    MeetingTimelineEvent {
+        id: event.id,
+        bot_run_id: event.bot_run_id,
+        event_type: event.event_type.clone(),
+        occurred_at: event.occurred_at,
+        relative_ms: event.relative_ms,
+        participant_id: event.participant_id.clone().unwrap_or_default(),
+        participant_name: event.participant_name.clone().unwrap_or_default(),
+        payload_json: event.payload_json.clone().unwrap_or_default(),
+        created_at: event.created_at,
     }
 }
 

@@ -9,6 +9,8 @@ import type { StopRecordingResponse } from "./recording";
 import type { StopRecordingRequest } from "./recording";
 import type { StartAdHocRecordingResponse } from "./recording";
 import type { StartAdHocRecordingRequest } from "./recording";
+import type { ListMeetingTimelineEventsResponse } from "./recording";
+import type { ListMeetingTimelineEventsRequest } from "./recording";
 import type { GetPlaybackUrlResponse } from "./recording";
 import type { GetPlaybackUrlRequest } from "./recording";
 import type { GetBotRunResponse } from "./recording";
@@ -34,6 +36,10 @@ export interface IRecordingServiceClient {
      * @generated from protobuf rpc: GetPlaybackUrl
      */
     getPlaybackUrl(input: GetPlaybackUrlRequest, options?: RpcOptions): UnaryCall<GetPlaybackUrlRequest, GetPlaybackUrlResponse>;
+    /**
+     * @generated from protobuf rpc: ListMeetingTimelineEvents
+     */
+    listMeetingTimelineEvents(input: ListMeetingTimelineEventsRequest, options?: RpcOptions): UnaryCall<ListMeetingTimelineEventsRequest, ListMeetingTimelineEventsResponse>;
     /**
      * @generated from protobuf rpc: StartAdHocRecording
      */
@@ -74,17 +80,24 @@ export class RecordingServiceClient implements IRecordingServiceClient, ServiceI
         return stackIntercept<GetPlaybackUrlRequest, GetPlaybackUrlResponse>("unary", this._transport, method, opt, input);
     }
     /**
+     * @generated from protobuf rpc: ListMeetingTimelineEvents
+     */
+    listMeetingTimelineEvents(input: ListMeetingTimelineEventsRequest, options?: RpcOptions): UnaryCall<ListMeetingTimelineEventsRequest, ListMeetingTimelineEventsResponse> {
+        const method = this.methods[3], opt = this._transport.mergeOptions(options);
+        return stackIntercept<ListMeetingTimelineEventsRequest, ListMeetingTimelineEventsResponse>("unary", this._transport, method, opt, input);
+    }
+    /**
      * @generated from protobuf rpc: StartAdHocRecording
      */
     startAdHocRecording(input: StartAdHocRecordingRequest, options?: RpcOptions): UnaryCall<StartAdHocRecordingRequest, StartAdHocRecordingResponse> {
-        const method = this.methods[3], opt = this._transport.mergeOptions(options);
+        const method = this.methods[4], opt = this._transport.mergeOptions(options);
         return stackIntercept<StartAdHocRecordingRequest, StartAdHocRecordingResponse>("unary", this._transport, method, opt, input);
     }
     /**
      * @generated from protobuf rpc: StopRecording
      */
     stopRecording(input: StopRecordingRequest, options?: RpcOptions): UnaryCall<StopRecordingRequest, StopRecordingResponse> {
-        const method = this.methods[4], opt = this._transport.mergeOptions(options);
+        const method = this.methods[5], opt = this._transport.mergeOptions(options);
         return stackIntercept<StopRecordingRequest, StopRecordingResponse>("unary", this._transport, method, opt, input);
     }
 }

@@ -12,6 +12,7 @@ use chromiumoxide::cdp::js_protocol::runtime::{AddBindingParams, EventBindingCal
 use chromiumoxide::{Browser, BrowserConfig, Page};
 use futures::StreamExt;
 use serde::Deserialize;
+use sqlx::SqlitePool;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tokio::task::JoinHandle;
@@ -21,6 +22,7 @@ use crate::{
     bot::recording_status::{
         RecordingBindingPayload, RecordingPhase, RecordingRuntimeStatus, RecordingStatus,
     },
+    db::meeting_timeline,
     meet_url::MeetUrl,
 };
 
@@ -732,13 +734,14 @@ async fn attempt_join(page: &Page, display_name: &str) -> anyhow::Result<JoinAtt
 pub async fn start_tab_recording(
     page: &Page,
     raw_webm_path: impl AsRef<Path>,
+    timeline_sink: Option<(SqlitePool, i64)>,
     linux_xdotool_display: Option<String>,
     tab_capture_screenshot_dir: PathBuf,
     tab_capture_png: PathBuf,
     launched_chrome_pid: Option<u32>,
 ) -> anyhow::Result<BrowserRecording> {
     activate_page(page).await?;
-    let recording = install_recording_binding(page, raw_webm_path.as_ref()).await?;
+    let recording = install_recording_binding(page, raw_webm_path.as_ref(), timeline_sink).await?;
     install_recording_button(page).await?;
     let (click_tx, click_rx) = tokio::sync::oneshot::channel();
     let prompt_acceptor = spawn_tab_capture_prompt_acceptor_after_recorder_click(
@@ -1210,6 +1213,7 @@ async fn accept_tab_capture_prompt(_linux_xdotool_display: Option<&str>) -> anyh
 async fn install_recording_binding(
     page: &Page,
     raw_webm_path: &Path,
+    timeline_sink: Option<(SqlitePool, i64)>,
 ) -> anyhow::Result<BrowserRecording> {
     let mut listener = page.event_listener::<EventBindingCalled>().await?;
     page.execute(AddBindingParams::new(RECORDING_CHUNK_BINDING))
@@ -1267,6 +1271,33 @@ async fn install_recording_binding(
                         "accepted recording chunk with Meet participant snapshot (best-effort)"
                     );
                 }
+                RecordingBindingPayload::TimelineEvents { events } => {
+                    let event_count = events.len();
+                    if let Some((pool, run_id)) = timeline_sink.as_ref() {
+                        let events = events.into_iter().map(Into::into).collect::<Vec<_>>();
+                        if let Err(error) =
+                            meeting_timeline::insert_many(pool, *run_id, &events).await
+                        {
+                            tracing::warn!(
+                                %error,
+                                run_id,
+                                event_count,
+                                "failed to persist meeting timeline events"
+                            );
+                        } else {
+                            tracing::debug!(
+                                run_id,
+                                event_count,
+                                "persisted meeting timeline events"
+                            );
+                        }
+                    } else {
+                        tracing::trace!(
+                            event_count,
+                            "ignored meeting timeline events for manual recording"
+                        );
+                    }
+                }
                 RecordingBindingPayload::Done => {
                     file.flush().await?;
                     tracing::info!(chunks, bytes, "recording chunk writer finished");
@@ -1321,6 +1352,152 @@ async fn install_recording_button(page: &Page) -> anyhow::Result<()> {
     }
     return out;
   }
+
+  function gmrVisibleText(node) {
+    if (!node) return '';
+    const text = (node.innerText || node.textContent || '').replace(/\s+/g, ' ').trim();
+    return text.slice(0, 160);
+  }
+
+  function gmrParticipantNameFromTile(tile, fallbackId) {
+    const labelled = tile.querySelector('[aria-label]');
+    const labels = [
+      tile.getAttribute('aria-label') || '',
+      labelled ? (labelled.getAttribute('aria-label') || '') : '',
+      gmrVisibleText(tile)
+    ].filter(Boolean);
+    for (const raw of labels) {
+      const cleaned = raw
+        .replace(/\b(muted|speaking|presenting|camera is off|microphone is off)\b/ig, '')
+        .replace(/\b(pin|more options|participant|tile)\b/ig, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (cleaned && !/^\d+$/.test(cleaned)) return cleaned.slice(0, 120);
+    }
+    return fallbackId || 'Unknown participant';
+  }
+
+  function gmrExtractParticipants() {
+    const byId = new Map();
+    const tiles = Array.from(document.querySelectorAll('[data-participant-id], [data-requested-participant-id]'));
+    for (const [index, tile] of tiles.entries()) {
+      const rawId = tile.getAttribute('data-participant-id') || tile.getAttribute('data-requested-participant-id') || '';
+      const name = gmrParticipantNameFromTile(tile, rawId || `tile:${index}`);
+      const id = rawId || `name:${name.toLowerCase()}`;
+      if (!byId.has(id)) {
+        byId.set(id, {
+          id,
+          name,
+          source: rawId ? 'participant_id' : 'tile_name',
+          rawText: gmrVisibleText(tile),
+          ariaLabel: tile.getAttribute('aria-label') || null
+        });
+      }
+    }
+    return Array.from(byId.values());
+  }
+
+  function gmrLooksLikeActiveSpeaker(tile) {
+    const label = `${tile.getAttribute('aria-label') || ''} ${gmrVisibleText(tile)}`.toLowerCase();
+    if (/\b(speaking|is speaking|active speaker)\b/.test(label)) return true;
+    if (tile.querySelector('[aria-label*="speaking" i], [aria-label*="active speaker" i]')) return true;
+    const className = typeof tile.className === 'string' ? tile.className.toLowerCase() : '';
+    return /\b(active|speaking|speaker)\b/.test(className);
+  }
+
+  function gmrExtractActiveSpeaker(participants) {
+    const tiles = Array.from(document.querySelectorAll('[data-participant-id], [data-requested-participant-id]'));
+    for (const [index, tile] of tiles.entries()) {
+      if (!gmrLooksLikeActiveSpeaker(tile)) continue;
+      const rawId = tile.getAttribute('data-participant-id') || tile.getAttribute('data-requested-participant-id') || '';
+      const name = gmrParticipantNameFromTile(tile, rawId || `tile:${index}`);
+      const id = rawId || `name:${name.toLowerCase()}`;
+      const participant = participants.find((p) => p.id === id);
+      return {
+        id,
+        name: participant ? participant.name : name,
+        source: rawId ? 'participant_id' : 'tile_name'
+      };
+    }
+    return null;
+  }
+
+  function gmrCreateTimelineCollector(recordingStartedAtMs) {
+    const state = {
+      previousParticipants: new Map(),
+      activeSpeakerId: null,
+      snapshotCounter: 0
+    };
+    const makeEvent = (eventType, participant, payload) => {
+      const nowMs = Date.now();
+      return {
+        eventType,
+        occurredAt: Math.floor(nowMs / 1000),
+        relativeMs: Math.max(0, nowMs - recordingStartedAtMs),
+        participantId: participant && participant.id ? String(participant.id) : null,
+        participantName: participant && participant.name ? String(participant.name) : null,
+        payload: payload || {}
+      };
+    };
+    return {
+      collect() {
+        const events = [];
+        try {
+          const participants = gmrExtractParticipants();
+          const current = new Map(participants.map((participant) => [participant.id, participant]));
+          for (const participant of participants) {
+            if (!state.previousParticipants.has(participant.id)) {
+              events.push(makeEvent('participant_joined', participant, { source: participant.source, rawText: participant.rawText, ariaLabel: participant.ariaLabel }));
+            }
+          }
+          for (const [id, participant] of state.previousParticipants.entries()) {
+            if (!current.has(id)) {
+              events.push(makeEvent('participant_left', participant, { source: participant.source }));
+            }
+          }
+
+          const activeSpeaker = gmrExtractActiveSpeaker(participants);
+          const activeSpeakerId = activeSpeaker ? activeSpeaker.id : null;
+          if (activeSpeakerId && activeSpeakerId !== state.activeSpeakerId) {
+            events.push(makeEvent('active_speaker_changed', activeSpeaker, { source: activeSpeaker.source }));
+          }
+          state.activeSpeakerId = activeSpeakerId;
+
+          state.snapshotCounter += 1;
+          if (state.snapshotCounter === 1 || state.snapshotCounter % 6 === 0) {
+            events.push(makeEvent('participant_snapshot', null, {
+              count: participants.length,
+              participants: participants.map((participant) => ({
+                id: participant.id,
+                name: participant.name,
+                source: participant.source
+              })),
+              activeSpeakerId
+            }));
+          }
+
+          state.previousParticipants = current;
+        } catch (error) {
+          events.push(makeEvent('collector_warning', null, {
+            message: String(error && error.message ? error.message : error)
+          }));
+        }
+        return events;
+      }
+    };
+  }
+
+  function gmrSendTimelineEvents(events) {
+    if (!events || events.length === 0 || typeof window.__gmrRecordChunk !== 'function') return;
+    const send = window.__gmrTimelinePending.then(async () => {
+      window.__gmrRecordChunk(JSON.stringify({ kind: 'timeline_events', events }));
+    }).catch((error) => {
+      window.__gmrUploadErrors.push(String(error && error.message ? error.message : error));
+    });
+    window.__gmrTimelinePending = send;
+    window.__gmrUploads.push(send);
+  }
+
   window.__gmrRecordingStatus = { status: 'waiting_for_click' };
   if (window.__gmrRecorder && window.__gmrRecorder.state === 'recording') {
     window.__gmrRecordingStatus = {
@@ -1474,10 +1651,17 @@ async fn install_recording_button(page: &Page) -> anyhow::Result<()> {
     window.__gmrAcceptedChunks = 0;
     window.__gmrUploadedBytes = 0;
     window.__gmrPendingUpload = Promise.resolve();
+    window.__gmrTimelinePending = Promise.resolve();
     window.__gmrChunkBindingAvailable = typeof window.__gmrRecordChunk === 'function';
     if (audioTracks.length === 0) {
       window.__gmrUploadErrors.push('Meet media elements exposed no live audio tracks; recording video only');
     }
+
+    window.__gmrTimelineCollector = gmrCreateTimelineCollector(Date.now());
+    gmrSendTimelineEvents(window.__gmrTimelineCollector.collect());
+    window.__gmrTimelineInterval = window.setInterval(() => {
+      gmrSendTimelineEvents(window.__gmrTimelineCollector.collect());
+    }, 5000);
 
     const blobToBase64 = async (blob) => {
       const bytes = new Uint8Array(await blob.arrayBuffer());
@@ -1650,6 +1834,13 @@ pub async fn stop_tab_recording(page: &Page) -> anyhow::Result<()> {
   }
   if (window.__gmrCaptureStreams) {
     window.__gmrCaptureStreams.forEach((stream) => stream.getTracks().forEach((track) => track.stop()));
+  }
+  if (window.__gmrTimelineInterval) {
+    window.clearInterval(window.__gmrTimelineInterval);
+    window.__gmrTimelineInterval = null;
+  }
+  if (window.__gmrTimelineCollector) {
+    gmrSendTimelineEvents(window.__gmrTimelineCollector.collect());
   }
   if (window.__gmrAudioContext && window.__gmrAudioContext.state !== 'closed') {
     await window.__gmrAudioContext.close();

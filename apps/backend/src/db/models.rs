@@ -42,3 +42,26 @@ pub struct BotRunListItem {
     pub created_at: i64,
     pub recording_path: Option<String>,
 }
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct MeetingTimelineEvent {
+    pub id: i64,
+    pub bot_run_id: i64,
+    pub event_type: String,
+    pub occurred_at: i64,
+    pub relative_ms: i64,
+    pub participant_id: Option<String>,
+    pub participant_name: Option<String>,
+    pub payload_json: Option<String>,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct NewMeetingTimelineEvent {
+    pub event_type: String,
+    pub occurred_at: i64,
+    pub relative_ms: i64,
+    pub participant_id: Option<String>,
+    pub participant_name: Option<String>,
+    pub payload_json: Option<String>,
+}

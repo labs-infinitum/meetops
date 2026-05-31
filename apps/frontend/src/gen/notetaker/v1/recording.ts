@@ -192,6 +192,96 @@ export interface PlaybackUrlSuccess {
     expiresAt: bigint;
 }
 /**
+ * @generated from protobuf message notetaker.v1.MeetingTimelineEvent
+ */
+export interface MeetingTimelineEvent {
+    /**
+     * @generated from protobuf field: int64 id = 1
+     */
+    id: bigint;
+    /**
+     * @generated from protobuf field: int64 bot_run_id = 2
+     */
+    botRunId: bigint;
+    /**
+     * @generated from protobuf field: string event_type = 3
+     */
+    eventType: string;
+    /**
+     * @generated from protobuf field: int64 occurred_at = 4
+     */
+    occurredAt: bigint;
+    /**
+     * @generated from protobuf field: int64 relative_ms = 5
+     */
+    relativeMs: bigint;
+    /**
+     * @generated from protobuf field: string participant_id = 6
+     */
+    participantId: string;
+    /**
+     * @generated from protobuf field: string participant_name = 7
+     */
+    participantName: string;
+    /**
+     * @generated from protobuf field: string payload_json = 8
+     */
+    payloadJson: string;
+    /**
+     * @generated from protobuf field: int64 created_at = 9
+     */
+    createdAt: bigint;
+}
+/**
+ * @generated from protobuf message notetaker.v1.ListMeetingTimelineEventsRequest
+ */
+export interface ListMeetingTimelineEventsRequest {
+    /**
+     * @generated from protobuf field: string token = 1
+     */
+    token: string;
+    /**
+     * @generated from protobuf field: int64 run_id = 2
+     */
+    runId: bigint;
+    /**
+     * @generated from protobuf field: int32 limit = 3
+     */
+    limit: number;
+}
+/**
+ * @generated from protobuf message notetaker.v1.ListMeetingTimelineEventsResponse
+ */
+export interface ListMeetingTimelineEventsResponse {
+    /**
+     * @generated from protobuf oneof: result
+     */
+    result: {
+        oneofKind: "success";
+        /**
+         * @generated from protobuf field: notetaker.v1.ListMeetingTimelineEventsSuccess success = 1
+         */
+        success: ListMeetingTimelineEventsSuccess;
+    } | {
+        oneofKind: "error";
+        /**
+         * @generated from protobuf field: notetaker.v1.RecordingError error = 2
+         */
+        error: RecordingError;
+    } | {
+        oneofKind: undefined;
+    };
+}
+/**
+ * @generated from protobuf message notetaker.v1.ListMeetingTimelineEventsSuccess
+ */
+export interface ListMeetingTimelineEventsSuccess {
+    /**
+     * @generated from protobuf field: repeated notetaker.v1.MeetingTimelineEvent events = 1
+     */
+    events: MeetingTimelineEvent[];
+}
+/**
  * @generated from protobuf message notetaker.v1.RecordingError
  */
 export interface RecordingError {
@@ -869,6 +959,287 @@ class PlaybackUrlSuccess$Type extends MessageType<PlaybackUrlSuccess> {
  */
 export const PlaybackUrlSuccess = new PlaybackUrlSuccess$Type();
 // @generated message type with reflection information, may provide speed optimized methods
+class MeetingTimelineEvent$Type extends MessageType<MeetingTimelineEvent> {
+    constructor() {
+        super("notetaker.v1.MeetingTimelineEvent", [
+            { no: 1, name: "id", kind: "scalar", T: 3 /*ScalarType.INT64*/, L: 0 /*LongType.BIGINT*/ },
+            { no: 2, name: "bot_run_id", kind: "scalar", T: 3 /*ScalarType.INT64*/, L: 0 /*LongType.BIGINT*/ },
+            { no: 3, name: "event_type", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 4, name: "occurred_at", kind: "scalar", T: 3 /*ScalarType.INT64*/, L: 0 /*LongType.BIGINT*/ },
+            { no: 5, name: "relative_ms", kind: "scalar", T: 3 /*ScalarType.INT64*/, L: 0 /*LongType.BIGINT*/ },
+            { no: 6, name: "participant_id", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 7, name: "participant_name", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 8, name: "payload_json", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 9, name: "created_at", kind: "scalar", T: 3 /*ScalarType.INT64*/, L: 0 /*LongType.BIGINT*/ }
+        ]);
+    }
+    create(value?: PartialMessage<MeetingTimelineEvent>): MeetingTimelineEvent {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.id = 0n;
+        message.botRunId = 0n;
+        message.eventType = "";
+        message.occurredAt = 0n;
+        message.relativeMs = 0n;
+        message.participantId = "";
+        message.participantName = "";
+        message.payloadJson = "";
+        message.createdAt = 0n;
+        if (value !== undefined)
+            reflectionMergePartial<MeetingTimelineEvent>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: MeetingTimelineEvent): MeetingTimelineEvent {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* int64 id */ 1:
+                    message.id = reader.int64().toBigInt();
+                    break;
+                case /* int64 bot_run_id */ 2:
+                    message.botRunId = reader.int64().toBigInt();
+                    break;
+                case /* string event_type */ 3:
+                    message.eventType = reader.string();
+                    break;
+                case /* int64 occurred_at */ 4:
+                    message.occurredAt = reader.int64().toBigInt();
+                    break;
+                case /* int64 relative_ms */ 5:
+                    message.relativeMs = reader.int64().toBigInt();
+                    break;
+                case /* string participant_id */ 6:
+                    message.participantId = reader.string();
+                    break;
+                case /* string participant_name */ 7:
+                    message.participantName = reader.string();
+                    break;
+                case /* string payload_json */ 8:
+                    message.payloadJson = reader.string();
+                    break;
+                case /* int64 created_at */ 9:
+                    message.createdAt = reader.int64().toBigInt();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: MeetingTimelineEvent, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* int64 id = 1; */
+        if (message.id !== 0n)
+            writer.tag(1, WireType.Varint).int64(message.id);
+        /* int64 bot_run_id = 2; */
+        if (message.botRunId !== 0n)
+            writer.tag(2, WireType.Varint).int64(message.botRunId);
+        /* string event_type = 3; */
+        if (message.eventType !== "")
+            writer.tag(3, WireType.LengthDelimited).string(message.eventType);
+        /* int64 occurred_at = 4; */
+        if (message.occurredAt !== 0n)
+            writer.tag(4, WireType.Varint).int64(message.occurredAt);
+        /* int64 relative_ms = 5; */
+        if (message.relativeMs !== 0n)
+            writer.tag(5, WireType.Varint).int64(message.relativeMs);
+        /* string participant_id = 6; */
+        if (message.participantId !== "")
+            writer.tag(6, WireType.LengthDelimited).string(message.participantId);
+        /* string participant_name = 7; */
+        if (message.participantName !== "")
+            writer.tag(7, WireType.LengthDelimited).string(message.participantName);
+        /* string payload_json = 8; */
+        if (message.payloadJson !== "")
+            writer.tag(8, WireType.LengthDelimited).string(message.payloadJson);
+        /* int64 created_at = 9; */
+        if (message.createdAt !== 0n)
+            writer.tag(9, WireType.Varint).int64(message.createdAt);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message notetaker.v1.MeetingTimelineEvent
+ */
+export const MeetingTimelineEvent = new MeetingTimelineEvent$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class ListMeetingTimelineEventsRequest$Type extends MessageType<ListMeetingTimelineEventsRequest> {
+    constructor() {
+        super("notetaker.v1.ListMeetingTimelineEventsRequest", [
+            { no: 1, name: "token", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 2, name: "run_id", kind: "scalar", T: 3 /*ScalarType.INT64*/, L: 0 /*LongType.BIGINT*/ },
+            { no: 3, name: "limit", kind: "scalar", T: 5 /*ScalarType.INT32*/ }
+        ]);
+    }
+    create(value?: PartialMessage<ListMeetingTimelineEventsRequest>): ListMeetingTimelineEventsRequest {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.token = "";
+        message.runId = 0n;
+        message.limit = 0;
+        if (value !== undefined)
+            reflectionMergePartial<ListMeetingTimelineEventsRequest>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: ListMeetingTimelineEventsRequest): ListMeetingTimelineEventsRequest {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string token */ 1:
+                    message.token = reader.string();
+                    break;
+                case /* int64 run_id */ 2:
+                    message.runId = reader.int64().toBigInt();
+                    break;
+                case /* int32 limit */ 3:
+                    message.limit = reader.int32();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: ListMeetingTimelineEventsRequest, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string token = 1; */
+        if (message.token !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.token);
+        /* int64 run_id = 2; */
+        if (message.runId !== 0n)
+            writer.tag(2, WireType.Varint).int64(message.runId);
+        /* int32 limit = 3; */
+        if (message.limit !== 0)
+            writer.tag(3, WireType.Varint).int32(message.limit);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message notetaker.v1.ListMeetingTimelineEventsRequest
+ */
+export const ListMeetingTimelineEventsRequest = new ListMeetingTimelineEventsRequest$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class ListMeetingTimelineEventsResponse$Type extends MessageType<ListMeetingTimelineEventsResponse> {
+    constructor() {
+        super("notetaker.v1.ListMeetingTimelineEventsResponse", [
+            { no: 1, name: "success", kind: "message", oneof: "result", T: () => ListMeetingTimelineEventsSuccess },
+            { no: 2, name: "error", kind: "message", oneof: "result", T: () => RecordingError }
+        ]);
+    }
+    create(value?: PartialMessage<ListMeetingTimelineEventsResponse>): ListMeetingTimelineEventsResponse {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.result = { oneofKind: undefined };
+        if (value !== undefined)
+            reflectionMergePartial<ListMeetingTimelineEventsResponse>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: ListMeetingTimelineEventsResponse): ListMeetingTimelineEventsResponse {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* notetaker.v1.ListMeetingTimelineEventsSuccess success */ 1:
+                    message.result = {
+                        oneofKind: "success",
+                        success: ListMeetingTimelineEventsSuccess.internalBinaryRead(reader, reader.uint32(), options, (message.result as any).success)
+                    };
+                    break;
+                case /* notetaker.v1.RecordingError error */ 2:
+                    message.result = {
+                        oneofKind: "error",
+                        error: RecordingError.internalBinaryRead(reader, reader.uint32(), options, (message.result as any).error)
+                    };
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: ListMeetingTimelineEventsResponse, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* notetaker.v1.ListMeetingTimelineEventsSuccess success = 1; */
+        if (message.result.oneofKind === "success")
+            ListMeetingTimelineEventsSuccess.internalBinaryWrite(message.result.success, writer.tag(1, WireType.LengthDelimited).fork(), options).join();
+        /* notetaker.v1.RecordingError error = 2; */
+        if (message.result.oneofKind === "error")
+            RecordingError.internalBinaryWrite(message.result.error, writer.tag(2, WireType.LengthDelimited).fork(), options).join();
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message notetaker.v1.ListMeetingTimelineEventsResponse
+ */
+export const ListMeetingTimelineEventsResponse = new ListMeetingTimelineEventsResponse$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class ListMeetingTimelineEventsSuccess$Type extends MessageType<ListMeetingTimelineEventsSuccess> {
+    constructor() {
+        super("notetaker.v1.ListMeetingTimelineEventsSuccess", [
+            { no: 1, name: "events", kind: "message", repeat: 2 /*RepeatType.UNPACKED*/, T: () => MeetingTimelineEvent }
+        ]);
+    }
+    create(value?: PartialMessage<ListMeetingTimelineEventsSuccess>): ListMeetingTimelineEventsSuccess {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.events = [];
+        if (value !== undefined)
+            reflectionMergePartial<ListMeetingTimelineEventsSuccess>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: ListMeetingTimelineEventsSuccess): ListMeetingTimelineEventsSuccess {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* repeated notetaker.v1.MeetingTimelineEvent events */ 1:
+                    message.events.push(MeetingTimelineEvent.internalBinaryRead(reader, reader.uint32(), options));
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: ListMeetingTimelineEventsSuccess, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* repeated notetaker.v1.MeetingTimelineEvent events = 1; */
+        for (let i = 0; i < message.events.length; i++)
+            MeetingTimelineEvent.internalBinaryWrite(message.events[i], writer.tag(1, WireType.LengthDelimited).fork(), options).join();
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message notetaker.v1.ListMeetingTimelineEventsSuccess
+ */
+export const ListMeetingTimelineEventsSuccess = new ListMeetingTimelineEventsSuccess$Type();
+// @generated message type with reflection information, may provide speed optimized methods
 class RecordingError$Type extends MessageType<RecordingError> {
     constructor() {
         super("notetaker.v1.RecordingError", [
@@ -1252,6 +1623,7 @@ export const RecordingService = new ServiceType("notetaker.v1.RecordingService",
     { name: "ListBotRuns", options: {}, I: ListBotRunsRequest, O: ListBotRunsResponse },
     { name: "GetBotRun", options: {}, I: GetBotRunRequest, O: GetBotRunResponse },
     { name: "GetPlaybackUrl", options: {}, I: GetPlaybackUrlRequest, O: GetPlaybackUrlResponse },
+    { name: "ListMeetingTimelineEvents", options: {}, I: ListMeetingTimelineEventsRequest, O: ListMeetingTimelineEventsResponse },
     { name: "StartAdHocRecording", options: {}, I: StartAdHocRecordingRequest, O: StartAdHocRecordingResponse },
     { name: "StopRecording", options: {}, I: StopRecordingRequest, O: StopRecordingResponse }
 ]);

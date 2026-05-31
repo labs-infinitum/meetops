@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
-import { AlertCircle, ChevronRight, Film, Loader2, Square } from "lucide-react"
+import { AlertCircle, ChevronRight, Film, Loader2, LogIn, LogOut, Mic2, Square, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import {
   Table,
@@ -18,6 +19,7 @@ import {
   apiGetBotRun,
   apiGetPlaybackUrl,
   apiListBotRuns,
+  apiListMeetingTimelineEvents,
   apiStopRecording,
   isActiveBotRun,
   RecordingApiError,
@@ -25,8 +27,47 @@ import {
 } from "@/lib/recording-api"
 import { formatDate, formatDateTime, formatDuration } from "@/lib/format"
 import { useAuth } from "@/lib/auth-context"
-import type { BotRun } from "@/types"
+import type { BotRun, MeetingTimelineEvent } from "@/types"
 import { toast } from "sonner"
+
+function formatRelativeTime(relativeMs: number): string {
+  return formatDuration(Math.max(0, Math.floor(relativeMs / 1000)))
+}
+
+function eventTitle(event: MeetingTimelineEvent): string {
+  switch (event.eventType) {
+    case "participant_joined":
+      return `${event.participantName || "Someone"} joined`
+    case "participant_left":
+      return `${event.participantName || "Someone"} left`
+    case "active_speaker_changed":
+      return `${event.participantName || "Unknown speaker"} started speaking`
+    case "participant_snapshot": {
+      const count = typeof event.payload?.count === "number" ? event.payload.count : undefined
+      return count === undefined ? "Participant snapshot" : `${count} participants in meeting`
+    }
+    default:
+      return event.eventType.replaceAll("_", " ")
+  }
+}
+
+function eventIcon(eventType: string) {
+  switch (eventType) {
+    case "participant_joined":
+      return LogIn
+    case "participant_left":
+      return LogOut
+    case "active_speaker_changed":
+      return Mic2
+    default:
+      return Users
+  }
+}
+
+function timelineEventsToShow(events: MeetingTimelineEvent[]): MeetingTimelineEvent[] {
+  const withoutFrequentSnapshots = events.filter((event) => event.eventType !== "participant_snapshot")
+  return (withoutFrequentSnapshots.length > 0 ? withoutFrequentSnapshots : events).slice(0, 100)
+}
 
 export function RecordingsPage() {
   const { session } = useAuth()
@@ -122,6 +163,7 @@ export function RecordingDetailPage({ recordingId }: { recordingId: string }) {
   const { session } = useAuth()
   const [run, setRun] = useState<BotRun | null>(null)
   const [playbackUrl, setPlaybackUrl] = useState<string | null>(null)
+  const [timelineEvents, setTimelineEvents] = useState<MeetingTimelineEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [stopping, setStopping] = useState(false)
@@ -138,6 +180,7 @@ export function RecordingDetailPage({ recordingId }: { recordingId: string }) {
       const loaded = await apiGetBotRun(session.token, runId)
       setRun(loaded)
       setNotFound(false)
+      setTimelineEvents(await apiListMeetingTimelineEvents(session.token, runId))
 
       if (
         loaded.status === "completed" &&
@@ -299,6 +342,49 @@ export function RecordingDetailPage({ recordingId }: { recordingId: string }) {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-base font-semibold">Meeting activity</h2>
+              <p className="text-muted-foreground text-sm">
+                Participant changes and detected active speaker updates from the Meet UI.
+              </p>
+            </div>
+            <Badge variant="secondary">{timelineEvents.length} events</Badge>
+          </div>
+
+          {timelineEvents.length === 0 ? (
+            <p className="text-muted-foreground mt-6 text-sm">
+              No meeting activity has been captured for this recording yet.
+            </p>
+          ) : (
+            <div className="mt-6 space-y-4">
+              {timelineEventsToShow(timelineEvents).map((event) => {
+                const Icon = eventIcon(event.eventType)
+                return (
+                  <div key={event.id} className="flex gap-3">
+                    <div className="bg-muted mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full">
+                      <Icon className="text-muted-foreground size-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-medium">{eventTitle(event)}</p>
+                        <Badge variant="outline">{formatRelativeTime(event.relativeMs)}</Badge>
+                      </div>
+                      <p className="text-muted-foreground mt-1 text-xs">
+                        {formatDateTime(event.occurredAt)}
+                        {event.participantId ? ` · ${event.participantId}` : ""}
+                      </p>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

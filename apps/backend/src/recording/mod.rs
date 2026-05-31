@@ -142,6 +142,25 @@ impl RecordingService {
         Ok((url, expires_at))
     }
 
+    pub async fn list_timeline_events(
+        &self,
+        token: &str,
+        run_id: i64,
+        limit: i32,
+    ) -> Result<Vec<db::models::MeetingTimelineEvent>, RecordingServiceError> {
+        let user_id = self.require_user_id(token).await?;
+        let limit = i64::from(limit.clamp(1, 1000));
+        let run_exists = db::bot_runs::get_for_user(&self.db, &user_id, run_id)
+            .await?
+            .is_some();
+        if !run_exists {
+            return Err(RecordingServiceError::NotFound);
+        }
+        db::meeting_timeline::list_for_user_run(&self.db, &user_id, run_id, limit)
+            .await
+            .map_err(Into::into)
+    }
+
     pub async fn start_ad_hoc_recording(
         &self,
         token: &str,

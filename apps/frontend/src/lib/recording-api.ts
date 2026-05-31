@@ -1,4 +1,4 @@
-import type { BotRun, BotRunStatus } from "@/types"
+import type { BotRun, BotRunStatus, MeetingTimelineEvent } from "@/types"
 import { getRecordingClient } from "@/lib/grpc-client"
 import { withAuthGuard } from "@/lib/session-guard"
 import type {
@@ -6,6 +6,8 @@ import type {
   GetBotRunResponse,
   GetPlaybackUrlResponse,
   ListBotRunsResponse,
+  ListMeetingTimelineEventsResponse,
+  MeetingTimelineEvent as ProtoMeetingTimelineEvent,
   RecordingError,
   StartAdHocRecordingResponse,
   StopRecordingResponse,
@@ -34,6 +36,30 @@ function mapRun(row: ProtoBotRun): BotRun {
     createdAt: Number(row.createdAt),
     recordingPath: row.recordingPath || undefined,
     durationSecs: row.durationSecs ? Number(row.durationSecs) : undefined,
+  }
+}
+
+function parsePayload(payloadJson: string): Record<string, unknown> | undefined {
+  if (!payloadJson) return undefined
+  try {
+    const parsed = JSON.parse(payloadJson)
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function mapTimelineEvent(row: ProtoMeetingTimelineEvent): MeetingTimelineEvent {
+  return {
+    id: Number(row.id),
+    botRunId: Number(row.botRunId),
+    eventType: row.eventType,
+    occurredAt: Number(row.occurredAt),
+    relativeMs: Number(row.relativeMs),
+    participantId: row.participantId || undefined,
+    participantName: row.participantName || undefined,
+    payload: parsePayload(row.payloadJson),
+    createdAt: Number(row.createdAt),
   }
 }
 
@@ -72,6 +98,16 @@ function unwrapPlayback(response: GetPlaybackUrlResponse): { url: string; expire
     throw parseError(response.result.error)
   }
   throw new RecordingApiError("internal_error", "Empty playback URL response.")
+}
+
+function unwrapTimeline(response: ListMeetingTimelineEventsResponse): MeetingTimelineEvent[] {
+  if (response.result.oneofKind === "success") {
+    return response.result.success.events.map(mapTimelineEvent)
+  }
+  if (response.result.oneofKind === "error") {
+    throw parseError(response.result.error)
+  }
+  throw new RecordingApiError("internal_error", "Empty meeting timeline response.")
 }
 
 function unwrapStartAdHoc(response: StartAdHocRecordingResponse): BotRun {
@@ -132,6 +168,22 @@ export async function apiGetPlaybackUrl(
     const client = getRecordingClient()
     const { response } = await client.getPlaybackUrl({ token, runId: BigInt(runId) })
     return unwrapPlayback(response)
+  })
+}
+
+export async function apiListMeetingTimelineEvents(
+  token: string,
+  runId: number,
+  limit = 500,
+): Promise<MeetingTimelineEvent[]> {
+  return withAuthGuard(async () => {
+    const client = getRecordingClient()
+    const { response } = await client.listMeetingTimelineEvents({
+      token,
+      runId: BigInt(runId),
+      limit,
+    })
+    return unwrapTimeline(response)
   })
 }
 

@@ -6,6 +6,7 @@ service RecordingService {
   rpc ListBotRuns(ListBotRunsRequest) returns (ListBotRunsResponse);
   rpc GetBotRun(GetBotRunRequest) returns (GetBotRunResponse);
   rpc GetPlaybackUrl(GetPlaybackUrlRequest) returns (GetPlaybackUrlResponse);
+  rpc ListMeetingTimelineEvents(ListMeetingTimelineEventsRequest) returns (ListMeetingTimelineEventsResponse);
   rpc StartAdHocRecording(StartAdHocRecordingRequest) returns (StartAdHocRecordingResponse);
   rpc StopRecording(StopRecordingRequest) returns (StopRecordingResponse);
 }
@@ -67,6 +68,35 @@ message GetPlaybackUrlResponse {
 message PlaybackUrlSuccess {
   string url = 1;
   int64 expires_at = 2;
+}
+
+message MeetingTimelineEvent {
+  int64 id = 1;
+  int64 bot_run_id = 2;
+  string event_type = 3;
+  int64 occurred_at = 4;
+  int64 relative_ms = 5;
+  string participant_id = 6;
+  string participant_name = 7;
+  string payload_json = 8;
+  int64 created_at = 9;
+}
+
+message ListMeetingTimelineEventsRequest {
+  string token = 1;
+  int64 run_id = 2;
+  int32 limit = 3;
+}
+
+message ListMeetingTimelineEventsResponse {
+  oneof result {
+    ListMeetingTimelineEventsSuccess success = 1;
+    RecordingError error = 2;
+  }
+}
+
+message ListMeetingTimelineEventsSuccess {
+  repeated MeetingTimelineEvent events = 1;
 }
 
 message RecordingError {

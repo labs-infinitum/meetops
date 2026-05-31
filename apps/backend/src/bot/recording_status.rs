@@ -2,6 +2,8 @@ use std::fmt;
 
 use serde::Deserialize;
 
+use crate::db::models::NewMeetingTimelineEvent;
+
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum RecordingStatus {
@@ -123,7 +125,40 @@ pub enum RecordingBindingPayload {
         #[serde(default, rename = "participantSource")]
         participant_source: Option<String>,
     },
+    TimelineEvents {
+        #[serde(default)]
+        events: Vec<RecordingTimelineEventPayload>,
+    },
     Done,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RecordingTimelineEventPayload {
+    #[serde(rename = "eventType")]
+    pub event_type: String,
+    #[serde(rename = "occurredAt")]
+    pub occurred_at: i64,
+    #[serde(rename = "relativeMs")]
+    pub relative_ms: i64,
+    #[serde(default, rename = "participantId")]
+    pub participant_id: Option<String>,
+    #[serde(default, rename = "participantName")]
+    pub participant_name: Option<String>,
+    #[serde(default)]
+    pub payload: Option<serde_json::Value>,
+}
+
+impl From<RecordingTimelineEventPayload> for NewMeetingTimelineEvent {
+    fn from(event: RecordingTimelineEventPayload) -> Self {
+        Self {
+            event_type: event.event_type,
+            occurred_at: event.occurred_at,
+            relative_ms: event.relative_ms,
+            participant_id: event.participant_id,
+            participant_name: event.participant_name,
+            payload_json: event.payload.map(|value| value.to_string()),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -166,6 +201,20 @@ mod tests {
 
         let done: RecordingBindingPayload = serde_json::from_str(r#"{"kind":"done"}"#).unwrap();
         assert!(matches!(done, RecordingBindingPayload::Done));
+    }
+
+    #[test]
+    fn deserializes_timeline_events_payload() {
+        let payload: RecordingBindingPayload = serde_json::from_str(
+            r#"{"kind":"timeline_events","events":[{"eventType":"participant_joined","occurredAt":10,"relativeMs":2000,"participantId":"p1","participantName":"Alice","payload":{"source":"tile"}}]}"#,
+        )
+        .unwrap();
+
+        let RecordingBindingPayload::TimelineEvents { events } = payload else {
+            panic!("expected timeline events");
+        };
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, "participant_joined");
     }
 
     #[test]

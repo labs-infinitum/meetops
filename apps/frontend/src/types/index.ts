@@ -65,6 +65,18 @@ export type BotRun = {
   durationSecs?: number
 }
 
+export type MeetingTimelineEvent = {
+  id: number
+  botRunId: number
+  eventType: string
+  occurredAt: number
+  relativeMs: number
+  participantId?: string
+  participantName?: string
+  payload?: Record<string, unknown>
+  createdAt: number
+}
+
 export type ActionItem = {
   id: string
   text: string

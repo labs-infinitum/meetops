@@ -134,6 +134,7 @@ where
     let browser_recording = match chromium::start_tab_recording(
         &session.page,
         &raw_webm_path,
+        scheduled.map(|(pool, run_id)| (pool.clone(), run_id)),
         session.x11_display.clone(),
         tab_capture_screenshot_dir,
         tab_capture_png,

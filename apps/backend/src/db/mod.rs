@@ -9,6 +9,7 @@ use crate::config::Config;
 
 pub mod bot_runs;
 pub mod calendar_connections;
+pub mod meeting_timeline;
 pub mod meetings;
 pub mod models;
 pub mod users;
@@ -293,13 +294,13 @@ mod tests {
             .fetch_one(&pool)
             .await
             .expect("count migrations");
-        assert_eq!(migration_count, 1);
+        assert_eq!(migration_count, 2);
 
-        let version: i64 = sqlx::query_scalar("SELECT version FROM _sqlx_migrations")
+        let version: i64 = sqlx::query_scalar("SELECT MAX(version) FROM _sqlx_migrations")
             .fetch_one(&pool)
             .await
             .expect("read migration version");
-        assert_eq!(version, 1);
+        assert_eq!(version, 2);
 
         let recording_path_exists: Option<String> = sqlx::query_scalar(
             "SELECT name FROM pragma_table_info('bot_runs') WHERE name = 'recording_path'",
@@ -336,7 +337,7 @@ mod tests {
             .fetch_one(&pool)
             .await
             .expect("count migrations");
-        assert_eq!(migration_count, 1);
+        assert_eq!(migration_count, 2);
 
         pool.close().await;
         let _ = std::fs::remove_dir_all(data_dir);
