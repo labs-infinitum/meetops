@@ -125,6 +125,10 @@ pub enum RecordingBindingPayload {
         #[serde(default, rename = "participantSource")]
         participant_source: Option<String>,
     },
+    AudioChunk {
+        size: u64,
+        data: String,
+    },
     TimelineEvents {
         #[serde(default)]
         events: Vec<RecordingTimelineEventPayload>,
@@ -198,6 +202,13 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(chunk, RecordingBindingPayload::Chunk { .. }));
+
+        let audio_chunk: RecordingBindingPayload =
+            serde_json::from_str(r#"{"kind":"audio_chunk","size":12,"data":"YWJj"}"#).unwrap();
+        assert!(matches!(
+            audio_chunk,
+            RecordingBindingPayload::AudioChunk { .. }
+        ));
 
         let done: RecordingBindingPayload = serde_json::from_str(r#"{"kind":"done"}"#).unwrap();
         assert!(matches!(done, RecordingBindingPayload::Done));

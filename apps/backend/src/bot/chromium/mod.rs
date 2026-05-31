@@ -734,6 +734,7 @@ async fn attempt_join(page: &Page, display_name: &str) -> anyhow::Result<JoinAtt
 pub async fn start_tab_recording(
     page: &Page,
     raw_webm_path: impl AsRef<Path>,
+    audio_webm_path: impl AsRef<Path>,
     timeline_sink: Option<(SqlitePool, i64)>,
     linux_xdotool_display: Option<String>,
     tab_capture_screenshot_dir: PathBuf,
@@ -741,7 +742,13 @@ pub async fn start_tab_recording(
     launched_chrome_pid: Option<u32>,
 ) -> anyhow::Result<BrowserRecording> {
     activate_page(page).await?;
-    let recording = install_recording_binding(page, raw_webm_path.as_ref(), timeline_sink).await?;
+    let recording = install_recording_binding(
+        page,
+        raw_webm_path.as_ref(),
+        audio_webm_path.as_ref(),
+        timeline_sink,
+    )
+    .await?;
     install_recording_button(page).await?;
     let (click_tx, click_rx) = tokio::sync::oneshot::channel();
     let prompt_acceptor = spawn_tab_capture_prompt_acceptor_after_recorder_click(
@@ -1213,6 +1220,7 @@ async fn accept_tab_capture_prompt(_linux_xdotool_display: Option<&str>) -> anyh
 async fn install_recording_binding(
     page: &Page,
     raw_webm_path: &Path,
+    audio_webm_path: &Path,
     timeline_sink: Option<(SqlitePool, i64)>,
 ) -> anyhow::Result<BrowserRecording> {
     let mut listener = page.event_listener::<EventBindingCalled>().await?;
@@ -1220,14 +1228,18 @@ async fn install_recording_binding(
         .await?;
 
     let raw_webm_path = raw_webm_path.to_path_buf();
+    let audio_webm_path = audio_webm_path.to_path_buf();
     let writer_task = tokio::spawn(async move {
         let mut file = tokio::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(&raw_webm_path)
             .await?;
+        let mut audio_file: Option<tokio::fs::File> = None;
         let mut chunks = 0usize;
         let mut bytes = 0usize;
+        let mut audio_chunks = 0usize;
+        let mut audio_bytes = 0usize;
 
         while let Some(event) = listener.next().await {
             if event.name != RECORDING_CHUNK_BINDING {
@@ -1271,6 +1283,34 @@ async fn install_recording_binding(
                         "accepted recording chunk with Meet participant snapshot (best-effort)"
                     );
                 }
+                RecordingBindingPayload::AudioChunk { size, data } => {
+                    let decoded = BASE64.decode(data.as_bytes())?;
+                    if decoded.len() as u64 != size {
+                        tracing::warn!(
+                            decoded_bytes = decoded.len(),
+                            declared_size = size,
+                            "audio chunk size mismatch"
+                        );
+                    }
+
+                    if audio_file.is_none() {
+                        audio_file = Some(
+                            tokio::fs::OpenOptions::new()
+                                .create(true)
+                                .append(true)
+                                .open(&audio_webm_path)
+                                .await?,
+                        );
+                    }
+                    let file = audio_file
+                        .as_mut()
+                        .expect("audio_file initialized before write");
+                    file.write_all(&decoded).await?;
+                    file.flush().await?;
+                    audio_chunks += 1;
+                    audio_bytes += decoded.len();
+                    tracing::debug!(audio_chunks, audio_bytes, "accepted recording audio chunk");
+                }
                 RecordingBindingPayload::TimelineEvents { events } => {
                     let event_count = events.len();
                     if let Some((pool, run_id)) = timeline_sink.as_ref() {
@@ -1300,14 +1340,32 @@ async fn install_recording_binding(
                 }
                 RecordingBindingPayload::Done => {
                     file.flush().await?;
-                    tracing::info!(chunks, bytes, "recording chunk writer finished");
+                    if let Some(file) = audio_file.as_mut() {
+                        file.flush().await?;
+                    }
+                    tracing::info!(
+                        chunks,
+                        bytes,
+                        audio_chunks,
+                        audio_bytes,
+                        "recording chunk writer finished"
+                    );
                     return Ok(());
                 }
             }
         }
 
         file.flush().await?;
-        tracing::info!(chunks, bytes, "recording chunk writer ended");
+        if let Some(file) = audio_file.as_mut() {
+            file.flush().await?;
+        }
+        tracing::info!(
+            chunks,
+            bytes,
+            audio_chunks,
+            audio_bytes,
+            "recording chunk writer ended"
+        );
         Ok(())
     });
 
@@ -1634,7 +1692,18 @@ async fn install_recording_button(page: &Page) -> anyhow::Result<()> {
       videoTracks: videoTracks.map((track) => ({ label: track.label, settings: track.getSettings ? track.getSettings() : {} }))
     };
     const recorder = new MediaRecorder(recordingStream, mimeType ? { mimeType } : undefined);
+    const audioMimeTypes = [
+      'audio/webm;codecs=opus',
+      'audio/webm'
+    ];
+    const audioMimeType = audioTracks.length > 0
+      ? (audioMimeTypes.find((candidate) => MediaRecorder.isTypeSupported(candidate)) || '')
+      : '';
+    const audioRecorder = audioTracks.length > 0
+      ? new MediaRecorder(new MediaStream(audioTracks), audioMimeType ? { mimeType: audioMimeType } : undefined)
+      : null;
     window.__gmrRecorder = recorder;
+    window.__gmrAudioRecorder = audioRecorder;
     window.__gmrRecorderStream = recordingStream;
     window.__gmrCaptureStreams = [stream];
     window.__gmrAudioContext = audioContext;
@@ -1651,6 +1720,7 @@ async fn install_recording_button(page: &Page) -> anyhow::Result<()> {
     window.__gmrAcceptedChunks = 0;
     window.__gmrUploadedBytes = 0;
     window.__gmrPendingUpload = Promise.resolve();
+    window.__gmrPendingAudioUpload = Promise.resolve();
     window.__gmrTimelinePending = Promise.resolve();
     window.__gmrChunkBindingAvailable = typeof window.__gmrRecordChunk === 'function';
     if (audioTracks.length === 0) {
@@ -1704,7 +1774,32 @@ async fn install_recording_button(page: &Page) -> anyhow::Result<()> {
       window.__gmrUploads.push(upload);
     };
 
+    if (audioRecorder) {
+      audioRecorder.ondataavailable = (event) => {
+        if (!event.data || event.data.size === 0) return;
+        const chunk = event.data;
+        const upload = window.__gmrPendingAudioUpload.then(async () => {
+          if (typeof window.__gmrRecordChunk !== 'function') {
+            throw new Error('recording DevTools binding is unavailable');
+          }
+          const data = await blobToBase64(chunk);
+          window.__gmrRecordChunk(JSON.stringify({
+            kind: 'audio_chunk',
+            size: chunk.size,
+            data
+          }));
+        }).catch((error) => {
+          window.__gmrUploadErrors.push(String(error && error.message ? error.message : error));
+        });
+        window.__gmrPendingAudioUpload = upload;
+        window.__gmrUploads.push(upload);
+      };
+    }
+
     recorder.start(1000);
+    if (audioRecorder) {
+      audioRecorder.start(1000);
+    }
     window.__gmrRecordingStatus = {
       status: 'recording',
       mimeType,
@@ -1820,14 +1915,18 @@ pub async fn stop_tab_recording(page: &Page) -> anyhow::Result<()> {
   const recorder = window.__gmrRecorder;
   if (!recorder) return { status: 'not_started', errors: [] };
 
-  if (recorder.state !== 'inactive') {
+  const stopRecorder = async (target) => {
+    if (!target || target.state === 'inactive') return;
     await new Promise((resolve) => {
       const done = () => resolve();
-      recorder.addEventListener('stop', done, { once: true });
-      recorder.requestData();
-      recorder.stop();
+      target.addEventListener('stop', done, { once: true });
+      target.requestData();
+      target.stop();
     });
-  }
+  };
+
+  await stopRecorder(window.__gmrAudioRecorder);
+  await stopRecorder(recorder);
 
   if (window.__gmrRecorderStream) {
     window.__gmrRecorderStream.getTracks().forEach((track) => track.stop());

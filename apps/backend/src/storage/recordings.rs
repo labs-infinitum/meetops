@@ -71,6 +71,15 @@ impl RecordingsStore {
         )
     }
 
+    pub fn audio_object_key_for_bot_run(&self, user_id: &str, run_id: i64) -> String {
+        let prefix = normalized_prefix(&self.config.recordings.s3.prefix);
+        format!(
+            "{prefix}/{}/{}/audio.webm",
+            sanitize_path_segment(user_id),
+            run_id
+        )
+    }
+
     pub fn object_key_for_tab_capture(&self, user_id: &str, run_id: i64) -> String {
         let prefix = normalized_prefix(&self.config.recordings.s3.prefix);
         format!(
@@ -88,6 +97,14 @@ impl RecordingsStore {
         )
     }
 
+    pub fn audio_object_key_for_manual(&self, recording_id: &str) -> String {
+        let prefix = normalized_prefix(&self.config.recordings.s3.prefix);
+        format!(
+            "{prefix}/manual/{}/audio.webm",
+            sanitize_path_segment(recording_id)
+        )
+    }
+
     pub async fn persist_bot_recording(
         &self,
         local_path: &Path,
@@ -97,6 +114,13 @@ impl RecordingsStore {
         let key = self.object_key_for_bot_run(user_id, run_id);
         self.upload_file(&self.s3, local_path, &key, "video/webm")
             .await?;
+        if let Some(audio_path) = audio_path_for(local_path) {
+            self.persist_audio_if_present(
+                &audio_path,
+                &self.audio_object_key_for_bot_run(user_id, run_id),
+            )
+            .await?;
+        }
         if let Some(staging_dir) = local_path.parent() {
             self.persist_tab_capture_if_present(staging_dir, user_id, run_id)
                 .await?;
@@ -132,6 +156,13 @@ impl RecordingsStore {
         let key = self.object_key_for_manual(recording_id);
         self.upload_file(&self.s3, local_path, &key, "video/webm")
             .await?;
+        if let Some(audio_path) = audio_path_for(local_path) {
+            self.persist_audio_if_present(
+                &audio_path,
+                &self.audio_object_key_for_manual(recording_id),
+            )
+            .await?;
+        }
         if self.config.recordings.delete_local_after_upload {
             self.remove_staging_artifacts(local_path).await;
         }
@@ -176,6 +207,29 @@ impl RecordingsStore {
         Ok(())
     }
 
+    async fn persist_audio_if_present(&self, local_path: &Path, key: &str) -> anyhow::Result<()> {
+        match tokio::fs::metadata(local_path).await {
+            Ok(metadata) if metadata.len() > 0 => {
+                self.upload_file(&self.s3, local_path, key, "audio/webm")
+                    .await?;
+            }
+            Ok(_) => {
+                tracing::warn!(
+                    path = %local_path.display(),
+                    "skipping empty recording audio artifact"
+                );
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                tracing::warn!(
+                    path = %local_path.display(),
+                    "recording audio artifact was not created"
+                );
+            }
+            Err(error) => return Err(error.into()),
+        }
+        Ok(())
+    }
+
     async fn remove_staging_artifacts(&self, local_path: &Path) {
         if let Err(error) = tokio::fs::remove_file(local_path).await {
             tracing::warn!(%error, path = %local_path.display(), "failed to delete staging file after S3 upload");
@@ -205,4 +259,10 @@ fn sanitize_path_segment(value: &str) -> String {
             }
         })
         .collect()
+}
+
+fn audio_path_for(raw_webm_path: &Path) -> Option<PathBuf> {
+    raw_webm_path
+        .parent()
+        .map(|parent| parent.join("audio.webm"))
 }

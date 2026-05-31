@@ -89,7 +89,13 @@ where
     tracing::info!(recording_dir = %recording_dir.display(), "created recording directory");
 
     let raw_webm_path = recording_dir.join("raw.webm");
+    let audio_webm_path = recording_dir.join("audio.webm");
     if let Err(error) = tokio::fs::remove_file(&raw_webm_path).await
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        return Err(error.into());
+    }
+    if let Err(error) = tokio::fs::remove_file(&audio_webm_path).await
         && error.kind() != std::io::ErrorKind::NotFound
     {
         return Err(error.into());
@@ -134,6 +140,7 @@ where
     let browser_recording = match chromium::start_tab_recording(
         &session.page,
         &raw_webm_path,
+        &audio_webm_path,
         scheduled.map(|(pool, run_id)| (pool.clone(), run_id)),
         session.x11_display.clone(),
         tab_capture_screenshot_dir,
