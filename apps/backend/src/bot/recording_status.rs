@@ -124,6 +124,9 @@ pub enum RecordingBindingPayload {
         participant_count: Option<u64>,
         #[serde(default, rename = "participantSource")]
         participant_source: Option<String>,
+        /// Join/leave diffs sampled on each media chunk (same shape as `timeline_events`).
+        #[serde(default, rename = "timelineEvents")]
+        timeline_events: Vec<RecordingTimelineEventPayload>,
     },
     AudioChunk {
         size: u64,
@@ -198,10 +201,19 @@ mod tests {
     #[test]
     fn deserializes_binding_chunk_and_done() {
         let chunk: RecordingBindingPayload = serde_json::from_str(
-            r#"{"kind":"chunk","sequence":1,"size":12,"data":"YWJj","participantCount":2,"participantSource":"tiles"}"#,
+            r#"{"kind":"chunk","sequence":1,"size":12,"data":"YWJj","participantCount":2,"participantSource":"listitem"}"#,
         )
         .unwrap();
         assert!(matches!(chunk, RecordingBindingPayload::Chunk { .. }));
+
+        let chunk_with_timeline: RecordingBindingPayload = serde_json::from_str(
+            r#"{"kind":"chunk","size":12,"data":"YWJj","timelineEvents":[{"eventType":"participant_joined","occurredAt":10,"relativeMs":1000,"participantId":"spaces/abc","participantName":"Alice","payload":{"source":"listitem"}}]}"#,
+        )
+        .unwrap();
+        let RecordingBindingPayload::Chunk { timeline_events, .. } = chunk_with_timeline else {
+            panic!("expected chunk");
+        };
+        assert_eq!(timeline_events.len(), 1);
 
         let audio_chunk: RecordingBindingPayload =
             serde_json::from_str(r#"{"kind":"audio_chunk","size":12,"data":"YWJj"}"#).unwrap();

@@ -10,6 +10,7 @@ export type ParticipantJoinedPayload = {
   source: string
   rawText?: string
   ariaLabel?: string
+  scrollTarget?: string | null
 }
 
 export type ParticipantLeftPayload = {

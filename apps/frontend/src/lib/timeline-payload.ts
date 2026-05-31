@@ -57,8 +57,15 @@ export function parseTimelinePayload(
       const payload: ParticipantJoinedPayload = { source }
       const rawText = readString(parsed, "rawText")
       const ariaLabel = readString(parsed, "ariaLabel")
+      const scrollTarget = parsed.scrollTarget
       if (rawText) payload.rawText = rawText
       if (ariaLabel) payload.ariaLabel = ariaLabel
+      if (scrollTarget === null) {
+        payload.scrollTarget = null
+      } else {
+        const target = readString(parsed, "scrollTarget")
+        if (target) payload.scrollTarget = target
+      }
       return payload
     }
     case "participant_left": {
