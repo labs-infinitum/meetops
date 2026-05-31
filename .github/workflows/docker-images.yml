@@ -33,6 +33,11 @@ env:
   BACKEND_REPOSITORY: ${{ vars.ECR_BACKEND_REPOSITORY || 'ai-meeting-notetaker-rs/backend' }}
   BACKEND_DEBUG_REPOSITORY: ${{ vars.ECR_BACKEND_DEBUG_REPOSITORY || 'ai-meeting-notetaker-rs/backend-debug' }}
   FRONTEND_REPOSITORY: ${{ vars.ECR_FRONTEND_REPOSITORY || 'ai-meeting-notetaker-rs/frontend' }}
+  ECR_PULL_THROUGH_PREFIX: ${{ vars.ECR_PULL_THROUGH_PREFIX || 'docker-hub' }}
+  CARGO_CHEF_DIGEST: sha256:fa7281503a177bd5af6261f4041ca6b36d9f0de8d3090886c33cbd8e65b88ca9
+  DEBIAN_BOOKWORM_SLIM_DIGEST: sha256:0104b334637a5f19aa9c983a91b54c89887c0984081f2068983107a6f6c21eeb
+  BUN_1_DIGEST: sha256:e10577f0db68676a7024391c6e5cb4b879ebd17188ab750cf10024a6d700e5c4
+  CADDY_2_ALPINE_DIGEST: sha256:86deaf5e3d3408a6ccec08fbb79989783dd26e206ae10bcf78a801dc8c9ab794
   BUILDX_CACHE_DIR: /tmp/.buildx-cache
 
 jobs:
@@ -133,6 +138,16 @@ jobs:
               echo "type=registry,ref=${ECR_REGISTRY}/${FRONTEND_REPOSITORY}:buildcache,mode=max"
             fi
             echo "EOF"
+
+            echo "backend_build_args<<EOF"
+            echo "CARGO_CHEF_IMAGE=${ECR_REGISTRY}/${ECR_PULL_THROUGH_PREFIX}/lukemathwalker/cargo-chef@${CARGO_CHEF_DIGEST}"
+            echo "DEBIAN_IMAGE=${ECR_REGISTRY}/${ECR_PULL_THROUGH_PREFIX}/library/debian@${DEBIAN_BOOKWORM_SLIM_DIGEST}"
+            echo "EOF"
+
+            echo "frontend_build_args<<EOF"
+            echo "BUN_IMAGE=${ECR_REGISTRY}/${ECR_PULL_THROUGH_PREFIX}/oven/bun@${BUN_1_DIGEST}"
+            echo "CADDY_IMAGE=${ECR_REGISTRY}/${ECR_PULL_THROUGH_PREFIX}/library/caddy@${CADDY_2_ALPINE_DIGEST}"
+            echo "EOF"
           } >> "${GITHUB_OUTPUT}"
 
       - name: Validate ECR configuration
@@ -155,6 +170,7 @@ jobs:
           target: runtime
           push: ${{ steps.meta.outputs.should_push }}
           tags: ${{ steps.meta.outputs.backend_tags }}
+          build-args: ${{ steps.meta.outputs.backend_build_args }}
           cache-from: ${{ steps.meta.outputs.backend_cache_from }}
           cache-to: ${{ steps.meta.outputs.backend_cache_to }}
 
@@ -166,6 +182,7 @@ jobs:
           target: debug
           push: ${{ steps.meta.outputs.should_push }}
           tags: ${{ steps.meta.outputs.backend_debug_tags }}
+          build-args: ${{ steps.meta.outputs.backend_build_args }}
           cache-from: ${{ steps.meta.outputs.backend_debug_cache_from }}
           cache-to: ${{ steps.meta.outputs.backend_debug_cache_to }}
 
@@ -176,6 +193,7 @@ jobs:
           file: apps/frontend/Dockerfile
           push: ${{ steps.meta.outputs.should_push }}
           tags: ${{ steps.meta.outputs.frontend_tags }}
+          build-args: ${{ steps.meta.outputs.frontend_build_args }}
           cache-from: ${{ steps.meta.outputs.frontend_cache_from }}
           cache-to: ${{ steps.meta.outputs.frontend_cache_to }}
 

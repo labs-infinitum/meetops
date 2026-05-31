@@ -1,6 +1,9 @@
 # syntax=docker/dockerfile:1
 
-FROM oven/bun:1 AS builder
+ARG BUN_IMAGE=oven/bun:1@sha256:e10577f0db68676a7024391c6e5cb4b879ebd17188ab750cf10024a6d700e5c4
+ARG CADDY_IMAGE=caddy:2-alpine@sha256:86deaf5e3d3408a6ccec08fbb79989783dd26e206ae10bcf78a801dc8c9ab794
+
+FROM ${BUN_IMAGE} AS builder
 
 WORKDIR /app
 
@@ -18,7 +21,7 @@ COPY apps/frontend apps/frontend
 WORKDIR /app/apps/frontend
 RUN bun run proto:generate && bun run build
 
-FROM caddy:2-alpine AS runtime
+FROM ${CADDY_IMAGE} AS runtime
 
 RUN apk add --no-cache curl
 

@@ -2,7 +2,10 @@
 
 # cargo-chef splits dependency compilation from app compilation so `docker compose build`
 # reuses cached deps when only Rust sources change (Cargo.lock/Cargo.toml unchanged).
-FROM lukemathwalker/cargo-chef:latest-rust-1-bookworm AS chef
+ARG CARGO_CHEF_IMAGE=lukemathwalker/cargo-chef:latest-rust-1-bookworm@sha256:fa7281503a177bd5af6261f4041ca6b36d9f0de8d3090886c33cbd8e65b88ca9
+ARG DEBIAN_IMAGE=debian:bookworm-slim@sha256:0104b334637a5f19aa9c983a91b54c89887c0984081f2068983107a6f6c21eeb
+
+FROM ${CARGO_CHEF_IMAGE} AS chef
 
 FROM chef AS planner
 WORKDIR /app
@@ -35,7 +38,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     install -D target/release/google-meeting-recorder /app/bin/google-meeting-recorder && \
     install -D target/release/find-chrome-tab-allow-click /app/bin/find-chrome-tab-allow-click
 
-FROM debian:bookworm-slim AS runtime
+FROM ${DEBIAN_IMAGE} AS runtime
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
