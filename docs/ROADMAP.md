@@ -12,8 +12,10 @@ Planned work for the monorepo (`apps/backend`, `apps/frontend`, `packages/proto`
 2. **Frontend wiring** — Replace remaining mocks; delete `mock-data.ts`
 3. **Settings API** — Profile and prefs end-to-end
 4. **Concurrent recording** — Raise `concurrency_max` incrementally (1 → 2 → N)
-5. **Production** — HTTPS, prod OAuth/CORS, deploy scripts, CI
-6. **Hardening** — Rate limits, S3 CORS/retention, optional Postgres
+5. **Bot Google sessions** — Profile health checks, automatic sign-in (no manual `profile` CLI)
+6. **Telemetry & alerts** — Structured ops signals + developer notifications on failures
+7. **Production** — HTTPS, prod OAuth/CORS, deploy scripts, CI
+8. **Hardening** — Rate limits, S3 CORS/retention, optional Postgres
 
 ---
 
@@ -77,7 +79,7 @@ Scheduler → RecordingSlotPool (size N)
 
 - [ ] Replace global `Semaphore(1)` with **`recording.concurrency_max`** (default 1; raise after testing)
 - [ ] **Display pool** — allocate/free `:10`–`:99`; track `{ display, user_id, bot_run_id }`; kill orphaned Xvfb/openbox on timeout
-- [ ] **Chrome profile pool** — e.g. `data/chrome-profiles/{user_id}/`; document one-time bot sign-in per user
+- [ ] **Chrome profile pool** — e.g. `data/chrome-profiles/{user_id}/`; pair with [Bot Google session & automation](#bot-google-session--automation) (no manual `cargo run -- profile` flow long-term)
 - [ ] Scheduler: acquire slot before spawn; queue excess; optional fair scheduling; dedupe shared Meet URLs
 - [ ] Pass `DISPLAY` per child only (no process-global mutation)
 - [ ] Supervisor for zombie Xvfb/Chrome after crashes
@@ -98,6 +100,47 @@ Scheduler → RecordingSlotPool (size N)
 
 ---
 
+## Bot Google session & automation
+
+Today developers must run `cargo run -- profile`, open Chrome on the virtual display, and sign into Google by hand. Target: **hands-off bot accounts** with session health checks before each run.
+
+### Automatic sign-in (dev & prod)
+
+- [ ] **Eliminate manual profile bootstrap** — no requirement to open the profile command and sign in interactively for routine dev/prod use
+- [ ] **Automated Google login flow** for each bot Chrome profile (per user or per `calendar_connection`), using stored credentials or a supported auth mechanism (design TBD: service account, dedicated bot users + scripted login, or OAuth refresh tied to calendar tokens — must not conflate app-user OAuth with Meet bot identity)
+- [ ] **First-run provisioning** — create profile dir, run login once programmatically, persist cookies/session state under `data/chrome-profiles/`
+- [ ] Document security boundaries: which secrets live where, rotation, and least-privilege bot accounts
+
+### Session health & recovery
+
+- [ ] **Track profile session validity** per Google account — detect signed-out, expired, or challenged sessions (e.g. probe `accounts.google.com`, Meet join preflight, or cookie freshness heuristics)
+- [ ] Expose status in API/DB (e.g. `calendar_connections.bot_session_status` or per-profile KV): `valid` | `expired` | `unknown` | `error` + `last_checked_at`
+- [ ] **Before each bot run**: verify session; if invalid, attempt **automatic re-sign-in** before joining Meet
+- [ ] On repeated failure: mark connection degraded, skip auto-record for that account, surface clear error on recordings/calendars UI
+- [ ] Optional: scheduled background health check worker (not only on-demand at join time)
+
+---
+
+## Telemetry & operator alerts
+
+When the bot, scheduler, or session automation fails, operators need visibility without tailing logs on the host.
+
+### Telemetry
+
+- [ ] **Structured telemetry** for bot lifecycle: slot allocation, display/profile used, join/leave, capture start/stop, tab-capture retries, S3 upload, session check outcomes
+- [ ] Correlate events with `user_id`, `bot_run_id`, `calendar_connection_id`, and Chrome profile path
+- [ ] Metrics hooks (latency, success/failure counts, queue depth) — export format TBD (OpenTelemetry, Prometheus, or structured JSON logs)
+- [ ] Optional: persist recent events per run for debugging in the recordings detail UI
+
+### Developer notifications
+
+- [ ] **Alerting on actionable failures** — session expired and re-login failed, bot crash, stuck `joining`, S3 upload failure, repeated tab-capture denial, Xvfb/Chrome zombie detected
+- [ ] Pluggable notification channels (start with one): email, Slack webhook, or generic HTTP webhook; config via env/`config.toml`
+- [ ] Rate-limit / dedupe alerts (same connection failing N times in a window)
+- [ ] Include enough context in the payload (run id, meet URL, error message, link to logs) for fast triage
+
+---
+
 ## Recording bot & storage
 
 - [ ] **Stop while `queued`** — handle race before worker starts (`not_active`; optional retry once `joining`)
@@ -110,7 +153,7 @@ Scheduler → RecordingSlotPool (size N)
 ## Security & reliability
 
 - [ ] Rate limiting on auth endpoints
-- [ ] Per-user Chrome profiles (today: one global profile + concurrency 1)
+- [ ] Per-user Chrome profiles (today: one global profile + concurrency 1); see [Bot Google session & automation](#bot-google-session--automation)
 - [ ] Optional: session tokens in httpOnly cookies instead of `localStorage`
 
 ---
@@ -164,5 +207,6 @@ Scheduler → RecordingSlotPool (size N)
 | Job worker (new) | `apps/backend/src/workers/` |
 | Bot runner / scheduler | `apps/backend/src/workers/bot_runner.rs`, `scheduler.rs` |
 | Display isolation | `apps/backend/src/bot/x11_display.rs`, `chromium/mod.rs` |
+| Profile CLI (today) | `apps/backend` — `cargo run -- profile` |
 | Frontend mocks | `apps/frontend/src/lib/mock-data.ts` |
 | Frontend pages | `apps/frontend/src/pages/` |
