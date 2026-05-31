@@ -140,13 +140,13 @@ jobs:
             echo "EOF"
 
             echo "backend_build_args<<EOF"
-            echo "CARGO_CHEF_IMAGE=${ECR_REGISTRY}/${ECR_PULL_THROUGH_PREFIX}/lukemathwalker/cargo-chef@${CARGO_CHEF_DIGEST}"
-            echo "DEBIAN_IMAGE=${ECR_REGISTRY}/${ECR_PULL_THROUGH_PREFIX}/library/debian@${DEBIAN_BOOKWORM_SLIM_DIGEST}"
+            echo "CARGO_CHEF_IMAGE=${ECR_REGISTRY}/${ECR_PULL_THROUGH_PREFIX}/lukemathwalker/cargo-chef:latest-rust-1-bookworm@${CARGO_CHEF_DIGEST}"
+            echo "DEBIAN_IMAGE=${ECR_REGISTRY}/${ECR_PULL_THROUGH_PREFIX}/library/debian:bookworm-slim@${DEBIAN_BOOKWORM_SLIM_DIGEST}"
             echo "EOF"
 
             echo "frontend_build_args<<EOF"
-            echo "BUN_IMAGE=${ECR_REGISTRY}/${ECR_PULL_THROUGH_PREFIX}/oven/bun@${BUN_1_DIGEST}"
-            echo "CADDY_IMAGE=${ECR_REGISTRY}/${ECR_PULL_THROUGH_PREFIX}/library/caddy@${CADDY_2_ALPINE_DIGEST}"
+            echo "BUN_IMAGE=${ECR_REGISTRY}/${ECR_PULL_THROUGH_PREFIX}/oven/bun:1@${BUN_1_DIGEST}"
+            echo "CADDY_IMAGE=${ECR_REGISTRY}/${ECR_PULL_THROUGH_PREFIX}/library/caddy:2-alpine@${CADDY_2_ALPINE_DIGEST}"
             echo "EOF"
           } >> "${GITHUB_OUTPUT}"
 
