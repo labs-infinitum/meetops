@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{collections::HashSet, str::FromStr};
 
 use sqlx::{
     SqlitePool,
@@ -125,19 +125,22 @@ async fn needs_squash_reset(pool: &SqlitePool) -> sqlx::Result<bool> {
         return Ok(true);
     }
 
-    let migration_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM _sqlx_migrations")
-        .fetch_one(pool)
+    let applied_versions: Vec<i64> = sqlx::query_scalar("SELECT version FROM _sqlx_migrations")
+        .fetch_all(pool)
         .await?;
-    if migration_count == 0 {
+    if applied_versions.is_empty() {
         return Ok(true);
     }
 
-    let has_non_init_version: Option<i64> =
-        sqlx::query_scalar("SELECT 1 FROM _sqlx_migrations WHERE version != 1 LIMIT 1")
-            .fetch_optional(pool)
-            .await?;
+    let current_versions = MIGRATOR
+        .iter()
+        .map(|migration| migration.version)
+        .collect::<HashSet<_>>();
+    let has_unknown_version = applied_versions
+        .iter()
+        .any(|version| !current_versions.contains(version));
 
-    Ok(has_non_init_version.is_some())
+    Ok(has_unknown_version)
 }
 
 fn should_reset_on_migrate_error(error: &sqlx::migrate::MigrateError) -> bool {
@@ -338,6 +341,31 @@ mod tests {
             .await
             .expect("count migrations");
         assert_eq!(migration_count, 2);
+
+        pool.close().await;
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[tokio::test]
+    async fn migrate_accepts_current_migration_chain() {
+        let data_dir = test_data_dir("current-chain");
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).expect("create test data dir");
+        let mut config = test_config(&data_dir);
+        config.storage.auto_migrate_reset = false;
+        let _ = std::fs::remove_file(config.database_path());
+        let pool = test_pool(&config).await;
+        MIGRATOR.run(&pool).await.expect("seed current migrations");
+
+        let pool = migrate(&config, pool)
+            .await
+            .expect("current migrations should be accepted");
+
+        let migration_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM _sqlx_migrations")
+            .fetch_one(&pool)
+            .await
+            .expect("count migrations");
+        assert_eq!(migration_count, MIGRATOR.iter().count() as i64);
 
         pool.close().await;
         let _ = std::fs::remove_dir_all(data_dir);
