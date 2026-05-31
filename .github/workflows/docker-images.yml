@@ -59,22 +59,24 @@ jobs:
           echo "should_push=${should_push}" >> "${GITHUB_OUTPUT}"
           {
             echo "backend_tags<<EOF"
-            echo "ai-meeting-notetaker-rs-backend:${short_sha}"
-            if [ -n "${ECR_REGISTRY}" ]; then
+            if [ "${should_push}" = "true" ]; then
               echo "${ECR_REGISTRY}/${BACKEND_REPOSITORY}:${short_sha}"
               if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
                 echo "${ECR_REGISTRY}/${BACKEND_REPOSITORY}:latest"
               fi
+            else
+              echo "ai-meeting-notetaker-rs-backend:${short_sha}"
             fi
             echo "EOF"
 
             echo "frontend_tags<<EOF"
-            echo "ai-meeting-notetaker-rs-frontend:${short_sha}"
-            if [ -n "${ECR_REGISTRY}" ]; then
+            if [ "${should_push}" = "true" ]; then
               echo "${ECR_REGISTRY}/${FRONTEND_REPOSITORY}:${short_sha}"
               if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
                 echo "${ECR_REGISTRY}/${FRONTEND_REPOSITORY}:latest"
               fi
+            else
+              echo "ai-meeting-notetaker-rs-frontend:${short_sha}"
             fi
             echo "EOF"
 
@@ -106,6 +108,13 @@ jobs:
             fi
             echo "EOF"
           } >> "${GITHUB_OUTPUT}"
+
+      - name: Validate ECR configuration
+        if: ${{ steps.meta.outputs.should_push == 'true' && env.ECR_REGISTRY == '' }}
+        shell: bash
+        run: |
+          echo "ECR_REGISTRY repository variable is required when pushing images" >&2
+          exit 1
 
       - name: Log in to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
