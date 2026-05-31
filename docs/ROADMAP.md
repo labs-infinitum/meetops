@@ -4,6 +4,8 @@ Planned work for the monorepo (`apps/backend`, `apps/frontend`, `packages/proto`
 
 **North star:** Full product loop (record → transcribe → summarize → notes/todos), settings persisted per user, and **N concurrent recordings** on one machine (isolated Xvfb displays + Chrome profiles).
 
+**Last reviewed:** 2026-05-31 — aligned with current tree (timeline + Docker CI shipped; AI pipeline and Notes/Todos APIs still open).
+
 ---
 
 ## Recommended order
@@ -14,8 +16,10 @@ Planned work for the monorepo (`apps/backend`, `apps/frontend`, `packages/proto`
 4. **Concurrent recording** — Raise `concurrency_max` incrementally (1 → 2 → N)
 5. **Bot Google sessions** — Profile health checks, automatic sign-in (no manual `profile` CLI)
 6. **Telemetry & alerts** — Structured ops signals + developer notifications on failures
-7. **Production** — HTTPS, prod OAuth/CORS, deploy scripts, CI
+7. **Production** — HTTPS, prod OAuth/CORS, deploy scripts, broaden CI beyond Docker images
 8. **Hardening** — Rate limits, S3 CORS/retention, optional Postgres
+
+Timeline collection and the recordings detail UI are largely in place; polish (reliability, ops visibility) continues under [Meeting timeline](#meeting-timeline-in-call-events).
 
 ---
 
@@ -26,22 +30,52 @@ Planned work for the monorepo (`apps/backend`, `apps/frontend`, `packages/proto`
 - [ ] **`SettingsService`** — `GetSettings`, `UpdateProfile`, `UpdateRecordingPrefs`, `UpdateNotificationPrefs`
 - [ ] Production **`GMR_GRPC__ALLOW_ORIGIN`** and Google OAuth redirect URIs per deploy environment
 
+`RecordingService` already exposes bot runs, playback URLs, ad-hoc start/stop, and meeting timeline events (`ListMeetingTimelineEvents`).
+
+---
+
+## Meeting timeline (in-call events)
+
+Collect structured events during recording (join/leave, screen share, active speaker, periodic snapshots) for the recordings UI and future AI context.
+
+### Backend & bot
+
+- [x] SQLite `meeting_timeline_events` + `apps/backend/src/db/meeting_timeline.rs`
+- [x] `RecordingService.ListMeetingTimelineEvents` (gRPC + grpc-web)
+- [x] In-tab collector in `install_recording_control.js` (diff roster, screen share, active speaker)
+- [x] Post-join roster prime — `prime_participant_roster.js` (open/close People panel so Meet hydrates `data-participant-id` rows)
+- [x] Participant count helper — `meet_participant_count.js` (solo-leave / admission checks from Rust)
+- [x] Flush on stop — `stop_tab_recording.js`
+- [x] Chromium scripts documented — `apps/backend/src/bot/chromium/scripts/README.md`
+
+### Frontend
+
+- [x] Recordings detail — timeline list with typed payload parsing (`timeline-payload.ts`, `RecordingsPage.tsx`)
+
+### Follow-ups
+
+- [ ] Harden edge cases when People panel cannot be opened (`rosterCount` stays 0) — see scripts README
+- [ ] Optional: surface timeline summary on meeting detail or export (JSON/CSV)
+- [ ] Optional: correlate timeline rows with transcript timestamps after AI pipeline ships
+
 ---
 
 ## Frontend (wire real data)
 
-- [ ] **Dashboard** — open todos count and “Latest AI summary” from API (meetings + bot runs already live)
-- [ ] **Notes** — list/detail from `summaries` (+ meeting title)
-- [ ] **Todos** — action items from API; completion persists
-- [ ] **Settings** — load/save profile and prefs via API (session profile only today)
+- [x] **Meetings, calendars, recordings list** — live gRPC (no mocks on those pages)
+- [x] **Recordings detail** — playback URL + meeting timeline from API
+- [ ] **Dashboard** — `GetDashboardSummary` wired for upcoming meetings, calendar count, completed recordings; **open todos** still hardcoded `0`; no “Latest AI summary” yet
+- [ ] **Notes** — list/detail from `summaries` (+ meeting title); today uses `mock-data.ts`
+- [ ] **Todos** — action items from API; completion persists; today uses `mock-data.ts`
+- [ ] **Settings** — load/save profile and prefs via API (session profile + demo toasts only)
 - [ ] Remove or gate mocks behind `import.meta.env.DEV`
-- [ ] Delete `apps/frontend/src/lib/mock-data.ts` once the above pages are API-backed
+- [ ] Delete `apps/frontend/src/lib/mock-data.ts` once Notes/Todos/Dashboard stats are API-backed
 
 ---
 
 ## AI pipeline (notes & todos)
 
-Schema exists (`transcripts`, `summaries`, `jobs`); workers and RPCs are not built.
+Schema exists (`transcripts`, `summaries`, `jobs`); workers and RPCs are not built. Groq model names are configured in `config.toml.example` / `config.rs` but unused at runtime.
 
 ### Groq
 
@@ -60,13 +94,14 @@ Schema exists (`transcripts`, `summaries`, `jobs`); workers and RPCs are not bui
 ### Product surfacing
 
 - [ ] Dashboard “Latest AI summary” from most recent user summary
+- [ ] Dashboard open-todos count from API
 - [ ] Notes/Todos pages backed by `summaries` / `action_items_json`
 
 ---
 
 ## Concurrent multi-meeting recording
 
-Today: one Chrome profile, `Semaphore(1)`. Target: **N parallel runs**, each with its own Xvfb display and Chrome user-data dir.
+Today: one Chrome profile (`chrome_user_data_dir`), `Semaphore(1)` in `main.rs`. Target: **N parallel runs**, each with its own Xvfb display and Chrome user-data dir.
 
 ```
 Scheduler → RecordingSlotPool (size N)
@@ -102,7 +137,7 @@ Scheduler → RecordingSlotPool (size N)
 
 ## Bot Google session & automation
 
-Today developers must run `cargo run -- profile`, open Chrome on the virtual display, and sign into Google by hand. Target: **hands-off bot accounts** with session health checks before each run.
+Today developers run `cargo run -- profile` (or Docker `backend profile` / `backend-debug` with RustDesk — see root README). Target: **hands-off bot accounts** with session health checks before each run.
 
 ### Automatic sign-in (dev & prod)
 
@@ -143,10 +178,12 @@ When the bot, scheduler, or session automation fails, operators need visibility 
 
 ## Recording bot & storage
 
-- [ ] **Stop while `queued`** — handle race before worker starts (`not_active`; optional retry once `joining`)
+- [ ] **Stop while `queued`** — `is_stoppable_status` includes `queued`, but `ActiveRecordings` only registers when the worker starts; cancel before spawn still returns `not_active` (optional: DB status transition + scheduler respect)
 - [ ] **S3 bucket CORS** — `GET`/`HEAD` from frontend origins for presigned playback
 - [ ] **S3 lifecycle** — retention policy for old recordings
 - [ ] Optional playback **poster/thumbnail** from first frame
+
+Tab-capture Allow automation, staging uploads, and tab-capture debug PNGs are implemented (see `config.toml.example` `[bot]` comments).
 
 ---
 
@@ -169,7 +206,9 @@ When the bot, scheduler, or session automation fails, operators need visibility 
 
 ### Deploy
 
-- [ ] Production Compose or EC2 script pulling ECR images
+- [x] **Docker Compose** — backend (Chrome/Xvfb), frontend, debug profile with RustDesk (root README)
+- [x] **ECR image build** on `main` / PRs — `.github/workflows/docker-images.yml`
+- [ ] Production Compose or EC2 script pulling ECR images (beyond local compose)
 - [ ] Optional: serve React without Docker (Axum static or CDN + API host)
 - [ ] HTTPS termination; grpc-web over HTTPS
 - [ ] Secrets management (Google, Groq, AWS, `GMR_STORAGE__TOKEN_ENCRYPTION_KEY`)
@@ -179,7 +218,7 @@ When the bot, scheduler, or session automation fails, operators need visibility 
 
 - [ ] Backend gRPC integration tests (signup/login over wire)
 - [ ] Frontend smoke tests for auth flow
-- [ ] CI workflow: `cargo test`, `cargo clippy`, `bun run build`
+- [ ] CI workflow: `cargo test`, `cargo clippy`, `bun run build` (in addition to Docker builds)
 - [ ] Manual QA script: calendar → meeting → record → stop → note appears
 
 ### Tooling
@@ -192,8 +231,8 @@ When the bot, scheduler, or session automation fails, operators need visibility 
 
 ## Cleanup
 
-- [ ] Add `apps/backend/config.toml.example` alongside `config.docker.toml`
-- [ ] Align frontend `isActiveBotRun` with backend `is_stoppable_status` (shared constants or proto enum)
+- [x] `apps/backend/config.toml.example` (local dev; Docker uses `config.docker.toml`)
+- [ ] Align frontend `isActiveBotRun` with backend `is_stoppable_status` (logic already matches; share via proto `BotRunStatus` enum instead of string literals)
 - [ ] Proto `enum` for `BotRunStatus` (today: string on wire)
 
 ---
@@ -207,6 +246,9 @@ When the bot, scheduler, or session automation fails, operators need visibility 
 | Job worker (new) | `apps/backend/src/workers/` |
 | Bot runner / scheduler | `apps/backend/src/workers/bot_runner.rs`, `scheduler.rs` |
 | Display isolation | `apps/backend/src/bot/x11_display.rs`, `chromium/mod.rs` |
-| Profile CLI (today) | `apps/backend` — `cargo run -- profile` |
+| Meet injection scripts | `apps/backend/src/bot/chromium/scripts/*.js`, `scripts/README.md` |
+| Meeting timeline DB | `apps/backend/src/db/meeting_timeline.rs`, `migrations/0002_meeting_timeline_events.sql` |
+| Profile CLI (today) | `cargo run -- profile` or `docker compose run … backend profile` |
 | Frontend mocks | `apps/frontend/src/lib/mock-data.ts` |
 | Frontend pages | `apps/frontend/src/pages/` |
+| Timeline UI helpers | `apps/frontend/src/lib/timeline-payload.ts`, `types/timeline.ts` |
