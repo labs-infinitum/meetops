@@ -1,5 +1,25 @@
 function() {
   const out = { count: null, source: null, raw: null };
+  const isPresentationRow = (row) => {
+    const childAria = [...row.querySelectorAll('[aria-label]')].map((el) =>
+      (el.getAttribute('aria-label') || '').trim()
+    );
+    if (
+      childAria.some(
+        (label) => /\bpresentation\b/i.test(label) && /\b(mute|stop)\b/i.test(label)
+      )
+    ) {
+      return true;
+    }
+    for (const el of row.querySelectorAll('span, div')) {
+      if (el.closest('button, [role="button"]')) continue;
+      const text = (el.textContent || '').trim();
+      if (!text || text.length > 48) continue;
+      if (el.querySelector('button, [role="button"]')) continue;
+      if (/^(presentation|presenting|screen sharing)$/i.test(text)) return true;
+    }
+    return false;
+  };
   try {
     const rosterRows = [...document.querySelectorAll('[role="listitem"][data-participant-id]')];
     const inCallRows = rosterRows.filter((row) => {
@@ -8,6 +28,9 @@ function() {
         return false;
       }
       if (/\(\s*you\s*\)/i.test(label)) {
+        return false;
+      }
+      if (isPresentationRow(row)) {
         return false;
       }
       const childLabels = [...row.querySelectorAll('[aria-label]')].map((el) =>

@@ -1,6 +1,18 @@
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
-import { AlertCircle, ChevronRight, Film, Loader2, LogIn, LogOut, Mic2, Square, Users } from "lucide-react"
+import {
+  AlertCircle,
+  ChevronRight,
+  Film,
+  Loader2,
+  LogIn,
+  LogOut,
+  Mic2,
+  MonitorOff,
+  MonitorUp,
+  Square,
+  Users,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
@@ -41,6 +53,10 @@ function eventTitle(event: MeetingTimelineEvent): string {
       return `${event.participantName || "Someone"} joined`
     case "participant_left":
       return `${event.participantName || "Someone"} left`
+    case "screen_share_started":
+      return `${event.participantName || "Someone"} started presenting`
+    case "screen_share_stopped":
+      return `${event.participantName || "Someone"} stopped presenting`
     case "active_speaker_changed":
       return `${event.participantName || "Unknown speaker"} started speaking`
     case "participant_snapshot": {
@@ -58,6 +74,10 @@ function eventIcon(eventType: string) {
       return LogIn
     case "participant_left":
       return LogOut
+    case "screen_share_started":
+      return MonitorUp
+    case "screen_share_stopped":
+      return MonitorOff
     case "active_speaker_changed":
       return Mic2
     default:

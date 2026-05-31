@@ -17,6 +17,17 @@ export type ParticipantLeftPayload = {
   source: string
 }
 
+export type ScreenShareStartedPayload = {
+  source: string
+  presenterName: string
+  scrollTarget?: string | null
+}
+
+export type ScreenShareStoppedPayload = {
+  source: string
+  presenterName: string
+}
+
 export type ActiveSpeakerChangedPayload = {
   source: string
 }
@@ -34,6 +45,8 @@ export type CollectorWarningPayload = {
 export type MeetingTimelineEventPayload =
   | ParticipantJoinedPayload
   | ParticipantLeftPayload
+  | ScreenShareStartedPayload
+  | ScreenShareStoppedPayload
   | ActiveSpeakerChangedPayload
   | ParticipantSnapshotPayload
   | CollectorWarningPayload

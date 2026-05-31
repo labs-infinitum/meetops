@@ -32,9 +32,33 @@ async function() {
     return waitingForHostSignals.some((signal) => bodyText.includes(signal));
   };
 
+  const isPresentationRow = (row) => {
+    const childAria = [...row.querySelectorAll('[aria-label]')].map((el) =>
+      (el.getAttribute('aria-label') || '').trim()
+    );
+    if (
+      childAria.some(
+        (label) => /\bpresentation\b/i.test(label) && /\b(mute|stop)\b/i.test(label)
+      )
+    ) {
+      return true;
+    }
+    for (const el of row.querySelectorAll('span, div')) {
+      if (el.closest('button, [role="button"]')) continue;
+      const text = (el.textContent || '').trim();
+      if (!text || text.length > 48) continue;
+      if (el.querySelector('button, [role="button"]')) continue;
+      if (/^(presentation|presenting|screen sharing)$/i.test(text)) return true;
+    }
+    return false;
+  };
+
   const countRosterRows = () => {
     const rows = [...document.querySelectorAll('[role="listitem"][data-participant-id]')];
-    return rows.filter((row) => (row.getAttribute('aria-label') || '').trim()).length;
+    return rows.filter((row) => {
+      const label = (row.getAttribute('aria-label') || '').trim();
+      return label && !isPresentationRow(row);
+    }).length;
   };
 
   /** Accessible name from aria-labelledby, aria-label, and tooltip (no hardcoded Meet ids). */

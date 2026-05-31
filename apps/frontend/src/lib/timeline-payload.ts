@@ -5,6 +5,8 @@ import type {
   ParticipantJoinedPayload,
   ParticipantLeftPayload,
   ParticipantSnapshotPayload,
+  ScreenShareStartedPayload,
+  ScreenShareStoppedPayload,
   TimelineParticipantRef,
 } from "@/types/timeline"
 
@@ -72,6 +74,27 @@ export function parseTimelinePayload(
       const source = readString(parsed, "source")
       if (!source) return undefined
       const payload: ParticipantLeftPayload = { source }
+      return payload
+    }
+    case "screen_share_started": {
+      const source = readString(parsed, "source")
+      const presenterName = readString(parsed, "presenterName")
+      if (!source || !presenterName) return undefined
+      const payload: ScreenShareStartedPayload = { source, presenterName }
+      const scrollTarget = parsed.scrollTarget
+      if (scrollTarget === null) {
+        payload.scrollTarget = null
+      } else {
+        const target = readString(parsed, "scrollTarget")
+        if (target) payload.scrollTarget = target
+      }
+      return payload
+    }
+    case "screen_share_stopped": {
+      const source = readString(parsed, "source")
+      const presenterName = readString(parsed, "presenterName")
+      if (!source || !presenterName) return undefined
+      const payload: ScreenShareStoppedPayload = { source, presenterName }
       return payload
     }
     case "active_speaker_changed": {

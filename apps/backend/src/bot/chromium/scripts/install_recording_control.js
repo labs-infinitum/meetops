@@ -1,11 +1,42 @@
 async function() {
+  /** Screen-share roster row (separate listitem from the person; do not treat as join/leave). */
+  function gmrIsPresentationRosterRow(row) {
+    const childAria = [...row.querySelectorAll('[aria-label]')].map((el) =>
+      (el.getAttribute('aria-label') || '').trim()
+    );
+    if (
+      childAria.some(
+        (label) => /\bpresentation\b/i.test(label) && /\b(mute|stop)\b/i.test(label)
+      )
+    ) {
+      return true;
+    }
+    for (const el of row.querySelectorAll('span, div')) {
+      if (el.closest('button, [role="button"]')) {
+        continue;
+      }
+      const text = (el.textContent || '').trim();
+      if (!text || text.length > 48) {
+        continue;
+      }
+      if (el.querySelector('button, [role="button"]')) {
+        continue;
+      }
+      if (/^(presentation|presenting|screen sharing)$/i.test(text)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /** In-call roster rows (`[role="listitem"][data-participant-id]`); primed once after join via `prime_participant_roster.js`. */
-  function gmrListMeetParticipants() {
+  function gmrParseMeetRoster() {
     const rows = [...document.querySelectorAll('[role="listitem"][data-participant-id]')];
     const isSelfRow = (row) => /\(\s*You\s*\)/i.test(row.textContent || '');
     const isNotInMeetingYet = (row) => {
-      const ariaLabels = [...row.querySelectorAll('[aria-label]')]
-        .map((el) => el.getAttribute('aria-label') || '');
+      const ariaLabels = [...row.querySelectorAll('[aria-label]')].map(
+        (el) => el.getAttribute('aria-label') || ''
+      );
       return ariaLabels.some((label) =>
         /^Admit\b/i.test(label) ||
         /^Deny\b/i.test(label) ||
@@ -13,26 +44,40 @@ async function() {
       );
     };
     const getName = (row) => row.getAttribute('aria-label')?.trim() || '';
-    const participants = rows
-      .filter((row) => !isSelfRow(row))
-      .filter((row) => !isNotInMeetingYet(row))
-      .map((row) => ({
-        id: row.getAttribute('data-participant-id'),
-        name: getName(row),
-        scrollTarget: row.getAttribute('data-scroll-target') || null
-      }))
-      .filter((p) => p.name && p.id);
-    return [...new Map(participants.map((p) => [p.id, p])).values()];
+    const people = [];
+    const presentations = [];
+    for (const row of rows) {
+      if (isSelfRow(row) || isNotInMeetingYet(row)) {
+        continue;
+      }
+      const id = row.getAttribute('data-participant-id');
+      const name = getName(row);
+      if (!id || !name) {
+        continue;
+      }
+      const base = {
+        id,
+        name,
+        source: 'listitem',
+        scrollTarget: row.getAttribute('data-scroll-target') || null,
+        ariaLabel: name
+      };
+      if (gmrIsPresentationRosterRow(row)) {
+        presentations.push({ ...base, presenterName: name });
+      } else {
+        people.push(base);
+      }
+    }
+    const dedupe = (items) => [...new Map(items.map((p) => [p.id, p])).values()];
+    return { people: dedupe(people), presentations: dedupe(presentations) };
+  }
+
+  function gmrListMeetParticipants() {
+    return gmrParseMeetRoster().people;
   }
 
   function gmrExtractParticipants() {
-    return gmrListMeetParticipants().map((p) => ({
-      id: p.id,
-      name: p.name,
-      source: 'listitem',
-      scrollTarget: p.scrollTarget,
-      ariaLabel: p.name
-    }));
+    return gmrListMeetParticipants();
   }
 
   function gmrDiffParticipantEvents(previousParticipants, participants, makeEvent) {
@@ -50,6 +95,29 @@ async function() {
     for (const [id, participant] of previousParticipants.entries()) {
       if (!current.has(id)) {
         events.push(makeEvent('participant_left', participant, { source: participant.source }));
+      }
+    }
+    return { events, current };
+  }
+
+  function gmrDiffScreenShareEvents(previousPresentations, presentations, makeEvent) {
+    const events = [];
+    const current = new Map(presentations.map((p) => [p.id, p]));
+    for (const presentation of presentations) {
+      if (!previousPresentations.has(presentation.id)) {
+        events.push(makeEvent('screen_share_started', presentation, {
+          source: presentation.source,
+          presenterName: presentation.presenterName || presentation.name,
+          scrollTarget: presentation.scrollTarget || null
+        }));
+      }
+    }
+    for (const [id, presentation] of previousPresentations.entries()) {
+      if (!current.has(id)) {
+        events.push(makeEvent('screen_share_stopped', presentation, {
+          source: presentation.source,
+          presenterName: presentation.presenterName || presentation.name
+        }));
       }
     }
     return { events, current };
@@ -74,6 +142,7 @@ async function() {
   function gmrCreateTimelineCollector(recordingStartedAtMs) {
     const state = {
       previousParticipants: new Map(),
+      previousPresentations: new Map(),
       activeSpeakerId: null,
       snapshotCounter: 0
     };
@@ -89,22 +158,29 @@ async function() {
       };
     };
     return {
-      diffParticipants(participants) {
-        const { events, current } = gmrDiffParticipantEvents(
+      diffRoster() {
+        const { people, presentations } = gmrParseMeetRoster();
+        const peopleDiff = gmrDiffParticipantEvents(
           state.previousParticipants,
-          participants,
+          people,
           makeEvent
         );
-        state.previousParticipants = current;
-        return events;
+        const shareDiff = gmrDiffScreenShareEvents(
+          state.previousPresentations,
+          presentations,
+          makeEvent
+        );
+        state.previousParticipants = peopleDiff.current;
+        state.previousPresentations = shareDiff.current;
+        return [...peopleDiff.events, ...shareDiff.events];
       },
       collect() {
         const events = [];
         try {
-          const participants = gmrExtractParticipants();
-          events.push(...this.diffParticipants(participants));
+          const { people, presentations } = gmrParseMeetRoster();
+          events.push(...this.diffRoster());
 
-          const activeSpeaker = gmrExtractActiveSpeaker(participants);
+          const activeSpeaker = gmrExtractActiveSpeaker(people);
           const activeSpeakerId = activeSpeaker ? activeSpeaker.id : null;
           if (activeSpeakerId && activeSpeakerId !== state.activeSpeakerId) {
             events.push(makeEvent('active_speaker_changed', activeSpeaker, { source: activeSpeaker.source }));
@@ -114,11 +190,18 @@ async function() {
           state.snapshotCounter += 1;
           if (state.snapshotCounter === 1 || state.snapshotCounter % 6 === 0) {
             events.push(makeEvent('participant_snapshot', null, {
-              count: participants.length,
-              participants: participants.map((participant) => ({
+              count: people.length,
+              participants: people.map((participant) => ({
                 id: participant.id,
                 name: participant.name,
                 source: participant.source
+              })),
+              presentationCount: presentations.length,
+              presentations: presentations.map((presentation) => ({
+                id: presentation.id,
+                name: presentation.name,
+                presenterName: presentation.presenterName || presentation.name,
+                source: presentation.source
               })),
               activeSpeakerId
             }));
@@ -342,11 +425,10 @@ async function() {
           throw new Error('recording DevTools binding is unavailable');
         }
         const data = await blobToBase64(chunk);
-        const participants = gmrExtractParticipants();
         const timelineEvents = window.__gmrTimelineCollector
-          ? window.__gmrTimelineCollector.diffParticipants(participants)
+          ? window.__gmrTimelineCollector.diffRoster()
           : [];
-        const participantCount = participants.length;
+        const participantCount = gmrListMeetParticipants().length;
         window.__gmrLastParticipantCount = participantCount;
         window.__gmrLastParticipantSource = 'listitem';
         const chunkPayload = {
