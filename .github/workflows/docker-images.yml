@@ -31,6 +31,7 @@ env:
   AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
   ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
   BACKEND_REPOSITORY: ${{ vars.ECR_BACKEND_REPOSITORY || 'ai-meeting-notetaker-rs/backend' }}
+  BACKEND_DEBUG_REPOSITORY: ${{ vars.ECR_BACKEND_DEBUG_REPOSITORY || 'ai-meeting-notetaker-rs/backend-debug' }}
   FRONTEND_REPOSITORY: ${{ vars.ECR_FRONTEND_REPOSITORY || 'ai-meeting-notetaker-rs/frontend' }}
   BUILDX_CACHE_DIR: /tmp/.buildx-cache
 
@@ -69,6 +70,17 @@ jobs:
             fi
             echo "EOF"
 
+            echo "backend_debug_tags<<EOF"
+            if [ "${should_push}" = "true" ]; then
+              echo "${ECR_REGISTRY}/${BACKEND_DEBUG_REPOSITORY}:${short_sha}"
+              if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+                echo "${ECR_REGISTRY}/${BACKEND_DEBUG_REPOSITORY}:latest"
+              fi
+            else
+              echo "ai-meeting-notetaker-rs-backend-debug:${short_sha}"
+            fi
+            echo "EOF"
+
             echo "frontend_tags<<EOF"
             if [ "${should_push}" = "true" ]; then
               echo "${ECR_REGISTRY}/${FRONTEND_REPOSITORY}:${short_sha}"
@@ -87,6 +99,13 @@ jobs:
             fi
             echo "EOF"
 
+            echo "backend_debug_cache_from<<EOF"
+            echo "type=local,src=${BUILDX_CACHE_DIR}/backend-debug"
+            if [ -n "${ECR_REGISTRY}" ]; then
+              echo "type=registry,ref=${ECR_REGISTRY}/${BACKEND_DEBUG_REPOSITORY}:buildcache"
+            fi
+            echo "EOF"
+
             echo "frontend_cache_from<<EOF"
             echo "type=local,src=${BUILDX_CACHE_DIR}/frontend"
             if [ -n "${ECR_REGISTRY}" ]; then
@@ -98,6 +117,13 @@ jobs:
             echo "type=local,dest=${BUILDX_CACHE_DIR}/backend-new,mode=max"
             if [ "${should_push}" = "true" ]; then
               echo "type=registry,ref=${ECR_REGISTRY}/${BACKEND_REPOSITORY}:buildcache,mode=max"
+            fi
+            echo "EOF"
+
+            echo "backend_debug_cache_to<<EOF"
+            echo "type=local,dest=${BUILDX_CACHE_DIR}/backend-debug-new,mode=max"
+            if [ "${should_push}" = "true" ]; then
+              echo "type=registry,ref=${ECR_REGISTRY}/${BACKEND_DEBUG_REPOSITORY}:buildcache,mode=max"
             fi
             echo "EOF"
 
@@ -132,6 +158,17 @@ jobs:
           cache-from: ${{ steps.meta.outputs.backend_cache_from }}
           cache-to: ${{ steps.meta.outputs.backend_cache_to }}
 
+      - name: Build backend debug image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/backend/Dockerfile
+          target: debug
+          push: ${{ steps.meta.outputs.should_push }}
+          tags: ${{ steps.meta.outputs.backend_debug_tags }}
+          cache-from: ${{ steps.meta.outputs.backend_debug_cache_from }}
+          cache-to: ${{ steps.meta.outputs.backend_debug_cache_to }}
+
       - name: Build frontend image
         uses: docker/build-push-action@v6
         with:
@@ -147,9 +184,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf "${BUILDX_CACHE_DIR}/backend" "${BUILDX_CACHE_DIR}/frontend"
+          rm -rf "${BUILDX_CACHE_DIR}/backend" "${BUILDX_CACHE_DIR}/backend-debug" "${BUILDX_CACHE_DIR}/frontend"
           if [ -d "${BUILDX_CACHE_DIR}/backend-new" ]; then
             mv "${BUILDX_CACHE_DIR}/backend-new" "${BUILDX_CACHE_DIR}/backend"
+          fi
+          if [ -d "${BUILDX_CACHE_DIR}/backend-debug-new" ]; then
+            mv "${BUILDX_CACHE_DIR}/backend-debug-new" "${BUILDX_CACHE_DIR}/backend-debug"
           fi
           if [ -d "${BUILDX_CACHE_DIR}/frontend-new" ]; then
             mv "${BUILDX_CACHE_DIR}/frontend-new" "${BUILDX_CACHE_DIR}/frontend"
