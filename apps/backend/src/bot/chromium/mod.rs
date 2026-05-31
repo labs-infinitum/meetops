@@ -261,6 +261,14 @@ pub async fn open_profile(options: ProfileOptions) -> anyhow::Result<()> {
         );
     }
     child_cmd.arg("https://accounts.google.com/");
+    #[cfg(target_os = "linux")]
+    if running_in_container() {
+        child_cmd
+            .arg("--no-sandbox")
+            .arg("--disable-dev-shm-usage")
+            .arg("--disable-gpu");
+        tracing::info!("Chrome profile container flags enabled (--no-sandbox, --disable-dev-shm-usage)");
+    }
     if let Some(disp) = resolved_chrome_display(options.x11_display.as_deref())? {
         child_cmd.env("DISPLAY", disp);
     }

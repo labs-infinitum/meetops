@@ -29,6 +29,7 @@ RUN apt-get update \
         openbox \
         xvfb \
         xdotool \
+        x11-utils \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -47,4 +48,42 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD curl -fsS http://127.0.0.1:8080/healthz || exit 1
 
 ENTRYPOINT ["google-meeting-recorder"]
+CMD []
+
+# Debug image: RustDesk + pinned Xvfb display (:99) for remote viewing during profile/debug.
+FROM runtime AS debug
+
+ARG RUSTDESK_VERSION=1.4.6
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        dbus-x11 \
+        libegl1 \
+        libgbm1 \
+        libgl1 \
+        libglib2.0-0 \
+        libxcb1 \
+        libxfixes3 \
+        libxrandr2 \
+        x11-utils \
+    && wget -q "https://github.com/rustdesk/rustdesk/releases/download/${RUSTDESK_VERSION}/rustdesk-${RUSTDESK_VERSION}-x86_64.deb" \
+        -O /tmp/rustdesk.deb \
+    && apt-get install -y /tmp/rustdesk.deb \
+    && rm -f /tmp/rustdesk.deb \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY apps/backend/config.docker.debug.toml /app/config.toml
+COPY apps/backend/docker/debug-entrypoint.sh /usr/local/bin/debug-entrypoint.sh
+COPY apps/backend/docker/configure-rustdesk-server.sh /usr/local/bin/configure-rustdesk-server.sh
+RUN chmod +x /usr/local/bin/debug-entrypoint.sh /usr/local/bin/configure-rustdesk-server.sh
+
+ENV DEBUG_X11_DISPLAY=:99 \
+    GMR_BOT__X11_DISPLAY=:99 \
+    GMR_BOT__X11_AUTO_VIRTUAL=false
+
+HEALTHCHECK NONE
+
+EXPOSE 21115 21116 21116/udp 21117
+
+ENTRYPOINT ["/usr/local/bin/debug-entrypoint.sh"]
 CMD []

@@ -21,3 +21,5 @@ node_modules
 /frontend
 /proto
 /target
+
+debug.env

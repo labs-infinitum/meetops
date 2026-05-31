@@ -3,6 +3,7 @@ services:
     build:
       context: .
       dockerfile: apps/backend/Dockerfile
+      target: runtime
     container_name: notetaker-backend
     env_file:
       - path: apps/backend/.env
@@ -34,3 +35,31 @@ services:
     ports:
       - "${FRONTEND_PORT:-3000}:80"
     restart: unless-stopped
+
+  # Remote desktop into the bot's Xvfb display (:99) via RustDesk — for profile sign-in and debugging.
+  backend-debug:
+    profiles: ["debug"]
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+      target: debug
+    container_name: notetaker-backend-debug
+    env_file:
+      - path: apps/backend/.env
+        required: false
+      - path: debug.env
+        required: false
+    environment:
+      GMR_STORAGE__DATA_DIR: /data
+      GMR_BOT__CHROMIUM_PATH: /usr/bin/google-chrome-stable
+      GMR_BOT__CHROME_USER_DATA_DIR: /data/chrome-profile
+      GMR_BOT__X11_DISPLAY: ":99"
+      GMR_BOT__X11_AUTO_VIRTUAL: "false"
+      DEBUG_X11_DISPLAY: ":99"
+      # RUSTDESK_* and DEBUG_WAIT_SECS come from debug.env — do not override here with
+      # ${VAR:-} or Compose will blank them when the repo-root .env lacks those keys.
+    volumes:
+      - ./data:/data
+    shm_size: "2gb"
+    stdin_open: true
+    tty: true

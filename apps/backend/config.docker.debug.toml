@@ -1,0 +1,51 @@
+[server]
+host = "0.0.0.0"
+port = 8080
+
+[grpc]
+host = "0.0.0.0"
+port = 50051
+allow_origin = "http://localhost:3000"
+
+[auth]
+session_ttl_secs = 2592000
+
+[logging]
+filter = "info,google_meeting_recorder=debug,tower_http=debug,tonic=info"
+log_file = true
+log_line = true
+
+[storage]
+data_dir = "/data"
+
+[storage.recordings]
+delete_local_after_upload = true
+
+[storage.recordings.s3]
+bucket = ""
+prefix = "recordings"
+presigned_url_ttl_secs = 3600
+
+[google]
+client_id = ""
+client_secret = ""
+redirect_uri = "http://localhost:8080/auth/google/callback"
+frontend_redirect_url = "http://localhost:3000/app/calendars"
+calendar_sync_interval_secs = 300
+
+[bot]
+display_name = "AI Notetaker"
+chromium_path = "/usr/bin/google-chrome-stable"
+chrome_user_data_dir = "/data/chrome-profile"
+# Pinned display — started by debug-entrypoint.sh before RustDesk / profile.
+x11_display = ":99"
+x11_auto_virtual = false
+x11_start_openbox = true
+join_lead_time_secs = 60
+admission_timeout_secs = 300
+scheduler_poll_interval_secs = 15
+
+[groq]
+api_key_env = "GROQ_API_KEY"
+transcription_model = "whisper-large-v3-turbo"
+summarization_model = "qwen3-32b-131k"

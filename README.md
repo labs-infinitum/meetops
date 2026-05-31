@@ -95,6 +95,20 @@ Register `http://localhost:8080/auth/google/callback` in Google Cloud Console.
 
 **One-time bot Google sign-in** (persists in the repo `data/` directory, shared with local dev):
 
+On a headless server, use the **debug** image with RustDesk to see Chrome on the bot's virtual display (`:99`):
+
+```bash
+cp debug.env.example .env   # set RUSTDESK_ID_SERVER, RUSTDESK_KEY, RUSTDESK_PASSWORD
+
+docker compose --profile debug run --rm --build backend-debug profile
+```
+
+The container registers with your **self-hosted RustDesk server** (`hbbs`/`hbbr`), prints a **RustDesk ID**, and waits `DEBUG_WAIT_SECS` (default 15s). Connect from the [RustDesk client](https://rustdesk.com/) on your laptop — your client must use the **same ID server and key** (Settings → Network). Enter the container password, then Chrome opens on display `:99`. Sign into Google and close Chrome.
+
+With a self-hosted server, the debug container does **not** need inbound ports `21115–21117` on AWS — only your RustDesk server does. The bot container connects outbound to `hbbs`.
+
+Without RustDesk (local machine with a display):
+
 ```bash
 docker compose run --rm --service-ports backend profile
 ```
@@ -104,6 +118,26 @@ Other CLI commands:
 ```bash
 docker compose run --rm backend db reset
 docker compose run --rm backend profile-status
+```
+
+**Debug** (interactive shell on display `:99`, RustDesk stays up):
+
+```bash
+docker compose --profile debug run --rm --build -it backend-debug
+# inside the container: google-meeting-recorder profile
+# or: google-meeting-recorder join 'https://meet.google.com/...'
+```
+
+Optional debug env (repo-root `.env`; see `debug.env.example`):
+
+```bash
+RUSTDESK_PASSWORD=ChooseAStrongPassword
+RUSTDESK_ID_SERVER=rustdesk.example.com    # hbbs
+RUSTDESK_KEY=<contents of id_ed25519.pub>
+RUSTDESK_RELAY_SERVER=rustdesk.example.com # hbbr (optional)
+RUSTDESK_CONFIG=<base64 export>            # alternative to ID server + key
+DEBUG_WAIT_SECS=20
+DEBUG_X11_DISPLAY=:99
 ```
 
 Optional compose env (repo-root `.env` or shell):

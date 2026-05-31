@@ -125,6 +125,17 @@ async fn resolve_display(bot: &BotConfig) -> anyhow::Result<(String, Option<X11G
             let guard = spawn_openbox_guard(bot, &x11_display).await;
             return Ok((x11_display, guard));
         }
+        if remove_stale_x11_socket(&x11_display) {
+            warn!(
+                display = %x11_display,
+                "removed stale X11 socket left by a crashed Xvfb"
+            );
+            if display_probe(&x11_display).await {
+                info!(display = %x11_display, source = "discovered_after_cleanup", "X11 display ready");
+                let guard = spawn_openbox_guard(bot, &x11_display).await;
+                return Ok((x11_display, guard));
+            }
+        }
         debug!(display = %x11_display, "X11 socket exists but display is not reachable");
     }
 
@@ -169,6 +180,8 @@ async fn start_virtual_display(bot: &BotConfig) -> anyhow::Result<(String, Optio
     let n = pick_free_display_number().await?;
     let x11_display = format!(":{n}");
 
+    remove_stale_x11_socket(&x11_display);
+
     info!(display = %x11_display, xvfb = %xvfb_path, "starting virtual X server (Xvfb)");
     let mut xvfb_child = std::process::Command::new(&xvfb_path)
         .arg(&x11_display)
@@ -188,6 +201,8 @@ async fn start_virtual_display(bot: &BotConfig) -> anyhow::Result<(String, Optio
              If the socket is stale: rm /tmp/.X11-unix/X{n}"
         );
     }
+
+    info!(display = %x11_display, "Xvfb ready");
 
     let mut guard = X11Guard {
         xvfb: Some(xvfb_child),
@@ -248,11 +263,40 @@ fn display_number(display: &str) -> u32 {
 async fn pick_free_display_number() -> anyhow::Result<u32> {
     for n in XVFB_DISPLAY_MIN..=XVFB_DISPLAY_MAX {
         let display = format!(":{n}");
-        if !display_probe(&display).await {
-            return Ok(n);
+        if display_probe(&display).await {
+            continue;
         }
+        if x11_socket_path(&display).is_some() {
+            remove_stale_x11_socket(&display);
+        }
+        return Ok(n);
     }
     anyhow::bail!("no free X11 display slot in :{XVFB_DISPLAY_MIN}..:{XVFB_DISPLAY_MAX}");
+}
+
+/// Remove a leftover `/tmp/.X11-unix/X{n}` when no server answers on that display.
+#[cfg(target_os = "linux")]
+fn remove_stale_x11_socket(display: &str) -> bool {
+    let Some(path) = x11_socket_path(display) else {
+        return false;
+    };
+    if display_probe_sync(display) {
+        return false;
+    }
+    match std::fs::remove_file(&path) {
+        Ok(()) => true,
+        Err(error) => {
+            warn!(display = %display, path = %path.display(), %error, "could not remove stale X11 socket");
+            false
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn x11_socket_path(display: &str) -> Option<std::path::PathBuf> {
+    let n = display_number(display);
+    let path = std::path::Path::new(X11_UNIX_DIR).join(format!("X{n}"));
+    path.exists().then_some(path)
 }
 
 #[cfg(target_os = "linux")]
