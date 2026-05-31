@@ -9,7 +9,8 @@ COPY apps/frontend/package.json apps/frontend/
 COPY packages/proto/package.json packages/proto/
 COPY apps/backend/package.json apps/backend/
 
-RUN bun install --frozen-lockfile
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    bun install --frozen-lockfile
 
 COPY packages/proto packages/proto
 COPY apps/frontend apps/frontend

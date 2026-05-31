@@ -1,13 +1,39 @@
 # syntax=docker/dockerfile:1
 
-FROM rust:1-bookworm AS builder
+# cargo-chef splits dependency compilation from app compilation so `docker compose build`
+# reuses cached deps when only Rust sources change (Cargo.lock/Cargo.toml unchanged).
+FROM lukemathwalker/cargo-chef:latest-rust-1-bookworm AS chef
 
+FROM chef AS planner
 WORKDIR /app
 COPY packages/proto packages/proto
 COPY apps/backend apps/backend
-
 WORKDIR /app/apps/backend
-RUN cargo build --release
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS cacher
+WORKDIR /app
+COPY packages/proto packages/proto
+WORKDIR /app/apps/backend
+COPY apps/backend/Cargo.toml apps/backend/Cargo.lock apps/backend/build.rs ./
+COPY apps/backend/migrations ./migrations
+COPY --from=planner /app/apps/backend/recipe.json recipe.json
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo chef cook --release --recipe-path recipe.json
+
+FROM chef AS builder
+WORKDIR /app
+COPY packages/proto packages/proto
+COPY apps/backend apps/backend
+WORKDIR /app/apps/backend
+COPY --from=cacher /app/apps/backend/target ./target
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo build --release --bin google-meeting-recorder --bin find-chrome-tab-allow-click && \
+    test "$(stat -c%s target/release/google-meeting-recorder)" -gt 1000000 && \
+    install -D target/release/google-meeting-recorder /app/bin/google-meeting-recorder && \
+    install -D target/release/find-chrome-tab-allow-click /app/bin/find-chrome-tab-allow-click
 
 FROM debian:bookworm-slim AS runtime
 
@@ -35,10 +61,13 @@ RUN apt-get update \
 WORKDIR /app
 
 COPY apps/backend/config.docker.toml /app/config.toml
-COPY --from=builder /app/apps/backend/target/release/google-meeting-recorder /usr/local/bin/google-meeting-recorder
-COPY --from=builder /app/apps/backend/target/release/find-chrome-tab-allow-click /usr/local/bin/find-chrome-tab-allow-click
+COPY apps/backend/assets/allow-button-template.png /app/allow-button-template.png
+COPY apps/backend/docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY --from=builder /app/bin/google-meeting-recorder /usr/local/bin/google-meeting-recorder
+COPY --from=builder /app/bin/find-chrome-tab-allow-click /usr/local/bin/find-chrome-tab-allow-click
 
-RUN mkdir -p /data /data/chrome-profile /data/recordings
+RUN mkdir -p /data /data/chrome-profile /data/recordings \
+    && chmod +x /usr/local/bin/docker-entrypoint.sh
 
 ENV RUST_LOG=info,google_meeting_recorder=debug,tower_http=debug,tonic=info,chromiumoxide::handler=error
 
@@ -47,7 +76,7 @@ EXPOSE 8080 50051
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD curl -fsS http://127.0.0.1:8080/healthz || exit 1
 
-ENTRYPOINT ["google-meeting-recorder"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD []
 
 # Debug image: RustDesk + pinned Xvfb display (:99) for remote viewing during profile/debug.
