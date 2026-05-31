@@ -2,6 +2,8 @@
 
 Turborepo monorepo for an AI-powered Google Meet notetaker: Rust backend (gRPC + OAuth) and React frontend.
 
+Planned work: [docs/ROADMAP.md](docs/ROADMAP.md).
+
 ## Layout
 
 ```
@@ -11,6 +13,8 @@ Turborepo monorepo for an AI-powered Google Meet notetaker: Rust backend (gRPC +
 │   └── frontend/     # React + Vite UI (grpc-web)
 ├── packages/
 │   └── proto/        # Shared protobuf contracts
+├── docs/
+│   └── ROADMAP.md    # Forward-looking plan
 ├── data/             # Local runtime data (gitignored)
 ├── turbo.json
 └── package.json      # Bun workspaces + Turbo scripts
