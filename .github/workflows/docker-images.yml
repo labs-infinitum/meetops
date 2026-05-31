@@ -1,0 +1,178 @@
+name: Docker Images
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/docker-images.yml"
+      - "apps/backend/**"
+      - "apps/frontend/**"
+      - "packages/proto/**"
+      - "package.json"
+      - "bun.lock"
+      - "turbo.json"
+      - "docker-compose.yml"
+      - ".dockerignore"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/docker-images.yml"
+      - "apps/backend/**"
+      - "apps/frontend/**"
+      - "packages/proto/**"
+      - "package.json"
+      - "bun.lock"
+      - "turbo.json"
+      - "docker-compose.yml"
+      - ".dockerignore"
+  workflow_dispatch:
+    inputs:
+      push_images:
+        description: "Push images to ECR"
+        required: true
+        type: boolean
+        default: false
+      aws_region:
+        description: "AWS region for ECR"
+        required: false
+        type: string
+        default: "us-east-1"
+      ecr_registry:
+        description: "ECR registry, e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com"
+        required: false
+        type: string
+      backend_repository:
+        description: "ECR repository for backend image"
+        required: false
+        type: string
+        default: "ai-meeting-notetaker-rs/backend"
+      frontend_repository:
+        description: "ECR repository for frontend image"
+        required: false
+        type: string
+        default: "ai-meeting-notetaker-rs/frontend"
+
+env:
+  AWS_REGION: ${{ inputs.aws_region || vars.AWS_REGION || 'us-east-1' }}
+  ECR_REGISTRY: ${{ inputs.ecr_registry || vars.ECR_REGISTRY }}
+  BACKEND_REPOSITORY: ${{ inputs.backend_repository || vars.ECR_BACKEND_REPOSITORY || 'ai-meeting-notetaker-rs/backend' }}
+  FRONTEND_REPOSITORY: ${{ inputs.frontend_repository || vars.ECR_FRONTEND_REPOSITORY || 'ai-meeting-notetaker-rs/frontend' }}
+  BUILDX_CACHE_DIR: /tmp/.buildx-cache
+
+jobs:
+  build:
+    name: Build Docker images
+    runs-on:
+      - codebuild-AI_Notetaker_RS_Builder-${{ github.run_id }}-${{ github.run_attempt }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Compute image metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          short_sha="${GITHUB_SHA::12}"
+          echo "short_sha=${short_sha}" >> "${GITHUB_OUTPUT}"
+          {
+            echo "backend_tags<<EOF"
+            echo "ai-meeting-notetaker-rs-backend:${short_sha}"
+            if [ -n "${ECR_REGISTRY}" ]; then
+              echo "${ECR_REGISTRY}/${BACKEND_REPOSITORY}:${short_sha}"
+              if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+                echo "${ECR_REGISTRY}/${BACKEND_REPOSITORY}:latest"
+              fi
+            fi
+            echo "EOF"
+
+            echo "frontend_tags<<EOF"
+            echo "ai-meeting-notetaker-rs-frontend:${short_sha}"
+            if [ -n "${ECR_REGISTRY}" ]; then
+              echo "${ECR_REGISTRY}/${FRONTEND_REPOSITORY}:${short_sha}"
+              if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+                echo "${ECR_REGISTRY}/${FRONTEND_REPOSITORY}:latest"
+              fi
+            fi
+            echo "EOF"
+
+            echo "backend_cache_from<<EOF"
+            echo "type=local,src=${BUILDX_CACHE_DIR}/backend"
+            if [ -n "${ECR_REGISTRY}" ]; then
+              echo "type=registry,ref=${ECR_REGISTRY}/${BACKEND_REPOSITORY}:buildcache"
+            fi
+            echo "EOF"
+
+            echo "frontend_cache_from<<EOF"
+            echo "type=local,src=${BUILDX_CACHE_DIR}/frontend"
+            if [ -n "${ECR_REGISTRY}" ]; then
+              echo "type=registry,ref=${ECR_REGISTRY}/${FRONTEND_REPOSITORY}:buildcache"
+            fi
+            echo "EOF"
+
+            echo "backend_cache_to<<EOF"
+            echo "type=local,dest=${BUILDX_CACHE_DIR}/backend-new,mode=max"
+            if [ "${{ inputs.push_images || false }}" = "true" ] && [ -n "${ECR_REGISTRY}" ]; then
+              echo "type=registry,ref=${ECR_REGISTRY}/${BACKEND_REPOSITORY}:buildcache,mode=max"
+            fi
+            echo "EOF"
+
+            echo "frontend_cache_to<<EOF"
+            echo "type=local,dest=${BUILDX_CACHE_DIR}/frontend-new,mode=max"
+            if [ "${{ inputs.push_images || false }}" = "true" ] && [ -n "${ECR_REGISTRY}" ]; then
+              echo "type=registry,ref=${ECR_REGISTRY}/${FRONTEND_REPOSITORY}:buildcache,mode=max"
+            fi
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Validate ECR configuration
+        if: ${{ inputs.push_images && env.ECR_REGISTRY == '' }}
+        shell: bash
+        run: |
+          echo "push_images=true requires workflow input ecr_registry or repository variable ECR_REGISTRY" >&2
+          exit 1
+
+      - name: Log in to Amazon ECR
+        if: ${{ env.ECR_REGISTRY != '' }}
+        uses: aws-actions/amazon-ecr-login@v2
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/backend/Dockerfile
+          target: runtime
+          push: ${{ inputs.push_images && env.ECR_REGISTRY != '' }}
+          tags: ${{ steps.meta.outputs.backend_tags }}
+          cache-from: ${{ steps.meta.outputs.backend_cache_from }}
+          cache-to: ${{ steps.meta.outputs.backend_cache_to }}
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/frontend/Dockerfile
+          push: ${{ inputs.push_images && env.ECR_REGISTRY != '' }}
+          tags: ${{ steps.meta.outputs.frontend_tags }}
+          cache-from: ${{ steps.meta.outputs.frontend_cache_from }}
+          cache-to: ${{ steps.meta.outputs.frontend_cache_to }}
+
+      - name: Rotate Buildx local cache
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "${BUILDX_CACHE_DIR}/backend" "${BUILDX_CACHE_DIR}/frontend"
+          if [ -d "${BUILDX_CACHE_DIR}/backend-new" ]; then
+            mv "${BUILDX_CACHE_DIR}/backend-new" "${BUILDX_CACHE_DIR}/backend"
+          fi
+          if [ -d "${BUILDX_CACHE_DIR}/frontend-new" ]; then
+            mv "${BUILDX_CACHE_DIR}/frontend-new" "${BUILDX_CACHE_DIR}/frontend"
+          fi
