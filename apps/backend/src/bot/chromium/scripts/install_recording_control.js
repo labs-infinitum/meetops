@@ -1,12 +1,32 @@
 async function() {
+  /** Status copy on a presentation listitem (Chrome: "Presentation"; Safari: "Visitor" + "Presentation"). */
+  function gmrHasPresentationStatusText(text) {
+    const normalized = (text || '').replace(/\s+/g, ' ').trim();
+    if (!normalized || normalized.length > 80) {
+      return false;
+    }
+    if (/\b(leave call|ask to join|admit|deny)\b/i.test(normalized)) {
+      return false;
+    }
+    return (
+      /\bpresentation\b/i.test(normalized) ||
+      /\bpresenting\b/i.test(normalized) ||
+      /\bscreen sharing\b/i.test(normalized) ||
+      /visitor\s*presentation/i.test(normalized)
+    );
+  }
+
   /** Screen-share roster row (separate listitem from the person; do not treat as join/leave). */
   function gmrIsPresentationRosterRow(row) {
     const childAria = [...row.querySelectorAll('[aria-label]')].map((el) =>
       (el.getAttribute('aria-label') || '').trim()
     );
+    // Chrome: "Mute …'s presentation"; Safari: "You can't unmute someone else's presentation"
     if (
       childAria.some(
-        (label) => /\bpresentation\b/i.test(label) && /\b(mute|stop)\b/i.test(label)
+        (label) =>
+          /\bpresentation\b/i.test(label) &&
+          !/^visitor(\s+badge)?$/i.test(label)
       )
     ) {
       return true;
@@ -15,14 +35,10 @@ async function() {
       if (el.closest('button, [role="button"]')) {
         continue;
       }
-      const text = (el.textContent || '').trim();
-      if (!text || text.length > 48) {
-        continue;
-      }
       if (el.querySelector('button, [role="button"]')) {
         continue;
       }
-      if (/^(presentation|presenting|screen sharing)$/i.test(text)) {
+      if (gmrHasPresentationStatusText(el.textContent)) {
         return true;
       }
     }

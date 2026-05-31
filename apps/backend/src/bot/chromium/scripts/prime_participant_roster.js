@@ -32,23 +32,33 @@ async function() {
     return waitingForHostSignals.some((signal) => bodyText.includes(signal));
   };
 
+  const hasPresentationStatusText = (text) => {
+    const normalized = (text || '').replace(/\s+/g, ' ').trim();
+    if (!normalized || normalized.length > 80) return false;
+    if (/\b(leave call|ask to join|admit|deny)\b/i.test(normalized)) return false;
+    return (
+      /\bpresentation\b/i.test(normalized) ||
+      /\bpresenting\b/i.test(normalized) ||
+      /\bscreen sharing\b/i.test(normalized) ||
+      /visitor\s*presentation/i.test(normalized)
+    );
+  };
   const isPresentationRow = (row) => {
     const childAria = [...row.querySelectorAll('[aria-label]')].map((el) =>
       (el.getAttribute('aria-label') || '').trim()
     );
     if (
       childAria.some(
-        (label) => /\bpresentation\b/i.test(label) && /\b(mute|stop)\b/i.test(label)
+        (label) =>
+          /\bpresentation\b/i.test(label) && !/^visitor(\s+badge)?$/i.test(label)
       )
     ) {
       return true;
     }
     for (const el of row.querySelectorAll('span, div')) {
       if (el.closest('button, [role="button"]')) continue;
-      const text = (el.textContent || '').trim();
-      if (!text || text.length > 48) continue;
       if (el.querySelector('button, [role="button"]')) continue;
-      if (/^(presentation|presenting|screen sharing)$/i.test(text)) return true;
+      if (hasPresentationStatusText(el.textContent)) return true;
     }
     return false;
   };
