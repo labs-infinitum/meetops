@@ -163,6 +163,7 @@ struct JoinAttempt {
 enum JoinState {
     NeedsAction,
     AskedToJoin,
+    WaitingForHost,
     Joined,
     Denied,
 }
@@ -586,10 +587,20 @@ async fn run_join_flow(browser: &Browser, options: &JoinOptions) -> anyhow::Resu
             JoinState::Joined => {
                 close_other_pages(browser, &page).await?;
                 activate_page(&page).await?;
-                prime_participant_roster(&page).await;
-                return Ok(page);
+                let prime = prime_participant_roster(&page).await;
+                if prime.error.as_deref() == Some("timed_out_waiting_for_host") {
+                    if Instant::now() >= deadline {
+                        anyhow::bail!("timed out waiting for host admission");
+                    }
+                    tracing::info!(
+                        "Meet still in lobby after in-call UI; continuing until host admits"
+                    );
+                    last_state = None;
+                } else {
+                    return Ok(page);
+                }
             }
-            JoinState::AskedToJoin => {
+            JoinState::AskedToJoin | JoinState::WaitingForHost => {
                 if Instant::now() >= deadline {
                     anyhow::bail!("timed out waiting for host admission");
                 }
@@ -649,11 +660,12 @@ struct PrimeParticipantRosterResult {
     closed: bool,
     #[serde(rename = "rosterCount")]
     roster_count: u64,
+    phase: Option<String>,
     error: Option<String>,
 }
 
 /// Open Meet's People panel once after admission so roster listitems mount, then close it.
-async fn prime_participant_roster(page: &Page) {
+async fn prime_participant_roster(page: &Page) -> PrimeParticipantRosterResult {
     let eval_result: anyhow::Result<PrimeParticipantRosterResult> = async {
         let value: serde_json::Value = page
             .evaluate_function(scripts::prime_participant_roster())
@@ -668,6 +680,7 @@ async fn prime_participant_roster(page: &Page) {
             if let Some(error) = result.error.as_deref() {
                 tracing::warn!(
                     %error,
+                    phase = ?result.phase,
                     opened = result.opened,
                     closed = result.closed,
                     roster_count = result.roster_count,
@@ -675,15 +688,24 @@ async fn prime_participant_roster(page: &Page) {
                 );
             } else {
                 tracing::info!(
+                    phase = ?result.phase,
                     opened = result.opened,
                     closed = result.closed,
                     roster_count = result.roster_count,
                     "primed Meet participant roster (open then close People panel)"
                 );
             }
+            result
         }
         Err(error) => {
             tracing::warn!(error = %error, "failed to run participant roster prime script");
+            PrimeParticipantRosterResult {
+                opened: false,
+                closed: false,
+                roster_count: 0,
+                phase: Some("evaluate_failed".into()),
+                error: Some(error.to_string()),
+            }
         }
     }
 }

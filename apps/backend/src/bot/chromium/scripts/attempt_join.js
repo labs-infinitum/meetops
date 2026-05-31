@@ -31,6 +31,15 @@ async function() {
     return true;
   };
 
+  const waitingForHostSignals = [
+    'please wait until a meeting host brings you into the call',
+    'please wait until a meeting host lets you in',
+    'please wait until the host brings you into the call',
+    'waiting for the host to let you in',
+    'waiting for the meeting host',
+    'the host will let you in soon'
+  ];
+
   if (bodyText.includes('you cannot join this video call') ||
       bodyText.includes('you were denied') ||
       bodyText.includes('no longer in the meeting') ||
@@ -62,6 +71,15 @@ async function() {
   clickButton(['turn off microphone', 'mute microphone']);
   clickButton(['turn off camera', 'turn off video']);
 
+  if (waitingForHostSignals.some((signal) => bodyText.includes(signal))) {
+    return {
+      state: 'waiting_for_host',
+      message: 'Waiting for meeting host to admit the bot into the call',
+      title: document.title || '',
+      controls: visibleControls
+    };
+  }
+
   const joinedSignals = [
     'leave call',
     'show everyone',
@@ -72,7 +90,7 @@ async function() {
   ];
   if (joinedSignals.some((signal) => bodyText.includes(signal)) ||
       controls.some((control) => controlText(control).includes('leave call'))) {
-    return { state: 'joined', message: 'Joined meeting UI detected', title: document.title || '', controls: visibleControls };
+    return { state: 'joined', message: 'In-call UI detected (host admitted)', title: document.title || '', controls: visibleControls };
   }
 
   if (bodyText.includes('asking to be let in') ||
@@ -89,4 +107,3 @@ async function() {
 
   return { state: 'needs_action', message: 'Waiting for Meet join controls', title: document.title || '', controls: visibleControls };
 }
-

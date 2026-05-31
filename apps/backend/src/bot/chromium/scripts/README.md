@@ -7,7 +7,7 @@ Each `.js` file is the **full function expression** passed to Chromium CDP `Page
 | File | When it runs |
 |------|----------------|
 | `attempt_join.js` | Poll loop while joining Meet (`__DISPLAY_NAME_JSON__` replaced with JSON string) |
-| `prime_participant_roster.js` | Once after admission (~3s): `toggleParticipantPanel()` open → wait for roster → close |
+| `prime_participant_roster.js` | After host admits (up to ~20s): wait out lobby → open People → wait for roster → close |
 | `install_recording_control.js` | Once before recording: MediaRecorder, timeline collector, hidden start button |
 | `recording_status.js` | Poll `window.__gmrRecordingStatus` |
 | `recording_runtime_status.js` | Poll status + upload counters |
@@ -43,7 +43,7 @@ Runtime `getElementById` is only used to resolve **whatever** id Meet puts in `a
 
 ## Participant list (`gmrListMeetParticipants`)
 
-Queries `[role="listitem"][data-participant-id]` in the document. Meet must **hydrate the roster at least once** per call: `prime_participant_roster.js` runs right after join, finds the People control via **accessible name** (`aria-labelledby` → “People”, or `aria-label` / tooltip), toggles open, waits for rows, toggles closed within **3 seconds**. After that, diffs work with the panel collapsed.
+Queries `[role="listitem"][data-participant-id]` in the document. Meet must **hydrate the roster at least once** per call: `prime_participant_roster.js` runs after `attempt_join.js` reports `joined` (in-call, not lobby). It polls until the “Please wait until a meeting host…” lobby copy disappears, finds the People control via a **“People”** label / `aria-labelledby`, toggles open, waits for rows, toggles closed (budget **~20s**). After that, diffs work with the panel collapsed.
 
 Excludes **(You)** and lobby rows (**Admit** / **Deny** / **Ask to join**). Join/leave diffs run on each **video chunk (~1s)** and on a **5s** interval (snapshots + active speaker).
 
