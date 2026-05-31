@@ -234,6 +234,8 @@ where
                     }
                 }
                 _ = status_tick.tick() => {
+                    chromium::dismiss_meet_overlays_best_effort(&session.page).await;
+
                     match chromium::recording_runtime_status(&session.page).await {
                         Ok(status) => tracing::info!(%status, "recording browser status"),
                         Err(error) => tracing::warn!(%error, "failed to read recording browser status"),

@@ -571,6 +571,7 @@ async fn run_join_flow(browser: &Browser, options: &JoinOptions) -> anyhow::Resu
     let mut last_state: Option<JoinState> = None;
 
     loop {
+        dismiss_meet_overlays_best_effort(&page).await;
         let attempt = attempt_join(&page, &options.display_name).await?;
         if last_state != Some(attempt.state) {
             tracing::info!(
@@ -649,6 +650,44 @@ async fn activate_page(page: &Page) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[derive(Debug, Deserialize)]
+struct DismissMeetOverlaysResult {
+    dismissed: bool,
+    clicked: Vec<DismissMeetOverlayClick>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DismissMeetOverlayClick {
+    #[serde(rename = "buttonText")]
+    button_text: String,
+    scope: String,
+    reason: Option<String>,
+}
+
+/// Clicks visible Meet informational modals (e.g. self-view "Got it") when present.
+pub async fn dismiss_meet_overlays(page: &Page) -> anyhow::Result<DismissMeetOverlaysResult> {
+    let value: serde_json::Value = page
+        .evaluate_function(scripts::dismiss_meet_overlays())
+        .await?
+        .into_value()?;
+    Ok(serde_json::from_value(value)?)
+}
+
+pub async fn dismiss_meet_overlays_best_effort(page: &Page) {
+    match dismiss_meet_overlays(page).await {
+        Ok(result) if result.dismissed => {
+            tracing::info!(
+                clicks = ?result.clicked,
+                "dismissed Meet overlay dialog"
+            );
+        }
+        Ok(_) => {}
+        Err(error) => {
+            tracing::debug!(%error, "Meet overlay dismiss script failed");
+        }
+    }
+}
+
 async fn attempt_join(page: &Page, display_name: &str) -> anyhow::Result<JoinAttempt> {
     let script = scripts::attempt_join(display_name)?;
     Ok(page.evaluate_function(script).await?.into_value()?)
@@ -721,6 +760,7 @@ pub async fn start_tab_recording(
     launched_chrome_pid: Option<u32>,
 ) -> anyhow::Result<BrowserRecording> {
     activate_page(page).await?;
+    dismiss_meet_overlays_best_effort(page).await;
     let recording = install_recording_binding(
         page,
         raw_webm_path.as_ref(),

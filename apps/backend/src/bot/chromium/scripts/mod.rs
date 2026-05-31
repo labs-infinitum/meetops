@@ -15,6 +15,7 @@ const MEET_PARTICIPANT_COUNT: &str = include_str!("meet_participant_count.js");
 const RECORDING_RUNTIME_STATUS: &str = include_str!("recording_runtime_status.js");
 const STOP_TAB_RECORDING: &str = include_str!("stop_tab_recording.js");
 const PRIME_PARTICIPANT_ROSTER: &str = include_str!("prime_participant_roster.js");
+const DISMISS_MEET_OVERLAYS: &str = include_str!("dismiss_meet_overlays.js");
 
 /// Placeholder replaced with a JSON-string literal for the bot display name.
 const DISPLAY_NAME_PLACEHOLDER: &str = "__DISPLAY_NAME_JSON__";
@@ -50,6 +51,10 @@ pub fn stop_tab_recording() -> &'static str {
 
 pub fn prime_participant_roster() -> &'static str {
     PRIME_PARTICIPANT_ROSTER
+}
+
+pub fn dismiss_meet_overlays() -> &'static str {
+    DISMISS_MEET_OVERLAYS
 }
 
 #[cfg(test)]
@@ -95,6 +100,7 @@ mod tests {
         assert_valid_function_expression(RECORDING_RUNTIME_STATUS, "recording_runtime_status.js");
         assert_valid_function_expression(STOP_TAB_RECORDING, "stop_tab_recording.js");
         assert_valid_function_expression(PRIME_PARTICIPANT_ROSTER, "prime_participant_roster.js");
+        assert_valid_function_expression(DISMISS_MEET_OVERLAYS, "dismiss_meet_overlays.js");
     }
 
     #[test]

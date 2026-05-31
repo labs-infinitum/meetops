@@ -7,6 +7,7 @@ Each `.js` file is the **full function expression** passed to Chromium CDP `Page
 | File | When it runs |
 |------|----------------|
 | `attempt_join.js` | Poll loop while joining Meet (`__DISPLAY_NAME_JSON__` replaced with JSON string) |
+| `dismiss_meet_overlays.js` | Best-effort click on informational modals (`Got it`, `OK`, …) in dialogs or when known overlay copy is visible |
 | `prime_participant_roster.js` | After host admits (up to ~20s): wait out lobby → open People → wait for roster → close |
 | `install_recording_control.js` | Once before recording: MediaRecorder, timeline collector, hidden start button |
 | `recording_status.js` | Poll `window.__gmrRecordingStatus` |
