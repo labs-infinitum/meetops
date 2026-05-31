@@ -4,22 +4,23 @@ Planned work for the monorepo (`apps/backend`, `apps/frontend`, `packages/proto`
 
 **North star:** Full product loop (record → transcribe → summarize → notes/todos), settings persisted per user, and **N concurrent recordings** on one machine (isolated Xvfb displays + Chrome profiles).
 
-**Last reviewed:** 2026-05-31 — aligned with current tree (timeline + Docker CI shipped; AI pipeline and Notes/Todos APIs still open).
+**Last reviewed:** 2026-05-31 — timeline collector, join/roster hardening, overlay dismiss, and proto workspace are in tree; AI pipeline, live preview, and Notes/Todos APIs still open.
 
 ---
 
 ## Recommended order
 
 1. **AI pipeline** — Groq workers, then Notes/Todos/Dashboard APIs
-2. **Frontend wiring** — Replace remaining mocks; delete `mock-data.ts`
-3. **Settings API** — Profile and prefs end-to-end
-4. **Concurrent recording** — Raise `concurrency_max` incrementally (1 → 2 → N)
-5. **Bot Google sessions** — Profile health checks, automatic sign-in (no manual `profile` CLI)
-6. **Telemetry & alerts** — Structured ops signals + developer notifications on failures
-7. **Production** — HTTPS, prod OAuth/CORS, deploy scripts, broaden CI beyond Docker images
-8. **Hardening** — Rate limits, S3 CORS/retention, optional Postgres
+2. **Live recording preview** — Bot-view frames on active runs (see [Recordings UI](#recordings-ui-playback--live-preview)); replaces “Recording in progress…” placeholder
+3. **Frontend wiring** — Replace remaining mocks; delete `mock-data.ts`
+4. **Settings API** — Profile and prefs end-to-end
+5. **Concurrent recording** — Raise `concurrency_max` incrementally (1 → 2 → N)
+6. **Bot Google sessions** — Profile health checks, automatic sign-in (no manual `profile` CLI)
+7. **Telemetry & alerts** — Structured ops signals + developer notifications on failures
+8. **Production** — HTTPS, prod OAuth/CORS, deploy scripts, broaden CI beyond Docker images
+9. **Hardening** — Rate limits, S3 CORS/retention, optional Postgres
 
-Timeline collection and the recordings detail UI are largely in place; polish (reliability, ops visibility) continues under [Meeting timeline](#meeting-timeline-in-call-events).
+Meeting timeline and recordings detail (playback + events) are largely in place; reliability polish continues under [Meeting timeline](#meeting-timeline-in-call-events).
 
 ---
 
@@ -42,19 +43,24 @@ Collect structured events during recording (join/leave, screen share, active spe
 
 - [x] SQLite `meeting_timeline_events` + `apps/backend/src/db/meeting_timeline.rs`
 - [x] `RecordingService.ListMeetingTimelineEvents` (gRPC + grpc-web)
-- [x] In-tab collector in `install_recording_control.js` (diff roster, screen share, active speaker)
-- [x] Post-join roster prime — `prime_participant_roster.js` (open/close People panel so Meet hydrates `data-participant-id` rows)
-- [x] Participant count helper — `meet_participant_count.js` (solo-leave / admission checks from Rust)
+- [x] In-tab collector in `install_recording_control.js` (person join/leave diffs, active speaker, snapshots)
+- [x] **Screen share events** — `screen_share_started` / `screen_share_stopped` for presentation listitems (not join/leave); `presenterParticipantId` + `presentationId` in payload; duplicate-name disambiguation (space prefix, avatar, roster order)
+- [x] Post-join roster prime — `prime_participant_roster.js` (wait out host lobby up to ~20s, open/close People panel, hydrate `data-participant-id` rows)
+- [x] Join lobby detection — `attempt_join.js` `waiting_for_host` (“Please wait until a meeting host…”) before treating UI as in-call; join loop retries prime on `timed_out_waiting_for_host`
+- [x] Meet overlay dismiss — `dismiss_meet_overlays.js` (`Got it`, self-view hints, etc.) during join poll, before capture, and every ~5s while recording
+- [x] Participant count helper — `meet_participant_count.js` (excludes presentation rows; solo-leave / admission checks from Rust)
 - [x] Flush on stop — `stop_tab_recording.js`
+- [x] Chromium scripts extracted from `chromium/mod.rs` into `scripts/*.js` + `include_str!` (`scripts/mod.rs`, syntax tests)
 - [x] Chromium scripts documented — `apps/backend/src/bot/chromium/scripts/README.md`
 
 ### Frontend
 
 - [x] Recordings detail — timeline list with typed payload parsing (`timeline-payload.ts`, `RecordingsPage.tsx`)
+- [x] Timeline UI for screen share — “started/stopped presenting” + icons (`RecordingsPage.tsx`)
 
 ### Follow-ups
 
-- [ ] Harden edge cases when People panel cannot be opened (`rosterCount` stays 0) — see scripts README
+- [ ] Further harden People panel / roster hydration when `rosterCount` stays 0 (Meet UI variants) — see scripts README
 - [ ] Optional: surface timeline summary on meeting detail or export (JSON/CSV)
 - [ ] Optional: correlate timeline rows with transcript timestamps after AI pipeline ships
 
@@ -63,13 +69,34 @@ Collect structured events during recording (join/leave, screen share, active spe
 ## Frontend (wire real data)
 
 - [x] **Meetings, calendars, recordings list** — live gRPC (no mocks on those pages)
-- [x] **Recordings detail** — playback URL + meeting timeline from API
+- [x] **Recordings detail** — presigned playback when `completed` + live timeline poll while active; placeholder while recording (no live video yet — see [Recordings UI](#recordings-ui-playback--live-preview))
+- [x] **Proto clients** — generated TS in `packages/proto`, imported as `@ai-meeting-notetaker/proto` (Turbo `proto:generate` before frontend build)
 - [ ] **Dashboard** — `GetDashboardSummary` wired for upcoming meetings, calendar count, completed recordings; **open todos** still hardcoded `0`; no “Latest AI summary” yet
 - [ ] **Notes** — list/detail from `summaries` (+ meeting title); today uses `mock-data.ts`
 - [ ] **Todos** — action items from API; completion persists; today uses `mock-data.ts`
 - [ ] **Settings** — load/save profile and prefs via API (session profile + demo toasts only)
 - [ ] Remove or gate mocks behind `import.meta.env.DEV`
 - [ ] Delete `apps/frontend/src/lib/mock-data.ts` once Notes/Todos/Dashboard stats are API-backed
+
+---
+
+## Recordings UI (playback & live preview)
+
+Today: completed runs use `GetPlaybackUrl` (S3 presigned `raw.webm`). Active runs show a static placeholder (“Recording in progress…”) while the bot appends chunks to staging on disk — nothing is exposed to the browser until finalize/upload.
+
+**Not the same as embedding Google Meet** — users cannot “watch the call” as a Meet participant without a separate join flow. Live preview means **what the bot sees** (tab capture / Meet UI in headless Chrome).
+
+### Planned (MVP: preview frames)
+
+- [ ] Proto + `RecordingService.GetLivePreview` (or equivalent) — presigned JPEG URL + `captured_at` for active runs only
+- [ ] Bot: periodic CDP screenshot during `joining` / `in_meeting` / `recording` (e.g. every 2–3s); write `staging/.../live-preview.jpg` (or in-memory + upload)
+- [ ] Frontend: poll preview on `RecordingDetailPage` alongside existing 3s `GetBotRun` / timeline refresh; “Live (bot view)” badge; fall back to current placeholder on failure
+- [ ] Auth + CORS for image URL; stop capture after run completes
+
+### Later (optional)
+
+- [ ] Near-live **video** from growing staging `raw.webm` (MSE / HLS / ffmpeg sidecar) — higher effort; many browsers won’t play incomplete WebM
+- [ ] Playback poster/thumbnail from first frame (completed runs)
 
 ---
 
@@ -181,9 +208,8 @@ When the bot, scheduler, or session automation fails, operators need visibility 
 - [ ] **Stop while `queued`** — `is_stoppable_status` includes `queued`, but `ActiveRecordings` only registers when the worker starts; cancel before spawn still returns `not_active` (optional: DB status transition + scheduler respect)
 - [ ] **S3 bucket CORS** — `GET`/`HEAD` from frontend origins for presigned playback
 - [ ] **S3 lifecycle** — retention policy for old recordings
-- [ ] Optional playback **poster/thumbnail** from first frame
 
-Tab-capture Allow automation, staging uploads, and tab-capture debug PNGs are implemented (see `config.toml.example` `[bot]` comments).
+Tab-capture Allow automation, staging uploads, Meet overlay dismiss, and tab-capture debug PNGs are implemented (see `config.toml.example` `[bot]` comments`). Live preview and playback posters: [Recordings UI](#recordings-ui-playback--live-preview).
 
 ---
 
@@ -232,6 +258,7 @@ Tab-capture Allow automation, staging uploads, and tab-capture debug PNGs are im
 ## Cleanup
 
 - [x] `apps/backend/config.toml.example` (local dev; Docker uses `config.docker.toml`)
+- [x] Proto generation in `packages/proto` with workspace exports (removed `apps/frontend/src/gen/`)
 - [ ] Align frontend `isActiveBotRun` with backend `is_stoppable_status` (logic already matches; share via proto `BotRunStatus` enum instead of string literals)
 - [ ] Proto `enum` for `BotRunStatus` (today: string on wire)
 
@@ -247,8 +274,10 @@ Tab-capture Allow automation, staging uploads, and tab-capture debug PNGs are im
 | Bot runner / scheduler | `apps/backend/src/workers/bot_runner.rs`, `scheduler.rs` |
 | Display isolation | `apps/backend/src/bot/x11_display.rs`, `chromium/mod.rs` |
 | Meet injection scripts | `apps/backend/src/bot/chromium/scripts/*.js`, `scripts/README.md` |
+| Overlay dismiss | `scripts/dismiss_meet_overlays.js`, `chromium/mod.rs` (`dismiss_meet_overlays_best_effort`) |
 | Meeting timeline DB | `apps/backend/src/db/meeting_timeline.rs`, `migrations/0002_meeting_timeline_events.sql` |
 | Profile CLI (today) | `cargo run -- profile` or `docker compose run … backend profile` |
 | Frontend mocks | `apps/frontend/src/lib/mock-data.ts` |
 | Frontend pages | `apps/frontend/src/pages/` |
 | Timeline UI helpers | `apps/frontend/src/lib/timeline-payload.ts`, `types/timeline.ts` |
+| Generated proto (TS) | `packages/proto/src/gen/`, `packages/proto/notetaker/v1/*.proto` |
