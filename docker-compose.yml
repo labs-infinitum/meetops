@@ -39,6 +39,7 @@ services:
 
   # Remote desktop into the bot's Xvfb display (:99) via RustDesk — for profile sign-in and debugging.
   backend-debug:
+    platform: linux/amd64
     profiles: ["debug"]
     build:
       context: .
