@@ -10,6 +10,7 @@ use crate::{
     config::Config,
     db::bot_runs,
     meet_url::MeetUrl,
+    shutdown::{AppShutdown, RecordingStop},
 };
 
 pub async fn record(
@@ -25,6 +26,7 @@ pub async fn record(
         RecordStop::Manual,
         None,
         stop_rx,
+        None,
         async {},
     )
     .await?;
@@ -41,6 +43,7 @@ pub async fn record_scheduled<Fut>(
     pool: &SqlitePool,
     run_id: i64,
     stop_rx: watch::Receiver<bool>,
+    shutdown: &AppShutdown,
     after_joined: Fut,
 ) -> anyhow::Result<PathBuf>
 where
@@ -53,6 +56,7 @@ where
         RecordStop::UntilUnix(end_at_unix),
         Some((pool, run_id)),
         stop_rx,
+        Some(shutdown),
         after_joined,
     )
     .await
@@ -65,6 +69,7 @@ enum RecordStop {
 
 enum RecordExitReason {
     CtrlC,
+    Shutdown,
     CalendarEnd,
     UserStop,
     SoloParticipant,
@@ -77,11 +82,18 @@ async fn record_inner<Fut>(
     stop: RecordStop,
     scheduled: Option<(&SqlitePool, i64)>,
     mut stop_rx: watch::Receiver<bool>,
+    shutdown: Option<&AppShutdown>,
     after_joined: Fut,
 ) -> anyhow::Result<PathBuf>
 where
     Fut: std::future::Future<Output = ()> + Send,
 {
+    let mut shutdown_rx = shutdown.map(AppShutdown::subscribe_signal);
+
+    if recording_stop_requested(&stop_rx, shutdown) {
+        return Err(recording_stop_error(shutdown));
+    }
+
     let x11 = x11_display::prepare(&config.bot).await?;
     let x11_display = x11.as_ref().map(|s| s.display.clone());
 
@@ -107,18 +119,22 @@ where
 
     let join_options = chromium::JoinOptions::from_config(meet_url, config, x11_display.clone());
 
-    let mut session = chromium::open_joined_meeting(join_options).await?;
+    let join_stop = RecordingStop {
+        stop_rx: &stop_rx,
+        shutdown,
+    };
+    let mut session = chromium::open_joined_meeting(join_options, Some(join_stop)).await?;
 
-    if *stop_rx.borrow() {
+    if recording_stop_requested(&stop_rx, shutdown) {
         session.close().await;
-        anyhow::bail!("stopped by user");
+        return Err(recording_stop_error(shutdown));
     }
 
     after_joined.await;
 
-    if *stop_rx.borrow() {
+    if recording_stop_requested(&stop_rx, shutdown) {
         session.close().await;
-        anyhow::bail!("stopped by user");
+        return Err(recording_stop_error(shutdown));
     }
 
     match chromium::grant_meet_capture_permissions(session.browser()).await {
@@ -208,14 +224,22 @@ where
 
     if should_wait {
         loop {
-            if *stop_rx.borrow() {
-                exit_reason = Some(RecordExitReason::UserStop);
+            if recording_stop_requested(&stop_rx, shutdown) {
+                exit_reason = Some(if shutdown.is_some_and(AppShutdown::is_cancelled) {
+                    RecordExitReason::Shutdown
+                } else {
+                    RecordExitReason::UserStop
+                });
                 break;
             }
 
             tokio::select! {
                 _ = tokio::signal::ctrl_c() => {
                     exit_reason = Some(RecordExitReason::CtrlC);
+                    break;
+                }
+                _ = wait_shutdown_signal(&mut shutdown_rx) => {
+                    exit_reason = Some(RecordExitReason::Shutdown);
                     break;
                 }
                 _ = async {
@@ -266,6 +290,9 @@ where
 
     match exit_reason {
         Some(RecordExitReason::CtrlC) => tracing::info!("stop recording: Ctrl+C"),
+        Some(RecordExitReason::Shutdown) => {
+            tracing::info!("stop recording: process shutdown (SIGTERM/SIGINT)")
+        }
         Some(RecordExitReason::CalendarEnd) => {
             tracing::info!("stop recording: calendar end time reached")
         }
@@ -303,6 +330,34 @@ where
     ensure_recording_exists(&raw_webm_path).await?;
 
     Ok(raw_webm_path)
+}
+
+async fn wait_shutdown_signal(shutdown_rx: &mut Option<tokio::sync::broadcast::Receiver<()>>) {
+    match shutdown_rx {
+        Some(rx) => {
+            let _ = rx.recv().await;
+        }
+        None => std::future::pending::<()>().await,
+    }
+}
+
+fn recording_stop_requested(
+    stop_rx: &watch::Receiver<bool>,
+    shutdown: Option<&AppShutdown>,
+) -> bool {
+    RecordingStop {
+        stop_rx,
+        shutdown,
+    }
+    .requested()
+}
+
+fn recording_stop_error(shutdown: Option<&AppShutdown>) -> anyhow::Error {
+    if shutdown.is_some_and(AppShutdown::is_cancelled) {
+        anyhow::anyhow!("stopped for server shutdown")
+    } else {
+        anyhow::anyhow!("stopped by user")
+    }
 }
 
 async fn ensure_recording_exists(raw_webm_path: &Path) -> anyhow::Result<()> {

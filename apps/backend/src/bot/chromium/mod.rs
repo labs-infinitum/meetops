@@ -24,6 +24,7 @@ use crate::{
     },
     db::meeting_timeline,
     meet_url::MeetUrl,
+    shutdown::RecordingStop,
 };
 
 const PROFILE_MARKER: &str = "google-meeting-recorder-bot-profile";
@@ -198,7 +199,7 @@ pub async fn grant_meet_capture_permissions(browser: &Browser) -> anyhow::Result
 }
 
 pub async fn join_meeting(options: JoinOptions) -> anyhow::Result<()> {
-    let session = open_joined_meeting(options).await?;
+    let session = open_joined_meeting(options, None).await?;
     tracing::info!("bot is in the meeting; press Ctrl+C to leave and close Chromium");
     tokio::signal::ctrl_c().await?;
     session.close().await;
@@ -206,7 +207,14 @@ pub async fn join_meeting(options: JoinOptions) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn open_joined_meeting(options: JoinOptions) -> anyhow::Result<MeetingSession> {
+pub async fn open_joined_meeting(
+    options: JoinOptions,
+    stop: Option<RecordingStop<'_>>,
+) -> anyhow::Result<MeetingSession> {
+    if stop.as_ref().is_some_and(|stop| stop.requested()) {
+        anyhow::bail!("recording stopped before meet join");
+    }
+
     let user_data_dir = profile_dir(&options.user_data_dir)?;
     tracing::info!(
         profile_dir = %user_data_dir.display(),
@@ -228,7 +236,7 @@ pub async fn open_joined_meeting(options: JoinOptions) -> anyhow::Result<Meeting
         }
     });
 
-    let result = run_join_flow(&browser, &options).await;
+    let result = run_join_flow(&browser, &options, stop.as_ref()).await;
 
     match result {
         Ok(page) => Ok(MeetingSession {
@@ -562,7 +570,11 @@ fn chrome_executable(configured_path: &PathBuf) -> anyhow::Result<PathBuf> {
     }
 }
 
-async fn run_join_flow(browser: &Browser, options: &JoinOptions) -> anyhow::Result<Page> {
+async fn run_join_flow(
+    browser: &Browser,
+    options: &JoinOptions,
+    stop: Option<&RecordingStop<'_>>,
+) -> anyhow::Result<Page> {
     tracing::info!(url = %options.meet_url, "opening Google Meet");
     let page = browser.new_page(options.meet_url.as_str()).await?;
     close_other_pages(browser, &page).await?;
@@ -571,6 +583,10 @@ async fn run_join_flow(browser: &Browser, options: &JoinOptions) -> anyhow::Resu
     let mut last_state: Option<JoinState> = None;
 
     loop {
+        if stop.is_some_and(|stop| stop.requested()) {
+            anyhow::bail!("recording stopped during meet join");
+        }
+
         dismiss_meet_overlays_best_effort(&page).await;
         let attempt = attempt_join(&page, &options.display_name).await?;
         if last_state != Some(attempt.state) {

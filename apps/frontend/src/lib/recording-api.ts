@@ -208,6 +208,8 @@ export function recordingErrorMessage(error: unknown): string {
           return "Enter a valid Google Meet link (https://meet.google.com/…)."
         case "bot_busy":
           return "The bot is already recording another meeting. Try again when it finishes."
+        case "shutting_down":
+          return "The server is shutting down and cannot start new recordings."
         case "not_active":
           return "This recording is not active anymore."
         default:

@@ -10,6 +10,7 @@ use crate::{
     config::Config,
     db::{BotRunStatus, bot_runs},
     meet_url::MeetUrl,
+    shutdown::AppShutdown,
     storage::RecordingsStore,
 };
 
@@ -19,18 +20,19 @@ pub async fn run_claimed(
     chrome_sessions: Arc<Semaphore>,
     recordings: Arc<RecordingsStore>,
     active_recordings: Arc<ActiveRecordings>,
+    shutdown: Arc<AppShutdown>,
     run_id: i64,
     meet_url: MeetUrl,
     end_at: i64,
 ) {
-    let permit = match chrome_sessions.acquire_owned().await {
+    let permit = match acquire_or_shutdown(chrome_sessions, &shutdown).await {
         Ok(permit) => permit,
-        Err(_) => {
+        Err(()) => {
             finalize_run_logged(
                 &pool,
                 run_id,
                 BotRunStatus::Failed,
-                Some("scheduler semaphore closed"),
+                Some("server shutting down before recording could start"),
                 None,
             )
             .await;
@@ -44,6 +46,7 @@ pub async fn run_claimed(
         pool,
         recordings,
         active_recordings,
+        shutdown,
         run_id,
         meet_url,
         end_at,
@@ -52,15 +55,29 @@ pub async fn run_claimed(
 }
 
 pub async fn run_with_permit(
-    _permit: OwnedSemaphorePermit,
+    permit: OwnedSemaphorePermit,
     config: Arc<Config>,
     pool: SqlitePool,
     recordings: Arc<RecordingsStore>,
     active_recordings: Arc<ActiveRecordings>,
+    shutdown: Arc<AppShutdown>,
     run_id: i64,
     meet_url: MeetUrl,
     end_at: i64,
 ) {
+    if shutdown.is_cancelled() {
+        drop(permit);
+        finalize_run_logged(
+            &pool,
+            run_id,
+            BotRunStatus::Failed,
+            Some("server shutting down before recording could start"),
+            None,
+        )
+        .await;
+        return;
+    }
+
     let stop_rx = active_recordings.register(run_id);
 
     let result = run_with_permit_inner(
@@ -71,6 +88,7 @@ pub async fn run_with_permit(
         meet_url,
         end_at,
         stop_rx,
+        &shutdown,
     )
     .await;
 
@@ -140,6 +158,7 @@ async fn run_with_permit_inner(
     meet_url: MeetUrl,
     end_at: i64,
     stop_rx: tokio::sync::watch::Receiver<bool>,
+    shutdown: &AppShutdown,
 ) -> anyhow::Result<std::path::PathBuf> {
     let now = crate::db::now_unix();
     if now >= end_at {
@@ -163,6 +182,7 @@ async fn run_with_permit_inner(
         pool,
         run_id,
         stop_rx,
+        shutdown,
         async move {
             if let Err(error) = bot_runs::mark_in_meeting(&pool_joined, run_id).await {
                 tracing::error!(%error, run_id, "failed to mark bot run in_meeting");
@@ -188,5 +208,33 @@ async fn finalize_run_logged(
 ) {
     if let Err(err) = bot_runs::finalize_run(pool, run_id, status, error, recording_path).await {
         tracing::error!(%err, run_id, status = status.as_str(), "failed to finalize bot run");
+    }
+}
+
+async fn acquire_or_shutdown(
+    chrome_sessions: Arc<Semaphore>,
+    shutdown: &AppShutdown,
+) -> Result<OwnedSemaphorePermit, ()> {
+    loop {
+        if shutdown.is_cancelled() {
+            return Err(());
+        }
+
+        let sem = Arc::clone(&chrome_sessions);
+        let mut cancelled = shutdown.cancelled();
+        tokio::select! {
+            permit = sem.acquire_owned() => return permit.map_err(|_| ()),
+            changed = cancelled.changed() => {
+                if *cancelled.borrow() {
+                    return Err(());
+                }
+                if changed.is_err() {
+                    return Arc::clone(&chrome_sessions)
+                        .acquire_owned()
+                        .await
+                        .map_err(|_| ());
+                }
+            }
+        }
     }
 }

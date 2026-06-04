@@ -13,11 +13,12 @@ use tower_http::{
 
 use crate::{
     auth::AuthService,
-    bot::active_recordings::ActiveRecordings,
+    bot::{active_recordings::ActiveRecordings, recording_tasks::RecordingTasks},
     calendar::CalendarService,
     config::{Config, GrpcConfig},
     meeting::MeetingService,
     recording::RecordingService,
+    shutdown::AppShutdown,
     storage::RecordingsStore,
 };
 
@@ -35,6 +36,8 @@ pub struct GrpcState {
     pub recordings: Arc<RecordingsStore>,
     pub chrome_sessions: Arc<Semaphore>,
     pub active_recordings: Arc<ActiveRecordings>,
+    pub recording_tasks: Arc<RecordingTasks>,
+    pub shutdown: Arc<AppShutdown>,
 }
 
 pub async fn serve(
@@ -65,6 +68,8 @@ pub async fn serve(
             Arc::clone(&state.config),
             Arc::clone(&state.chrome_sessions),
             Arc::clone(&state.active_recordings),
+            Arc::clone(&state.recording_tasks),
+            Arc::clone(&state.shutdown),
         ),
     };
 
@@ -109,6 +114,8 @@ pub async fn serve(
             },
         );
 
+    let shutdown = Arc::clone(&state.shutdown);
+
     tracing::info!(%addr, "gRPC server listening (grpc-web enabled)");
 
     Server::builder()
@@ -129,7 +136,12 @@ pub async fn serve(
                 recording_service,
             ),
         ))
-        .serve_with_incoming(TcpListenerStream::new(listener))
+        .serve_with_incoming_shutdown(
+            TcpListenerStream::new(listener),
+            async move {
+                shutdown.wait_server_stop().await;
+            },
+        )
         .await?;
 
     Ok(())

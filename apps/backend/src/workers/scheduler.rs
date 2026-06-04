@@ -7,10 +7,11 @@ use sqlx::SqlitePool;
 use tokio::sync::Semaphore;
 
 use crate::{
-    bot::active_recordings::ActiveRecordings,
+    bot::{active_recordings::ActiveRecordings, recording_tasks::RecordingTasks},
     config::Config,
     db::{BotRunStatus, bot_runs},
     meet_url::MeetUrl,
+    shutdown::AppShutdown,
     storage::RecordingsStore,
 };
 
@@ -22,22 +23,41 @@ pub fn spawn(
     chrome_sessions: Arc<Semaphore>,
     recordings: Arc<RecordingsStore>,
     active_recordings: Arc<ActiveRecordings>,
+    recording_tasks: Arc<RecordingTasks>,
+    shutdown: Arc<AppShutdown>,
 ) {
     let poll_secs = config.bot.scheduler_poll_interval_secs.max(1);
+    let mut cancelled = shutdown.cancelled();
     tokio::spawn(async move {
         loop {
+            if *cancelled.borrow() {
+                tracing::info!("scheduler stopped for shutdown");
+                break;
+            }
+
             if let Err(error) = run_tick(
                 &config,
                 &db,
                 &chrome_sessions,
                 &recordings,
                 &active_recordings,
+                &recording_tasks,
+                &shutdown,
             )
             .await
             {
                 tracing::error!(%error, "scheduler tick failed");
             }
-            tokio::time::sleep(Duration::from_secs(poll_secs)).await;
+
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_secs(poll_secs)) => {}
+                changed = cancelled.changed() => {
+                    if changed.is_ok() && *cancelled.borrow() {
+                        tracing::info!("scheduler stopped for shutdown");
+                        break;
+                    }
+                }
+            }
         }
     });
 }
@@ -48,12 +68,22 @@ async fn run_tick(
     chrome_sessions: &Arc<Semaphore>,
     recordings: &Arc<RecordingsStore>,
     active_recordings: &Arc<ActiveRecordings>,
+    recording_tasks: &Arc<RecordingTasks>,
+    shutdown: &Arc<AppShutdown>,
 ) -> anyhow::Result<()> {
+    if shutdown.is_cancelled() {
+        return Ok(());
+    }
+
     let now = chrono::Utc::now().timestamp();
     let lead = config.bot.join_lead_time_secs as i64;
     let meetings = bot_runs::list_eligible_meetings(db, now, lead).await?;
 
     for meeting in meetings {
+        if shutdown.is_cancelled() {
+            break;
+        }
+
         let trigger_after = meeting.start_at.saturating_sub(lead);
         let Some(run_id) =
             bot_runs::try_claim_run(db, &meeting.id, meeting.start_at, trigger_after).await?
@@ -94,9 +124,21 @@ async fn run_tick(
         let sem = chrome_sessions.clone();
         let store = Arc::clone(recordings);
         let active = Arc::clone(active_recordings);
+        let shutdown_task = Arc::clone(shutdown);
 
-        tokio::spawn(async move {
-            bot_runner::run_claimed(cfg, pool, sem, store, active, run_id, meet_url, end_at).await;
+        recording_tasks.spawn(async move {
+            bot_runner::run_claimed(
+                cfg,
+                pool,
+                sem,
+                store,
+                active,
+                shutdown_task,
+                run_id,
+                meet_url,
+                end_at,
+            )
+            .await;
         });
     }
 

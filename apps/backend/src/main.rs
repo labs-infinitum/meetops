@@ -15,9 +15,13 @@ mod logging;
 mod meet_url;
 mod meeting;
 mod recording;
+mod shutdown;
 mod storage;
 mod web;
 mod workers;
+
+use bot::recording_tasks::{self, RecordingTasks};
+use shutdown::AppShutdown;
 
 use config::Config;
 use storage::RecordingsStore;
@@ -66,12 +70,16 @@ async fn main() -> anyhow::Result<()> {
 
     let chrome_sessions = Arc::new(tokio::sync::Semaphore::new(1));
     let active_recordings = Arc::new(bot::active_recordings::ActiveRecordings::default());
+    let recording_tasks = Arc::new(RecordingTasks::default());
+    let app_shutdown = AppShutdown::new();
     workers::scheduler::spawn(
         Arc::clone(&config),
         pool.clone(),
         Arc::clone(&chrome_sessions),
         Arc::clone(&recordings),
         Arc::clone(&active_recordings),
+        Arc::clone(&recording_tasks),
+        Arc::clone(&app_shutdown),
     );
 
     let auth_service = auth::AuthService::new(pool.clone(), Arc::new(config.auth.clone()));
@@ -101,8 +109,10 @@ async fn main() -> anyhow::Result<()> {
         recordings: Arc::clone(&recordings),
         chrome_sessions: Arc::clone(&chrome_sessions),
         active_recordings: Arc::clone(&active_recordings),
+        recording_tasks: Arc::clone(&recording_tasks),
+        shutdown: Arc::clone(&app_shutdown),
     };
-    tokio::spawn(async move {
+    let grpc_handle = tokio::spawn(async move {
         if let Err(error) = grpc::serve(grpc_listener, grpc_config, grpc_state).await {
             tracing::error!(%error, "gRPC server exited with error");
         }
@@ -116,10 +126,28 @@ async fn main() -> anyhow::Result<()> {
     };
     let app = web::router(state);
 
+    let app_shutdown_http = Arc::clone(&app_shutdown);
     tracing::info!(%http_addr, "HTTP server listening (health + OAuth callback)");
     axum::serve(http_listener, app)
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(async move {
+            shutdown_signal().await;
+            app_shutdown_http.request_server_stop();
+        })
         .await?;
+
+    if let Err(error) = grpc_handle.await {
+        tracing::error!(%error, "gRPC server task failed");
+    }
+
+    tracing::info!("servers stopped; draining in-flight recordings");
+    app_shutdown.trigger_recordings();
+    let stopped = active_recordings.request_stop_all();
+    if stopped > 0 {
+        tracing::info!(stopped, "requested stop for active recordings");
+    }
+    recording_tasks
+        .drain(recording_tasks::DRAIN_TIMEOUT)
+        .await;
 
     Ok(())
 }

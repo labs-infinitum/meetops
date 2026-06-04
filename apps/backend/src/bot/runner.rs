@@ -8,6 +8,7 @@ use crate::{
     bot::{chromium, recorder, x11_display},
     config::Config,
     meet_url::MeetUrl,
+    shutdown::AppShutdown,
     storage::RecordingsStore,
 };
 
@@ -59,6 +60,7 @@ pub async fn record_until_meeting_end<Fut>(
     pool: &SqlitePool,
     run_id: i64,
     stop_rx: watch::Receiver<bool>,
+    shutdown: &AppShutdown,
     after_joined: Fut,
 ) -> anyhow::Result<PathBuf>
 where
@@ -72,6 +74,7 @@ where
         pool,
         run_id,
         stop_rx,
+        shutdown,
         after_joined,
     )
     .await

@@ -6,10 +6,11 @@ use tokio::sync::Semaphore;
 
 use crate::{
     auth::{AuthError, AuthService},
-    bot::active_recordings::ActiveRecordings,
+    bot::{active_recordings::ActiveRecordings, recording_tasks::RecordingTasks},
     config::Config,
     db::{self, bot_runs::BotRunListItem},
     meet_url::{InvalidMeetUrl, MeetUrl},
+    shutdown::AppShutdown,
     storage::RecordingsStore,
     workers::bot_runner,
 };
@@ -24,6 +25,8 @@ pub enum RecordingServiceError {
     NotAvailable,
     #[error("invalid Google Meet URL")]
     InvalidMeetUrl,
+    #[error("server is shutting down")]
+    ShuttingDown,
     #[error("bot is busy recording another meeting")]
     BotBusy,
     #[error("recording is not active")]
@@ -60,6 +63,7 @@ impl RecordingServiceError {
             Self::NotFound => "not_found",
             Self::NotAvailable => "not_available",
             Self::InvalidMeetUrl => "invalid_meet_url",
+            Self::ShuttingDown => "shutting_down",
             Self::BotBusy => "bot_busy",
             Self::NotActive => "not_active",
             Self::Internal(_) => "internal_error",
@@ -75,6 +79,8 @@ pub struct RecordingService {
     config: Arc<Config>,
     chrome_sessions: Arc<Semaphore>,
     active_recordings: Arc<ActiveRecordings>,
+    recording_tasks: Arc<RecordingTasks>,
+    shutdown: Arc<AppShutdown>,
 }
 
 impl RecordingService {
@@ -85,6 +91,8 @@ impl RecordingService {
         config: Arc<Config>,
         chrome_sessions: Arc<Semaphore>,
         active_recordings: Arc<ActiveRecordings>,
+        recording_tasks: Arc<RecordingTasks>,
+        shutdown: Arc<AppShutdown>,
     ) -> Self {
         Self {
             db,
@@ -93,6 +101,8 @@ impl RecordingService {
             config,
             chrome_sessions,
             active_recordings,
+            recording_tasks,
+            shutdown,
         }
     }
 
@@ -167,6 +177,10 @@ impl RecordingService {
         meet_url_raw: &str,
     ) -> Result<BotRunListItem, RecordingServiceError> {
         let user_id = self.auth.require_user_id(token).await?;
+        if self.shutdown.is_cancelled() {
+            return Err(RecordingServiceError::ShuttingDown);
+        }
+
         let meet_url = MeetUrl::parse(meet_url_raw)?;
         let title = meet_url.ad_hoc_title();
         let now = db::now_unix();
@@ -208,11 +222,15 @@ impl RecordingService {
         let pool = self.db.clone();
         let recordings = Arc::clone(&self.store);
         let active = Arc::clone(&self.active_recordings);
+        let shutdown = Arc::clone(&self.shutdown);
         let url = meet_url.clone();
+        let tasks = Arc::clone(&self.recording_tasks);
 
-        tokio::spawn(async move {
-            bot_runner::run_with_permit(permit, cfg, pool, recordings, active, run_id, url, end_at)
-                .await;
+        tasks.spawn(async move {
+            bot_runner::run_with_permit(
+                permit, cfg, pool, recordings, active, shutdown, run_id, url, end_at,
+            )
+            .await;
         });
 
         Ok(run)
