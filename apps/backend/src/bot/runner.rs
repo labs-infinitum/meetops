@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use chrono::Utc;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use tokio::sync::watch;
 
 use crate::{
@@ -57,7 +57,7 @@ pub async fn record_until_meeting_end<Fut>(
     end_at_unix: i64,
     config: &Config,
     recording_dir: PathBuf,
-    pool: &SqlitePool,
+    pool: &DbPool,
     run_id: i64,
     stop_rx: watch::Receiver<bool>,
     shutdown: &AppShutdown,

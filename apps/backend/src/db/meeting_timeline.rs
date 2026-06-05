@@ -1,10 +1,10 @@
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 use super::models::{MeetingTimelineEvent, NewMeetingTimelineEvent};
 use super::now_unix;
 
 pub async fn insert_many(
-    pool: &SqlitePool,
+    pool: &DbPool,
     bot_run_id: i64,
     events: &[NewMeetingTimelineEvent],
 ) -> sqlx::Result<()> {
@@ -20,7 +20,7 @@ pub async fn insert_many(
             INSERT INTO meeting_timeline_events (
                 bot_run_id, event_type, occurred_at, relative_ms,
                 participant_id, participant_name, payload_json, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             "#,
         )
         .bind(bot_run_id)
@@ -38,7 +38,7 @@ pub async fn insert_many(
 }
 
 pub async fn list_for_user_run(
-    pool: &SqlitePool,
+    pool: &DbPool,
     user_id: &str,
     bot_run_id: i64,
     limit: i64,
@@ -58,21 +58,19 @@ pub async fn list_for_user_run(
         FROM meeting_timeline_events e
         JOIN bot_runs br ON br.id = e.bot_run_id
         JOIN meetings m ON m.id = br.meeting_id
-        WHERE e.bot_run_id = ?
+        WHERE e.bot_run_id = $1
           AND (
-            br.user_id = ?
-            OR m.user_id = ?
+            br.user_id = $2
+            OR m.user_id = $2
             OR m.calendar_connection_id IN (
-                SELECT id FROM calendar_connections WHERE user_id = ?
+                SELECT id FROM calendar_connections WHERE user_id = $2
             )
           )
         ORDER BY e.occurred_at ASC, e.id ASC
-        LIMIT ?
+        LIMIT $3
         "#,
     )
     .bind(bot_run_id)
-    .bind(user_id)
-    .bind(user_id)
     .bind(user_id)
     .bind(limit)
     .fetch_all(pool)

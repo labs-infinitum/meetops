@@ -1,4 +1,22 @@
 services:
+  postgres:
+    image: postgres:16
+    container_name: notetaker-postgres
+    environment:
+      POSTGRES_USER: notetaker
+      POSTGRES_PASSWORD: notetaker
+      POSTGRES_DB: notetaker
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notetaker -d notetaker"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   backend:
     platform: linux/amd64
     build:
@@ -18,6 +36,10 @@ services:
       GMR_GRPC__ALLOW_ORIGIN: ${PUBLIC_FRONTEND_URL:-http://localhost:3000}
       GMR_GOOGLE__REDIRECT_URI: ${PUBLIC_OAUTH_CALLBACK_URL:-http://localhost:8080/auth/google/callback}
       GMR_GOOGLE__FRONTEND_REDIRECT_URL: ${PUBLIC_FRONTEND_URL:-http://localhost:3000}/app/calendars
+      DATABASE_URL: ${DATABASE_URL:-postgres://notetaker:notetaker@postgres:5432/notetaker}
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "${BACKEND_HTTP_PORT:-8080}:8080"
     volumes:
@@ -65,3 +87,6 @@ services:
     shm_size: "2gb"
     stdin_open: true
     tty: true
+
+volumes:
+  postgres_data:

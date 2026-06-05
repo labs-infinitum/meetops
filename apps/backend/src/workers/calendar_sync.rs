@@ -1,11 +1,11 @@
 use std::{sync::Arc, time::Duration};
 
 use reqwest::Client;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 use crate::{config::Config, google};
 
-pub fn spawn(config: Arc<Config>, db: SqlitePool, http: Client) {
+pub fn spawn(config: Arc<Config>, db: DbPool, http: Client) {
     tokio::spawn(async move {
         run_once(&config, &db, &http).await;
 
@@ -19,7 +19,7 @@ pub fn spawn(config: Arc<Config>, db: SqlitePool, http: Client) {
     });
 }
 
-async fn run_once(config: &Config, db: &SqlitePool, http: &Client) {
+async fn run_once(config: &Config, db: &DbPool, http: &Client) {
     match google::calendar::sync_upcoming_events(db, http, config).await {
         Ok(stats) => tracing::info!(
             seen = stats.seen,

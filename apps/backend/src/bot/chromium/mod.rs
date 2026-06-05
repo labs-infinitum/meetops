@@ -12,7 +12,7 @@ use chromiumoxide::cdp::js_protocol::runtime::{AddBindingParams, EventBindingCal
 use chromiumoxide::{Browser, BrowserConfig, Page};
 use futures::StreamExt;
 use serde::Deserialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tokio::task::JoinHandle;
@@ -769,7 +769,7 @@ pub async fn start_tab_recording(
     page: &Page,
     raw_webm_path: impl AsRef<Path>,
     audio_webm_path: impl AsRef<Path>,
-    timeline_sink: Option<(SqlitePool, i64)>,
+    timeline_sink: Option<(DbPool, i64)>,
     linux_xdotool_display: Option<String>,
     tab_capture_screenshot_dir: PathBuf,
     tab_capture_png: PathBuf,
@@ -1256,7 +1256,7 @@ async fn install_recording_binding(
     page: &Page,
     raw_webm_path: &Path,
     audio_webm_path: &Path,
-    timeline_sink: Option<(SqlitePool, i64)>,
+    timeline_sink: Option<(DbPool, i64)>,
 ) -> anyhow::Result<BrowserRecording> {
     let mut listener = page.event_listener::<EventBindingCalled>().await?;
     page.execute(AddBindingParams::new(RECORDING_CHUNK_BINDING))

@@ -1,7 +1,7 @@
 use chrono::{DateTime, Duration, Utc};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 use crate::{
     config::Config,
@@ -99,7 +99,7 @@ struct EventDateTime {
 }
 
 pub async fn sync_upcoming_events(
-    pool: &SqlitePool,
+    pool: &DbPool,
     http: &Client,
     config: &Config,
 ) -> Result<SyncStats, CalendarError> {
@@ -125,7 +125,7 @@ pub async fn sync_upcoming_events(
 }
 
 pub async fn sync_connection(
-    pool: &SqlitePool,
+    pool: &DbPool,
     http: &Client,
     config: &Config,
     connection: &CalendarConnectionRow,
@@ -160,7 +160,7 @@ pub async fn sync_connection(
 }
 
 async fn sync_with_token(
-    pool: &SqlitePool,
+    pool: &DbPool,
     http: &Client,
     connection: &CalendarConnectionRow,
     access_token: &str,
@@ -250,7 +250,7 @@ fn meeting_id(connection_id: &str, google_event_id: &str) -> String {
 }
 
 async fn upsert_meeting(
-    pool: &SqlitePool,
+    pool: &DbPool,
     connection: &CalendarConnectionRow,
     event: &GoogleEvent,
     meet_url: &MeetUrl,
@@ -274,7 +274,7 @@ async fn upsert_meeting(
             attendees_json, calendar_etag, auto_join, user_id, calendar_connection_id,
             google_event_id, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, $9, $10, $11, $12, $12)
         ON CONFLICT(id) DO UPDATE SET
             title = excluded.title,
             description = excluded.description,
@@ -313,12 +313,12 @@ async fn upsert_meeting(
 }
 
 async fn delete_meeting(
-    pool: &SqlitePool,
+    pool: &DbPool,
     connection: &CalendarConnectionRow,
     google_event_id: &str,
 ) -> Result<usize, sqlx::Error> {
     let id = meeting_id(&connection.id, google_event_id);
-    let result = sqlx::query("DELETE FROM meetings WHERE id = ?")
+    let result = sqlx::query("DELETE FROM meetings WHERE id = $1")
         .bind(id)
         .execute(pool)
         .await?;

@@ -10,7 +10,7 @@ use axum::{
 };
 use reqwest::Client;
 use serde::Deserialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use tower_http::trace::TraceLayer;
 
 use crate::{
@@ -21,7 +21,7 @@ use crate::{
 #[derive(Clone)]
 pub struct AppState {
     pub config: Arc<Config>,
-    pub db: SqlitePool,
+    pub db: DbPool,
     pub http: Client,
     pub auth: AuthService,
 }

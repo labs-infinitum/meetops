@@ -1,4 +1,4 @@
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use thiserror::Error;
 
 use crate::{
@@ -43,7 +43,7 @@ impl MeetingError {
 
 #[derive(Clone)]
 pub struct MeetingService {
-    db: SqlitePool,
+    db: DbPool,
     auth: AuthService,
 }
 
@@ -56,7 +56,7 @@ pub struct DashboardSummary {
 }
 
 impl MeetingService {
-    pub fn new(db: SqlitePool, auth: AuthService) -> Self {
+    pub fn new(db: DbPool, auth: AuthService) -> Self {
         Self { db, auth }
     }
 

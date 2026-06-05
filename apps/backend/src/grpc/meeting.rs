@@ -122,7 +122,7 @@ fn to_proto_meeting(row: &crate::db::meetings::MeetingRow) -> Meeting {
         meet_url: row.meet_url.clone(),
         start_at: row.start_at,
         end_at: row.end_at,
-        auto_record: row.auto_join != 0,
+        auto_record: row.auto_join,
         calendar_id,
         calendar_label,
         attendees,

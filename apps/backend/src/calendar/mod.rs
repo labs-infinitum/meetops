@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use reqwest::Client;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use thiserror::Error;
 
 use crate::{
@@ -99,14 +99,14 @@ impl CalendarConnectError {
 
 #[derive(Clone)]
 pub struct CalendarService {
-    db: SqlitePool,
+    db: DbPool,
     http: Client,
     config: Arc<Config>,
     auth: AuthService,
 }
 
 impl CalendarService {
-    pub fn new(db: SqlitePool, http: Client, config: Arc<Config>, auth: AuthService) -> Self {
+    pub fn new(db: DbPool, http: Client, config: Arc<Config>, auth: AuthService) -> Self {
         Self {
             db,
             http,

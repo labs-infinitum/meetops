@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use tokio::sync::watch;
 use tokio::time::{Duration, Instant};
 
@@ -40,7 +40,7 @@ pub async fn record_scheduled<Fut>(
     config: &Config,
     recording_dir: PathBuf,
     end_at_unix: i64,
-    pool: &SqlitePool,
+    pool: &DbPool,
     run_id: i64,
     stop_rx: watch::Receiver<bool>,
     shutdown: &AppShutdown,
@@ -80,7 +80,7 @@ async fn record_inner<Fut>(
     config: &Config,
     recording_dir: PathBuf,
     stop: RecordStop,
-    scheduled: Option<(&SqlitePool, i64)>,
+    scheduled: Option<(&DbPool, i64)>,
     mut stop_rx: watch::Receiver<bool>,
     shutdown: Option<&AppShutdown>,
     after_joined: Fut,

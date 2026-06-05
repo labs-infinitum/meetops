@@ -1,6 +1,6 @@
 //! Scheduled auto-record runs and UI lifecycle.
 
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 use super::now_unix;
 
@@ -8,7 +8,7 @@ pub use super::models::{BotRunListItem, BotRunStatus, EligibleMeeting};
 
 /// Meetings that should auto-record: inside the trigger window, no `bot_runs` row yet for this occurrence.
 pub async fn list_eligible_meetings(
-    pool: &SqlitePool,
+    pool: &DbPool,
     now: i64,
     join_lead_secs: i64,
 ) -> sqlx::Result<Vec<EligibleMeeting>> {
@@ -16,9 +16,9 @@ pub async fn list_eligible_meetings(
         r#"
         SELECT m.id, m.meet_url, m.start_at, m.end_at
         FROM meetings m
-        WHERE m.auto_join = 1
-          AND (m.start_at - ?) <= ?
-          AND m.end_at > ?
+        WHERE m.auto_join
+          AND (m.start_at - $1) <= $2
+          AND m.end_at > $2
           AND NOT EXISTS (
             SELECT 1
             FROM bot_runs b
@@ -29,14 +29,13 @@ pub async fn list_eligible_meetings(
     )
     .bind(join_lead_secs)
     .bind(now)
-    .bind(now)
     .fetch_all(pool)
     .await
 }
 
 /// Returns the new row id if this worker claimed the run, or `None` if another tick already did.
 pub async fn try_claim_run(
-    pool: &SqlitePool,
+    pool: &DbPool,
     meeting_id: &str,
     meeting_start_at: i64,
     trigger_after: i64,
@@ -44,20 +43,20 @@ pub async fn try_claim_run(
     let now = now_unix();
     let result = sqlx::query(
         r#"
-        INSERT OR IGNORE INTO bot_runs (
+        INSERT INTO bot_runs (
             meeting_id, meeting_start_at, status, error, trigger_after,
             started_at, ended_at, user_id, created_at, updated_at
         )
-        SELECT ?, ?, ?, NULL, ?, NULL, NULL, m.user_id, ?, ?
+        SELECT $1, $2, $3, NULL, $4, NULL, NULL, m.user_id, $5, $5
         FROM meetings m
-        WHERE m.id = ? AND m.user_id IS NOT NULL
+        WHERE m.id = $6 AND m.user_id IS NOT NULL
+        ON CONFLICT (meeting_id, meeting_start_at) DO NOTHING
         "#,
     )
     .bind(meeting_id)
     .bind(meeting_start_at)
     .bind(BotRunStatus::Queued.as_str())
     .bind(trigger_after)
-    .bind(now)
     .bind(now)
     .bind(meeting_id)
     .execute(pool)
@@ -70,7 +69,7 @@ pub async fn try_claim_run(
     let id = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT id FROM bot_runs
-        WHERE meeting_id = ? AND meeting_start_at = ?
+        WHERE meeting_id = $1 AND meeting_start_at = $2
         "#,
     )
     .bind(meeting_id)
@@ -82,7 +81,7 @@ pub async fn try_claim_run(
 }
 
 pub async fn create_ad_hoc_run(
-    pool: &SqlitePool,
+    pool: &DbPool,
     user_id: &str,
     meet_url: &str,
     title: &str,
@@ -101,7 +100,7 @@ pub async fn create_ad_hoc_run(
         INSERT INTO meetings (
             id, title, meet_url, start_at, end_at, auto_join,
             user_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)
+        ) VALUES ($1, $2, $3, $4, $5, FALSE, $6, $7, $7)
         "#,
     )
     .bind(&meeting_id)
@@ -111,16 +110,16 @@ pub async fn create_ad_hoc_run(
     .bind(end_at)
     .bind(user_id)
     .bind(now)
-    .bind(now)
     .execute(&mut *tx)
     .await?;
 
-    let result = sqlx::query(
+    let run_id = sqlx::query_scalar::<_, i64>(
         r#"
         INSERT INTO bot_runs (
             meeting_id, meeting_start_at, status, error, trigger_after,
             started_at, ended_at, user_id, created_at, updated_at
-        ) VALUES (?, ?, ?, NULL, ?, NULL, NULL, ?, ?, ?)
+        ) VALUES ($1, $2, $3, NULL, $4, NULL, NULL, $5, $6, $6)
+        RETURNING id
         "#,
     )
     .bind(&meeting_id)
@@ -129,26 +128,24 @@ pub async fn create_ad_hoc_run(
     .bind(start_at)
     .bind(user_id)
     .bind(now)
-    .bind(now)
-    .execute(&mut *tx)
+    .fetch_one(&mut *tx)
     .await?;
 
     tx.commit().await?;
 
-    Ok(result.last_insert_rowid())
+    Ok(run_id)
 }
 
-pub async fn mark_joining(pool: &SqlitePool, run_id: i64) -> sqlx::Result<()> {
+pub async fn mark_joining(pool: &DbPool, run_id: i64) -> sqlx::Result<()> {
     let now = now_unix();
     sqlx::query(
         r#"
         UPDATE bot_runs
-        SET status = ?, started_at = ?, updated_at = ?
-        WHERE id = ?
+        SET status = $1, started_at = $2, updated_at = $2
+        WHERE id = $3
         "#,
     )
     .bind(BotRunStatus::Joining.as_str())
-    .bind(now)
     .bind(now)
     .bind(run_id)
     .execute(pool)
@@ -156,13 +153,13 @@ pub async fn mark_joining(pool: &SqlitePool, run_id: i64) -> sqlx::Result<()> {
     Ok(())
 }
 
-pub async fn mark_in_meeting(pool: &SqlitePool, run_id: i64) -> sqlx::Result<()> {
+pub async fn mark_in_meeting(pool: &DbPool, run_id: i64) -> sqlx::Result<()> {
     let now = now_unix();
     sqlx::query(
         r#"
         UPDATE bot_runs
-        SET status = ?, updated_at = ?
-        WHERE id = ?
+        SET status = $1, updated_at = $2
+        WHERE id = $3
         "#,
     )
     .bind(BotRunStatus::InMeeting.as_str())
@@ -173,13 +170,13 @@ pub async fn mark_in_meeting(pool: &SqlitePool, run_id: i64) -> sqlx::Result<()>
     Ok(())
 }
 
-pub async fn mark_recording(pool: &SqlitePool, run_id: i64) -> sqlx::Result<()> {
+pub async fn mark_recording(pool: &DbPool, run_id: i64) -> sqlx::Result<()> {
     let now = now_unix();
     sqlx::query(
         r#"
         UPDATE bot_runs
-        SET status = ?, updated_at = ?
-        WHERE id = ?
+        SET status = $1, updated_at = $2
+        WHERE id = $3
         "#,
     )
     .bind(BotRunStatus::Recording.as_str())
@@ -190,15 +187,15 @@ pub async fn mark_recording(pool: &SqlitePool, run_id: i64) -> sqlx::Result<()> 
     Ok(())
 }
 
-pub async fn get_user_id(pool: &SqlitePool, run_id: i64) -> sqlx::Result<Option<String>> {
-    sqlx::query_scalar("SELECT user_id FROM bot_runs WHERE id = ?")
+pub async fn get_user_id(pool: &DbPool, run_id: i64) -> sqlx::Result<Option<String>> {
+    sqlx::query_scalar("SELECT user_id FROM bot_runs WHERE id = $1")
         .bind(run_id)
         .fetch_optional(pool)
         .await
 }
 
 pub async fn finalize_run(
-    pool: &SqlitePool,
+    pool: &DbPool,
     run_id: i64,
     status: BotRunStatus,
     error: Option<&str>,
@@ -208,13 +205,12 @@ pub async fn finalize_run(
     sqlx::query(
         r#"
         UPDATE bot_runs
-        SET status = ?, error = ?, ended_at = ?, updated_at = ?, recording_path = ?
-        WHERE id = ?
+        SET status = $1, error = $2, ended_at = $3, updated_at = $3, recording_path = $4
+        WHERE id = $5
         "#,
     )
     .bind(status.as_str())
     .bind(error)
-    .bind(now)
     .bind(now)
     .bind(recording_path)
     .bind(run_id)
@@ -224,7 +220,7 @@ pub async fn finalize_run(
 }
 
 pub async fn list_recent_for_user(
-    pool: &SqlitePool,
+    pool: &DbPool,
     user_id: &str,
     limit: i64,
 ) -> sqlx::Result<Vec<BotRunListItem>> {
@@ -243,24 +239,22 @@ pub async fn list_recent_for_user(
             br.recording_path
         FROM bot_runs br
         JOIN meetings m ON m.id = br.meeting_id
-        WHERE br.user_id = ?
-           OR m.user_id = ?
+        WHERE br.user_id = $1
+           OR m.user_id = $1
            OR m.calendar_connection_id IN (
-               SELECT id FROM calendar_connections WHERE user_id = ?
+               SELECT id FROM calendar_connections WHERE user_id = $1
            )
         ORDER BY br.created_at DESC
-        LIMIT ?
+        LIMIT $2
         "#,
     )
-    .bind(user_id)
-    .bind(user_id)
     .bind(user_id)
     .bind(limit)
     .fetch_all(pool)
     .await
 }
 
-pub async fn count_completed_for_user(pool: &SqlitePool, user_id: &str) -> sqlx::Result<i64> {
+pub async fn count_completed_for_user(pool: &DbPool, user_id: &str) -> sqlx::Result<i64> {
     sqlx::query_scalar(
         r#"
         SELECT COUNT(*)
@@ -268,23 +262,21 @@ pub async fn count_completed_for_user(pool: &SqlitePool, user_id: &str) -> sqlx:
         JOIN meetings m ON m.id = br.meeting_id
         WHERE br.status = 'completed'
           AND (
-            br.user_id = ?
-            OR m.user_id = ?
+            br.user_id = $1
+            OR m.user_id = $1
             OR m.calendar_connection_id IN (
-                SELECT id FROM calendar_connections WHERE user_id = ?
+                SELECT id FROM calendar_connections WHERE user_id = $1
             )
           )
         "#,
     )
-    .bind(user_id)
-    .bind(user_id)
     .bind(user_id)
     .fetch_one(pool)
     .await
 }
 
 pub async fn get_for_user(
-    pool: &SqlitePool,
+    pool: &DbPool,
     user_id: &str,
     run_id: i64,
 ) -> sqlx::Result<Option<BotRunListItem>> {
@@ -303,19 +295,17 @@ pub async fn get_for_user(
             br.recording_path
         FROM bot_runs br
         JOIN meetings m ON m.id = br.meeting_id
-        WHERE br.id = ?
+        WHERE br.id = $1
           AND (
-            br.user_id = ?
-            OR m.user_id = ?
+            br.user_id = $2
+            OR m.user_id = $2
             OR m.calendar_connection_id IN (
-                SELECT id FROM calendar_connections WHERE user_id = ?
+                SELECT id FROM calendar_connections WHERE user_id = $2
             )
           )
         "#,
     )
     .bind(run_id)
-    .bind(user_id)
-    .bind(user_id)
     .bind(user_id)
     .fetch_optional(pool)
     .await

@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::{
@@ -16,7 +16,7 @@ use crate::{
 
 pub async fn run_claimed(
     config: Arc<Config>,
-    pool: SqlitePool,
+    pool: DbPool,
     chrome_sessions: Arc<Semaphore>,
     recordings: Arc<RecordingsStore>,
     active_recordings: Arc<ActiveRecordings>,
@@ -57,7 +57,7 @@ pub async fn run_claimed(
 pub async fn run_with_permit(
     permit: OwnedSemaphorePermit,
     config: Arc<Config>,
-    pool: SqlitePool,
+    pool: DbPool,
     recordings: Arc<RecordingsStore>,
     active_recordings: Arc<ActiveRecordings>,
     shutdown: Arc<AppShutdown>,
@@ -152,7 +152,7 @@ pub async fn run_with_permit(
 
 async fn run_with_permit_inner(
     config: &Arc<Config>,
-    pool: &SqlitePool,
+    pool: &DbPool,
     recordings: &Arc<RecordingsStore>,
     run_id: i64,
     meet_url: MeetUrl,
@@ -192,7 +192,7 @@ async fn run_with_permit_inner(
     .await
 }
 
-async fn require_user_id(pool: &SqlitePool, run_id: i64) -> anyhow::Result<String> {
+async fn require_user_id(pool: &DbPool, run_id: i64) -> anyhow::Result<String> {
     let user_id = bot_runs::get_user_id(pool, run_id)
         .await
         .map_err(|error| anyhow::anyhow!("failed to load user_id for bot run {run_id}: {error}"))?;
@@ -200,7 +200,7 @@ async fn require_user_id(pool: &SqlitePool, run_id: i64) -> anyhow::Result<Strin
 }
 
 async fn finalize_run_logged(
-    pool: &SqlitePool,
+    pool: &DbPool,
     run_id: i64,
     status: BotRunStatus,
     error: Option<&str>,

@@ -1,4 +1,4 @@
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 use super::now_unix;
 
@@ -9,27 +9,15 @@ pub struct MeetingRow {
     pub meet_url: String,
     pub start_at: i64,
     pub end_at: i64,
-    pub auto_join: i64,
+    pub auto_join: bool,
     pub calendar_connection_id: Option<String>,
     pub description: Option<String>,
     pub attendees_json: Option<String>,
     pub calendar_label: Option<String>,
 }
 
-fn user_meetings_filter() -> &'static str {
-    r#"
-    (
-        m.user_id = ?
-        OR m.calendar_connection_id IN (
-            SELECT id FROM calendar_connections WHERE user_id = ?
-        )
-    )
-    "#
-}
-
-pub async fn list_for_user(pool: &SqlitePool, user_id: &str) -> sqlx::Result<Vec<MeetingRow>> {
-    let filter = user_meetings_filter();
-    let query = format!(
+pub async fn list_for_user(pool: &DbPool, user_id: &str) -> sqlx::Result<Vec<MeetingRow>> {
+    sqlx::query_as(
         r#"
         SELECT
             m.id,
@@ -44,24 +32,26 @@ pub async fn list_for_user(pool: &SqlitePool, user_id: &str) -> sqlx::Result<Vec
             cc.label AS calendar_label
         FROM meetings m
         LEFT JOIN calendar_connections cc ON cc.id = m.calendar_connection_id
-        WHERE {filter}
+        WHERE (
+            m.user_id = $1
+            OR m.calendar_connection_id IN (
+                SELECT id FROM calendar_connections WHERE user_id = $1
+            )
+        )
         ORDER BY m.start_at ASC
-        "#
-    );
-    sqlx::query_as(&query)
-        .bind(user_id)
-        .bind(user_id)
-        .fetch_all(pool)
-        .await
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
 }
 
 pub async fn get_for_user(
-    pool: &SqlitePool,
+    pool: &DbPool,
     user_id: &str,
     meeting_id: &str,
 ) -> sqlx::Result<Option<MeetingRow>> {
-    let filter = user_meetings_filter();
-    let query = format!(
+    sqlx::query_as(
         r#"
         SELECT
             m.id,
@@ -76,66 +66,74 @@ pub async fn get_for_user(
             cc.label AS calendar_label
         FROM meetings m
         LEFT JOIN calendar_connections cc ON cc.id = m.calendar_connection_id
-        WHERE m.id = ? AND {filter}
-        "#
-    );
-    sqlx::query_as(&query)
-        .bind(meeting_id)
-        .bind(user_id)
-        .bind(user_id)
-        .fetch_optional(pool)
-        .await
+        WHERE m.id = $1
+          AND (
+            m.user_id = $2
+            OR m.calendar_connection_id IN (
+                SELECT id FROM calendar_connections WHERE user_id = $2
+            )
+          )
+        "#,
+    )
+    .bind(meeting_id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
 }
 
 pub async fn count_upcoming_within(
-    pool: &SqlitePool,
+    pool: &DbPool,
     user_id: &str,
     now: i64,
     until: i64,
 ) -> sqlx::Result<i64> {
-    let filter = user_meetings_filter();
-    let query = format!(
+    sqlx::query_scalar(
         r#"
         SELECT COUNT(*)
         FROM meetings m
-        WHERE {filter}
-          AND m.start_at > ?
-          AND m.start_at <= ?
-        "#
-    );
-    sqlx::query_scalar(&query)
-        .bind(user_id)
-        .bind(user_id)
-        .bind(now)
-        .bind(until)
-        .fetch_one(pool)
-        .await
+        WHERE (
+            m.user_id = $1
+            OR m.calendar_connection_id IN (
+                SELECT id FROM calendar_connections WHERE user_id = $1
+            )
+        )
+          AND m.start_at > $2
+          AND m.start_at <= $3
+        "#,
+    )
+    .bind(user_id)
+    .bind(now)
+    .bind(until)
+    .fetch_one(pool)
+    .await
 }
 
 pub async fn set_auto_join_for_user(
-    pool: &SqlitePool,
+    pool: &DbPool,
     user_id: &str,
     meeting_id: &str,
     auto_join: bool,
 ) -> sqlx::Result<bool> {
     let now = now_unix();
-    let flag = if auto_join { 1 } else { 0 };
-    let filter = user_meetings_filter();
-    let query = format!(
+    let result = sqlx::query(
         r#"
         UPDATE meetings
-        SET auto_join = ?, updated_at = ?
-        WHERE id = ? AND {filter}
-        "#
-    );
-    let result = sqlx::query(&query)
-        .bind(flag)
-        .bind(now)
-        .bind(meeting_id)
-        .bind(user_id)
-        .bind(user_id)
-        .execute(pool)
-        .await?;
+        SET auto_join = $1, updated_at = $2
+        WHERE id = $3
+          AND (
+            user_id = $4
+            OR calendar_connection_id IN (
+                SELECT id FROM calendar_connections WHERE user_id = $4
+            )
+          )
+        "#,
+    )
+    .bind(auto_join)
+    .bind(now)
+    .bind(meeting_id)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
     Ok(result.rows_affected() > 0)
 }
 

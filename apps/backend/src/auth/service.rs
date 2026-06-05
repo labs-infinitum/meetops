@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::{
@@ -11,7 +11,7 @@ use crate::{
 
 #[derive(Clone)]
 pub struct AuthService {
-    db: SqlitePool,
+    db: DbPool,
     config: Arc<AuthConfig>,
 }
 
@@ -23,7 +23,7 @@ pub struct AuthSession {
 }
 
 impl AuthService {
-    pub fn new(db: SqlitePool, config: Arc<AuthConfig>) -> Self {
+    pub fn new(db: DbPool, config: Arc<AuthConfig>) -> Self {
         Self { db, config }
     }
 

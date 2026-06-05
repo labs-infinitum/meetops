@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use tokio::sync::Semaphore;
 
 use crate::{
@@ -19,7 +19,7 @@ use super::bot_runner;
 
 pub fn spawn(
     config: Arc<Config>,
-    db: SqlitePool,
+    db: DbPool,
     chrome_sessions: Arc<Semaphore>,
     recordings: Arc<RecordingsStore>,
     active_recordings: Arc<ActiveRecordings>,
@@ -64,7 +64,7 @@ pub fn spawn(
 
 async fn run_tick(
     config: &Arc<Config>,
-    db: &SqlitePool,
+    db: &DbPool,
     chrome_sessions: &Arc<Semaphore>,
     recordings: &Arc<RecordingsStore>,
     active_recordings: &Arc<ActiveRecordings>,

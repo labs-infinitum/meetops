@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use reqwest::Client;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
 use tokio_stream::wrappers::TcpListenerStream;
@@ -30,7 +30,7 @@ pub mod recording;
 #[derive(Clone)]
 pub struct GrpcState {
     pub config: Arc<Config>,
-    pub db: SqlitePool,
+    pub db: DbPool,
     pub http: Client,
     pub auth: AuthService,
     pub recordings: Arc<RecordingsStore>,

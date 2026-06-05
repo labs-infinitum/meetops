@@ -13,6 +13,8 @@ pub struct Config {
     pub auth: AuthConfig,
     pub logging: LoggingConfig,
     pub storage: StorageConfig,
+    #[serde(default)]
+    pub database: DatabaseConfig,
     pub google: GoogleConfig,
     pub bot: BotConfig,
     pub groq: GroqConfig,
@@ -104,12 +106,39 @@ impl Default for RecordingsStorageConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct DatabaseConfig {
+    /// Direct PostgreSQL URL. Required unless `secret_arn` is set.
+    #[serde(default)]
+    pub url: Option<String>,
+    /// Secrets Manager ARN for RDS-managed master credentials (used on EC2 when `url` is unset).
+    #[serde(default)]
+    pub secret_arn: Option<String>,
+    /// RDS hostname (required with `secret_arn`; AWS managed secrets only store username/password).
+    #[serde(default)]
+    pub host: Option<String>,
+    /// RDS port (defaults to 5432).
+    #[serde(default)]
+    pub port: Option<u16>,
+    /// RDS database name (required with `secret_arn`).
+    #[serde(default)]
+    pub dbname: Option<String>,
+}
+
+impl Default for DatabaseConfig {
+    fn default() -> Self {
+        Self {
+            url: None,
+            secret_arn: None,
+            host: None,
+            port: None,
+            dbname: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct StorageConfig {
     pub data_dir: PathBuf,
-    /// When true, recreate the SQLite file on legacy/corrupted migration state at startup.
-    /// Default false — run `cargo run -- db reset` manually instead.
-    #[serde(default)]
-    pub auto_migrate_reset: bool,
     /// Base64-encoded 32-byte AES-256 key for encrypting calendar OAuth tokens at rest.
     #[serde(default)]
     pub token_encryption_key: Option<String>,
@@ -200,7 +229,6 @@ impl Default for Config {
             },
             storage: StorageConfig {
                 data_dir: PathBuf::from("../../data"),
-                auto_migrate_reset: false,
                 token_encryption_key: None,
                 recordings: RecordingsStorageConfig {
                     delete_local_after_upload: true,
@@ -212,6 +240,7 @@ impl Default for Config {
                     },
                 },
             },
+            database: DatabaseConfig::default(),
             google: GoogleConfig {
                 client_id: String::new(),
                 client_secret: String::new(),
@@ -268,9 +297,10 @@ impl Config {
                 self.storage.recordings.s3.region = Some(region);
             }
         }
-    }
-
-    pub fn database_path(&self) -> PathBuf {
-        self.storage.data_dir.join("meetings.db")
+        if let Ok(url) = std::env::var("DATABASE_URL") {
+            if !url.trim().is_empty() {
+                self.database.url = Some(url);
+            }
+        }
     }
 }

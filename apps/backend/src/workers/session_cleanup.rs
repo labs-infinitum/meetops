@@ -1,12 +1,12 @@
 use std::time::Duration;
 
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 use crate::db::users;
 
 const CLEANUP_INTERVAL_SECS: u64 = 3600;
 
-pub fn spawn(db: SqlitePool) {
+pub fn spawn(db: DbPool) {
     tokio::spawn(async move {
         cleanup(&db).await;
 
@@ -17,7 +17,7 @@ pub fn spawn(db: SqlitePool) {
     });
 }
 
-async fn cleanup(db: &SqlitePool) {
+async fn cleanup(db: &DbPool) {
     match users::delete_expired_sessions(db).await {
         Ok(0) => {}
         Ok(deleted) => tracing::info!(deleted, "removed expired sessions"),

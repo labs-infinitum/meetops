@@ -17,9 +17,6 @@
     "proto:generate": {
       "cache": false,
       "outputs": ["src/gen/**"]
-    },
-    "db:reset": {
-      "cache": false
     }
   }
 }

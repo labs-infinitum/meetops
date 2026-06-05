@@ -5,7 +5,6 @@
   "scripts": {
     "dev": "cargo run",
     "build": "cargo build --release",
-    "test": "cargo test",
-    "db:reset": "cargo run -- db reset"
+    "test": "cargo test"
   }
 }

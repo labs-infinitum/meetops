@@ -1,4 +1,4 @@
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 use crate::crypto::tokens;
 
@@ -52,7 +52,7 @@ pub struct ConnectionOwner {
 }
 
 pub async fn list_for_user(
-    pool: &SqlitePool,
+    pool: &DbPool,
     user_id: &str,
 ) -> sqlx::Result<Vec<CalendarConnectionListItem>> {
     sqlx::query_as(
@@ -67,7 +67,7 @@ pub async fn list_for_user(
             COUNT(m.id) AS meeting_count
         FROM calendar_connections cc
         LEFT JOIN meetings m ON m.calendar_connection_id = cc.id
-        WHERE cc.user_id = ?
+        WHERE cc.user_id = $1
         GROUP BY cc.id
         ORDER BY cc.created_at ASC
         "#,
@@ -78,10 +78,10 @@ pub async fn list_for_user(
 }
 
 pub async fn get_by_id(
-    pool: &SqlitePool,
+    pool: &DbPool,
     connection_id: &str,
 ) -> sqlx::Result<Option<CalendarConnectionRow>> {
-    let row = sqlx::query_as("SELECT * FROM calendar_connections WHERE id = ?")
+    let row = sqlx::query_as("SELECT * FROM calendar_connections WHERE id = $1")
         .bind(connection_id)
         .fetch_optional(pool)
         .await?;
@@ -90,11 +90,11 @@ pub async fn get_by_id(
 }
 
 pub async fn get_by_id_for_user(
-    pool: &SqlitePool,
+    pool: &DbPool,
     connection_id: &str,
     user_id: &str,
 ) -> sqlx::Result<Option<CalendarConnectionRow>> {
-    let row = sqlx::query_as("SELECT * FROM calendar_connections WHERE id = ? AND user_id = ?")
+    let row = sqlx::query_as("SELECT * FROM calendar_connections WHERE id = $1 AND user_id = $2")
         .bind(connection_id)
         .bind(user_id)
         .fetch_optional(pool)
@@ -104,14 +104,14 @@ pub async fn get_by_id_for_user(
 }
 
 pub async fn find_by_provider_email(
-    pool: &SqlitePool,
+    pool: &DbPool,
     provider: &str,
     email: &str,
 ) -> sqlx::Result<Option<CalendarConnectionRow>> {
     let row = sqlx::query_as(
         r#"
         SELECT * FROM calendar_connections
-        WHERE provider = ? AND email = ? COLLATE NOCASE
+        WHERE provider = $1 AND lower(email) = lower($2)
         "#,
     )
     .bind(provider)
@@ -123,7 +123,7 @@ pub async fn find_by_provider_email(
 }
 
 pub async fn find_owner_by_provider_email(
-    pool: &SqlitePool,
+    pool: &DbPool,
     provider: &str,
     email: &str,
 ) -> sqlx::Result<Option<ConnectionOwner>> {
@@ -132,7 +132,7 @@ pub async fn find_owner_by_provider_email(
         SELECT u.name AS owner_name
         FROM calendar_connections cc
         JOIN users u ON u.id = cc.user_id
-        WHERE cc.provider = ? AND cc.email = ? COLLATE NOCASE
+        WHERE cc.provider = $1 AND lower(cc.email) = lower($2)
         "#,
     )
     .bind(provider)
@@ -141,7 +141,7 @@ pub async fn find_owner_by_provider_email(
     .await
 }
 
-pub async fn list_all_for_sync(pool: &SqlitePool) -> sqlx::Result<Vec<CalendarConnectionRow>> {
+pub async fn list_all_for_sync(pool: &DbPool) -> sqlx::Result<Vec<CalendarConnectionRow>> {
     let rows = sqlx::query_as(
         r#"
         SELECT * FROM calendar_connections
@@ -156,7 +156,7 @@ pub async fn list_all_for_sync(pool: &SqlitePool) -> sqlx::Result<Vec<CalendarCo
 }
 
 pub async fn insert(
-    pool: &SqlitePool,
+    pool: &DbPool,
     id: &str,
     user_id: &str,
     provider: &str,
@@ -178,7 +178,7 @@ pub async fn insert(
             access_token, refresh_token, expires_at, scope,
             created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
         "#,
     )
     .bind(id)
@@ -192,7 +192,6 @@ pub async fn insert(
     .bind(expires_at)
     .bind(scope)
     .bind(now)
-    .bind(now)
     .execute(pool)
     .await?;
 
@@ -200,7 +199,7 @@ pub async fn insert(
 }
 
 pub async fn update_tokens(
-    pool: &SqlitePool,
+    pool: &DbPool,
     connection_id: &str,
     access_token: &str,
     refresh_token: &str,
@@ -213,8 +212,8 @@ pub async fn update_tokens(
     sqlx::query(
         r#"
         UPDATE calendar_connections
-        SET access_token = ?, refresh_token = ?, expires_at = ?, scope = ?, updated_at = ?
-        WHERE id = ?
+        SET access_token = $1, refresh_token = $2, expires_at = $3, scope = $4, updated_at = $5
+        WHERE id = $6
         "#,
     )
     .bind(access_token)
@@ -229,7 +228,7 @@ pub async fn update_tokens(
 }
 
 pub async fn update_sync_state(
-    pool: &SqlitePool,
+    pool: &DbPool,
     connection_id: &str,
     sync_token: Option<&str>,
     last_synced_at: i64,
@@ -238,8 +237,8 @@ pub async fn update_sync_state(
     sqlx::query(
         r#"
         UPDATE calendar_connections
-        SET sync_token = ?, last_synced_at = ?, updated_at = ?
-        WHERE id = ?
+        SET sync_token = $1, last_synced_at = $2, updated_at = $3
+        WHERE id = $4
         "#,
     )
     .bind(sync_token)
@@ -251,8 +250,8 @@ pub async fn update_sync_state(
     Ok(())
 }
 
-pub async fn delete_sync_token(pool: &SqlitePool, connection_id: &str) -> sqlx::Result<()> {
-    sqlx::query("UPDATE calendar_connections SET sync_token = NULL, updated_at = ? WHERE id = ?")
+pub async fn delete_sync_token(pool: &DbPool, connection_id: &str) -> sqlx::Result<()> {
+    sqlx::query("UPDATE calendar_connections SET sync_token = NULL, updated_at = $1 WHERE id = $2")
         .bind(super::now_unix())
         .bind(connection_id)
         .execute(pool)
@@ -261,11 +260,11 @@ pub async fn delete_sync_token(pool: &SqlitePool, connection_id: &str) -> sqlx::
 }
 
 pub async fn delete_for_user(
-    pool: &SqlitePool,
+    pool: &DbPool,
     connection_id: &str,
     user_id: &str,
 ) -> sqlx::Result<bool> {
-    let result = sqlx::query("DELETE FROM calendar_connections WHERE id = ? AND user_id = ?")
+    let result = sqlx::query("DELETE FROM calendar_connections WHERE id = $1 AND user_id = $2")
         .bind(connection_id)
         .bind(user_id)
         .execute(pool)

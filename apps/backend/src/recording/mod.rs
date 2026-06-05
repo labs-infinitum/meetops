@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use thiserror::Error;
 use tokio::sync::Semaphore;
 
@@ -73,7 +73,7 @@ impl RecordingServiceError {
 
 #[derive(Clone)]
 pub struct RecordingService {
-    db: SqlitePool,
+    db: DbPool,
     auth: AuthService,
     store: Arc<RecordingsStore>,
     config: Arc<Config>,
@@ -85,7 +85,7 @@ pub struct RecordingService {
 
 impl RecordingService {
     pub fn new(
-        db: SqlitePool,
+        db: DbPool,
         auth: AuthService,
         store: Arc<RecordingsStore>,
         config: Arc<Config>,
