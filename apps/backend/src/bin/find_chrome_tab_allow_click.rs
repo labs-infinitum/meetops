@@ -9,7 +9,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::Command;
 
-#[path = "../bot/allow_button_detect.rs"]
+#[path = "../bot/allow_button_detect/tab_share.rs"]
 mod allow_button_detect;
 
 #[path = "../bot/xdotool_geom.rs"]

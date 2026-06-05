@@ -669,10 +669,12 @@ async fn activate_page(page: &Page) -> anyhow::Result<()> {
 #[derive(Debug, Deserialize)]
 struct DismissMeetOverlaysResult {
     dismissed: bool,
+    #[serde(default)]
     clicked: Vec<DismissMeetOverlayClick>,
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct DismissMeetOverlayClick {
     #[serde(rename = "buttonText")]
     button_text: String,
@@ -681,7 +683,7 @@ struct DismissMeetOverlayClick {
 }
 
 /// Clicks visible Meet informational modals (e.g. self-view "Got it") when present.
-pub async fn dismiss_meet_overlays(page: &Page) -> anyhow::Result<DismissMeetOverlaysResult> {
+async fn dismiss_meet_overlays(page: &Page) -> anyhow::Result<DismissMeetOverlaysResult> {
     let value: serde_json::Value = page
         .evaluate_function(scripts::dismiss_meet_overlays())
         .await?

@@ -10,7 +10,7 @@
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
-#[path = "../bot/allow_button_detect.rs"]
+#[path = "../bot/allow_button_detect/mod.rs"]
 mod allow_button_detect;
 
 const RESTORE_DOT: [u8; 3] = [255, 40, 40];
