@@ -1,28 +1,16 @@
-import type {
-  ActiveSpeakerChangedPayload,
-  CollectorWarningPayload,
-  MeetingTimelineEventPayload,
-  ParticipantJoinedPayload,
-  ParticipantLeftPayload,
-  ParticipantSnapshotPayload,
-  ScreenShareStartedPayload,
-  ScreenShareStoppedPayload,
-  TimelineParticipantRef,
-} from "@/types/timeline"
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
-function readString(record: Record<string, unknown>, key: string): string | undefined {
-  const value = record[key]
-  return typeof value === "string" ? value : undefined
-}
-
-function readNumber(record: Record<string, unknown>, key: string): number | undefined {
-  const value = record[key]
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined
-}
+import {
+  type ActiveSpeakerChangedPayload,
+  type CollectorWarningPayload,
+  type MeetingTimelineEventPayload,
+  type MeetingTimelineEventType,
+  type ParticipantJoinedPayload,
+  type ParticipantLeftPayload,
+  type ParticipantSnapshotPayload,
+  type ScreenShareStartedPayload,
+  type ScreenShareStoppedPayload,
+  type TimelineParticipantRef,
+} from "@/types"
+import { isRecord, readNumber, readString } from "@/lib/type-guards"
 
 function parseParticipantRef(value: unknown): TimelineParticipantRef | undefined {
   if (!isRecord(value)) return undefined
@@ -34,7 +22,7 @@ function parseParticipantRef(value: unknown): TimelineParticipantRef | undefined
 }
 
 export function parseTimelinePayloadJson(
-  eventType: string,
+  eventType: MeetingTimelineEventType,
   payloadJson: string,
 ): MeetingTimelineEventPayload | undefined {
   if (!payloadJson) return undefined
@@ -48,8 +36,8 @@ export function parseTimelinePayloadJson(
   return parseTimelinePayload(eventType, parsed)
 }
 
-export function parseTimelinePayload(
-  eventType: string,
+function parseTimelinePayload(
+  eventType: MeetingTimelineEventType,
   parsed: Record<string, unknown>,
 ): MeetingTimelineEventPayload | undefined {
   switch (eventType) {
@@ -167,8 +155,6 @@ export function parseTimelinePayload(
       const payload: CollectorWarningPayload = { message }
       return payload
     }
-    default:
-      return undefined
   }
 }
 

@@ -39,7 +39,7 @@ fn annotate_and_write(path: &Path, out_dir: &Path) -> Result<()> {
 
     if let Some(popup) = restore {
         let (cx, cy) = popup.close_button_center();
-        allow_button_detect::draw_click_marker(&mut out, cx, cy, RESTORE_DOT, 10);
+        allow_button_detect::restore_popup::draw_click_marker(&mut out, cx, cy, RESTORE_DOT, 10);
         println!(
             "{}: RESTORE × at ({cx}, {cy})  card {}..{},{}..{}",
             path.display(),
@@ -52,7 +52,7 @@ fn annotate_and_write(path: &Path, out_dir: &Path) -> Result<()> {
 
     if let Some(button) = allow {
         let (cx, cy) = button.center();
-        allow_button_detect::draw_click_marker(&mut out, cx, cy, ALLOW_DOT, 10);
+        allow_button_detect::restore_popup::draw_click_marker(&mut out, cx, cy, ALLOW_DOT, 10);
         println!(
             "{}: ALLOW at ({cx}, {cy})  pill {}..{},{}..{}",
             path.display(),

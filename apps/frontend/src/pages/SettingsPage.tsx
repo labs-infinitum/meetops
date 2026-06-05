@@ -6,7 +6,6 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import { PageHeader } from "@/components/shared/PageHeader"
-import { toast } from "sonner"
 
 export function SettingsPage() {
   const { session } = useAuth()
@@ -40,10 +39,7 @@ export function SettingsPage() {
               <Label htmlFor="email">Email</Label>
               <Input id="email" type="email" defaultValue={user?.email} />
             </div>
-            <Button
-              size="sm"
-              onClick={() => toast.success("Profile saved (demo)")}
-            >
+            <Button size="sm" disabled title="Profile API not wired yet">
               Save changes
             </Button>
           </CardContent>

@@ -61,10 +61,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const token = session?.token
     setSession(null)
     saveSession(null)
+    // Best-effort server revoke; local session is already cleared.
     if (token) {
-      try {
-        await apiLogout(token)
-      } catch {}
+      void apiLogout(token).catch(() => undefined)
     }
   }, [session?.token])
 

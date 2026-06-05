@@ -75,7 +75,6 @@ where
     }
 }
 
-/// Returns window/screenshot-relative bounding box for the pale-blue Allow control, if found.
 pub fn detect_tab_share_allow_button(img: &image::DynamicImage) -> Option<TabShareAllowButton> {
     let dialog = bounding_box_from_mask(img, is_dialog_pixel)?;
 

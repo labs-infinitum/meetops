@@ -14,8 +14,6 @@
     "@ai-meeting-notetaker/proto": "workspace:*",
     "@fontsource-variable/geist": "^5.2.9",
     "@protobuf-ts/grpcweb-transport": "^2.11.1",
-    "@protobuf-ts/runtime": "^2.11.1",
-    "@protobuf-ts/runtime-rpc": "^2.11.1",
     "@tailwindcss/vite": "^4.3.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -42,6 +40,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
+    "knip": "^6.15.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12"

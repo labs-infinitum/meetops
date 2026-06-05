@@ -20,7 +20,7 @@ export function formatDate(unix: number) {
   return dateFormatter.format(new Date(unix * 1000))
 }
 
-export function formatTime(unix: number) {
+function formatTime(unix: number) {
   return timeFormatter.format(new Date(unix * 1000))
 }
 

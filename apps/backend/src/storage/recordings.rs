@@ -234,7 +234,13 @@ impl RecordingsStore {
             tracing::warn!(%error, path = %local_path.display(), "failed to delete staging file after S3 upload");
         }
         if let Some(parent) = local_path.parent() {
-            let _ = tokio::fs::remove_dir_all(parent).await;
+            if let Err(error) = tokio::fs::remove_dir_all(parent).await {
+                tracing::warn!(
+                    %error,
+                    path = %parent.display(),
+                    "failed to delete staging directory after S3 upload"
+                );
+            }
         }
     }
 }

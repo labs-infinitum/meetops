@@ -8,7 +8,7 @@ use crate::{
     auth::{AuthError, AuthService},
     bot::{active_recordings::ActiveRecordings, recording_tasks::RecordingTasks},
     config::Config,
-    db::{self, bot_runs::BotRunListItem},
+    db::{self, bot_runs::BotRunListItem, BotRunStatus},
     meet_url::{InvalidMeetUrl, MeetUrl},
     shutdown::AppShutdown,
     storage::RecordingsStore,
@@ -246,7 +246,7 @@ impl RecordingService {
             .await?
             .ok_or(RecordingServiceError::NotFound)?;
 
-        if !is_stoppable_status(&run.status) {
+        if !BotRunStatus::is_active_str(&run.status) {
             return Err(RecordingServiceError::NotActive);
         }
 
@@ -268,8 +268,4 @@ pub fn duration_secs(run: &BotRunListItem) -> i64 {
         (Some(started), Some(ended)) if ended >= started => ended - started,
         _ => 0,
     }
-}
-
-fn is_stoppable_status(status: &str) -> bool {
-    matches!(status, "queued" | "joining" | "in_meeting" | "recording")
 }

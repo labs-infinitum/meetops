@@ -4,6 +4,33 @@ use serde::Deserialize;
 
 use crate::db::models::NewMeetingTimelineEvent;
 
+/// Wire `eventType` values from the in-meet timeline collector (`install_recording_control.js`).
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TimelineEventType {
+    ParticipantJoined,
+    ParticipantLeft,
+    ScreenShareStarted,
+    ScreenShareStopped,
+    ActiveSpeakerChanged,
+    ParticipantSnapshot,
+    CollectorWarning,
+}
+
+impl TimelineEventType {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ParticipantJoined => "participant_joined",
+            Self::ParticipantLeft => "participant_left",
+            Self::ScreenShareStarted => "screen_share_started",
+            Self::ScreenShareStopped => "screen_share_stopped",
+            Self::ActiveSpeakerChanged => "active_speaker_changed",
+            Self::ParticipantSnapshot => "participant_snapshot",
+            Self::CollectorWarning => "collector_warning",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum RecordingStatus {
@@ -142,7 +169,7 @@ pub enum RecordingBindingPayload {
 #[derive(Debug, Deserialize)]
 pub struct RecordingTimelineEventPayload {
     #[serde(rename = "eventType")]
-    pub event_type: String,
+    pub event_type: TimelineEventType,
     #[serde(rename = "occurredAt")]
     pub occurred_at: i64,
     #[serde(rename = "relativeMs")]
@@ -158,7 +185,7 @@ pub struct RecordingTimelineEventPayload {
 impl From<RecordingTimelineEventPayload> for NewMeetingTimelineEvent {
     fn from(event: RecordingTimelineEventPayload) -> Self {
         Self {
-            event_type: event.event_type,
+            event_type: event.event_type.as_str().to_owned(),
             occurred_at: event.occurred_at,
             relative_ms: event.relative_ms,
             participant_id: event.participant_id,
@@ -170,7 +197,9 @@ impl From<RecordingTimelineEventPayload> for NewMeetingTimelineEvent {
 
 #[cfg(test)]
 mod tests {
-    use super::{RecordingBindingPayload, RecordingRuntimeStatus, RecordingStatus};
+    use super::{
+        RecordingBindingPayload, RecordingRuntimeStatus, RecordingStatus, TimelineEventType,
+    };
 
     #[test]
     fn deserializes_recording_status_variants() {
@@ -237,7 +266,10 @@ mod tests {
             panic!("expected timeline events");
         };
         assert_eq!(events.len(), 1);
-        assert_eq!(events[0].event_type, "participant_joined");
+        assert_eq!(
+            events[0].event_type,
+            TimelineEventType::ParticipantJoined
+        );
     }
 
     #[test]

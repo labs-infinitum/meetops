@@ -35,7 +35,7 @@ function isLikelyMeetUrl(value: string): boolean {
   )
 }
 
-export function JoinAdHocMeetingDialog({
+function JoinAdHocMeetingDialog({
   open,
   onOpenChange,
   sessionToken,

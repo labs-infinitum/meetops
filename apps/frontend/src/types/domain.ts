@@ -7,12 +7,14 @@ import type {
 } from "@ai-meeting-notetaker/proto/notetaker/v1/recording"
 
 import type { BotRunStatus, CalendarProvider } from "./constants"
-import type { MeetingTimelineEventPayload } from "./timeline"
+import type { Int64AsNumber } from "./proto-utils"
+import type {
+  MeetingTimelineEventPayload,
+  MeetingTimelineEventType,
+} from "./timeline"
 
-/** Replace protobuf `int64` (`bigint`) fields with `number` for app/UI use. */
-type Int64AsNumber<T, K extends keyof T> = Omit<T, K> & { [P in K]: number }
+// Proto-derived domain types; int64 timestamps/ids are numbers in the UI.
 
-/** Normalized meeting from `notetaker.v1.Meeting` (proto is source of field names). */
 export type Meeting = Int64AsNumber<
   Omit<ProtoMeeting, "calendarLabel" | "description">,
   "startAt" | "endAt"
@@ -21,7 +23,6 @@ export type Meeting = Int64AsNumber<
   description?: string
 }
 
-/** Normalized bot run from `notetaker.v1.BotRun`. */
 export type BotRun = Omit<
   Int64AsNumber<
     ProtoBotRun,
@@ -43,14 +44,14 @@ export type MeetingTimelineEvent = Omit<
     ProtoMeetingTimelineEvent,
     "id" | "botRunId" | "occurredAt" | "relativeMs" | "createdAt"
   >,
-  "payloadJson" | "participantId" | "participantName"
+  "payloadJson" | "participantId" | "participantName" | "eventType"
 > & {
+  eventType: MeetingTimelineEventType
   participantId?: string
   participantName?: string
   payload?: MeetingTimelineEventPayload
 }
 
-/** Normalized calendar connection from `notetaker.v1.CalendarConnection`. */
 export type CalendarConnection = Omit<
   Int64AsNumber<ProtoCalendarConnection, "lastSyncedAt">,
   "lastSyncedAt" | "provider"

@@ -47,7 +47,6 @@ fn count_white_in_row(img: &image::DynamicImage, y: u32, x_start: u32, x_end: u3
         .count() as u32
 }
 
-/// Detect the top-right **Restore pages?** bubble from a Chrome window screenshot.
 pub fn detect_restore_pages_popup(img: &image::DynamicImage) -> Option<RestorePagesPopup> {
     let (w, h) = img.dimensions();
     if w < 400 || h < 200 {
@@ -155,7 +154,7 @@ pub fn detect_restore_pages_popup(img: &image::DynamicImage) -> Option<RestorePa
     })
 }
 
-/// Draw a filled dot plus crosshair at `(cx, cy)` for preview CLI and detector tests.
+/// Used by `preview-tab-capture-clicks` and detector tests (not the main server binary).
 #[allow(dead_code)]
 pub fn draw_click_marker(img: &mut image::RgbImage, cx: u32, cy: u32, color: [u8; 3], radius: i32) {
     use image::Rgb;

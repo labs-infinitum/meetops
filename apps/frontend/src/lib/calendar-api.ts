@@ -1,5 +1,5 @@
 import type { CalendarConnectError, CalendarConnection, CalendarProvider } from "@/types"
-import { isCalendarConnectErrorCode, isCalendarProvider } from "@/types/constants"
+import { isCalendarConnectErrorCode, isCalendarProvider } from "@/types"
 import { formatGrpcApiError, GrpcApiError, unwrapGrpcOneof } from "@/lib/api-errors"
 import { getCalendarClient } from "@/lib/grpc-client"
 import { protoInt64 } from "@/lib/proto-fields"

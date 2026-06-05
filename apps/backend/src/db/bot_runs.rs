@@ -2,9 +2,25 @@
 
 use crate::db::DbPool;
 
-use super::now_unix;
+use super::{now_unix, sql_bot_run_visible_to_user};
 
 pub use super::models::{BotRunListItem, BotRunStatus, EligibleMeeting};
+
+const BOT_RUN_LIST_SELECT: &str = r#"
+        SELECT
+            br.id,
+            br.meeting_id,
+            m.title,
+            br.status,
+            br.error,
+            br.meeting_start_at,
+            br.started_at,
+            br.ended_at,
+            br.created_at,
+            br.recording_path
+        FROM bot_runs br
+        JOIN meetings m ON m.id = br.meeting_id
+"#;
 
 /// Meetings that should auto-record: inside the trigger window, no `bot_runs` row yet for this occurrence.
 pub async fn list_eligible_meetings(
@@ -136,55 +152,45 @@ pub async fn create_ad_hoc_run(
     Ok(run_id)
 }
 
-pub async fn mark_joining(pool: &DbPool, run_id: i64) -> sqlx::Result<()> {
+async fn set_run_status(
+    pool: &DbPool,
+    run_id: i64,
+    status: BotRunStatus,
+    set_started_at: bool,
+) -> sqlx::Result<()> {
     let now = now_unix();
-    sqlx::query(
+    let sql = if set_started_at {
         r#"
         UPDATE bot_runs
         SET status = $1, started_at = $2, updated_at = $2
         WHERE id = $3
-        "#,
-    )
-    .bind(BotRunStatus::Joining.as_str())
-    .bind(now)
-    .bind(run_id)
-    .execute(pool)
-    .await?;
+        "#
+    } else {
+        r#"
+        UPDATE bot_runs
+        SET status = $1, updated_at = $2
+        WHERE id = $3
+        "#
+    };
+    sqlx::query(sql)
+        .bind(status.as_str())
+        .bind(now)
+        .bind(run_id)
+        .execute(pool)
+        .await?;
     Ok(())
+}
+
+pub async fn mark_joining(pool: &DbPool, run_id: i64) -> sqlx::Result<()> {
+    set_run_status(pool, run_id, BotRunStatus::Joining, true).await
 }
 
 pub async fn mark_in_meeting(pool: &DbPool, run_id: i64) -> sqlx::Result<()> {
-    let now = now_unix();
-    sqlx::query(
-        r#"
-        UPDATE bot_runs
-        SET status = $1, updated_at = $2
-        WHERE id = $3
-        "#,
-    )
-    .bind(BotRunStatus::InMeeting.as_str())
-    .bind(now)
-    .bind(run_id)
-    .execute(pool)
-    .await?;
-    Ok(())
+    set_run_status(pool, run_id, BotRunStatus::InMeeting, false).await
 }
 
 pub async fn mark_recording(pool: &DbPool, run_id: i64) -> sqlx::Result<()> {
-    let now = now_unix();
-    sqlx::query(
-        r#"
-        UPDATE bot_runs
-        SET status = $1, updated_at = $2
-        WHERE id = $3
-        "#,
-    )
-    .bind(BotRunStatus::Recording.as_str())
-    .bind(now)
-    .bind(run_id)
-    .execute(pool)
-    .await?;
-    Ok(())
+    set_run_status(pool, run_id, BotRunStatus::Recording, false).await
 }
 
 pub async fn get_user_id(pool: &DbPool, run_id: i64) -> sqlx::Result<Option<String>> {
@@ -224,30 +230,15 @@ pub async fn list_recent_for_user(
     user_id: &str,
     limit: i64,
 ) -> sqlx::Result<Vec<BotRunListItem>> {
-    sqlx::query_as::<_, BotRunListItem>(
-        r#"
-        SELECT
-            br.id,
-            br.meeting_id,
-            m.title,
-            br.status,
-            br.error,
-            br.meeting_start_at,
-            br.started_at,
-            br.ended_at,
-            br.created_at,
-            br.recording_path
-        FROM bot_runs br
-        JOIN meetings m ON m.id = br.meeting_id
-        WHERE br.user_id = $1
-           OR m.user_id = $1
-           OR m.calendar_connection_id IN (
-               SELECT id FROM calendar_connections WHERE user_id = $1
-           )
+    let visible = sql_bot_run_visible_to_user("$1");
+    let sql = format!(
+        "{BOT_RUN_LIST_SELECT}
+        WHERE {visible}
         ORDER BY br.created_at DESC
         LIMIT $2
-        "#,
-    )
+        "
+    );
+    sqlx::query_as::<_, BotRunListItem>(&sql)
     .bind(user_id)
     .bind(limit)
     .fetch_all(pool)
@@ -255,21 +246,16 @@ pub async fn list_recent_for_user(
 }
 
 pub async fn count_completed_for_user(pool: &DbPool, user_id: &str) -> sqlx::Result<i64> {
-    sqlx::query_scalar(
+    let visible = sql_bot_run_visible_to_user("$1");
+    let sql = format!(
         r#"
         SELECT COUNT(*)
         FROM bot_runs br
         JOIN meetings m ON m.id = br.meeting_id
-        WHERE br.status = 'completed'
-          AND (
-            br.user_id = $1
-            OR m.user_id = $1
-            OR m.calendar_connection_id IN (
-                SELECT id FROM calendar_connections WHERE user_id = $1
-            )
-          )
-        "#,
-    )
+        WHERE br.status = 'completed' AND {visible}
+        "#
+    );
+    sqlx::query_scalar(&sql)
     .bind(user_id)
     .fetch_one(pool)
     .await
@@ -280,31 +266,13 @@ pub async fn get_for_user(
     user_id: &str,
     run_id: i64,
 ) -> sqlx::Result<Option<BotRunListItem>> {
-    sqlx::query_as::<_, BotRunListItem>(
-        r#"
-        SELECT
-            br.id,
-            br.meeting_id,
-            m.title,
-            br.status,
-            br.error,
-            br.meeting_start_at,
-            br.started_at,
-            br.ended_at,
-            br.created_at,
-            br.recording_path
-        FROM bot_runs br
-        JOIN meetings m ON m.id = br.meeting_id
-        WHERE br.id = $1
-          AND (
-            br.user_id = $2
-            OR m.user_id = $2
-            OR m.calendar_connection_id IN (
-                SELECT id FROM calendar_connections WHERE user_id = $2
-            )
-          )
-        "#,
-    )
+    let visible = sql_bot_run_visible_to_user("$2");
+    let sql = format!(
+        "{BOT_RUN_LIST_SELECT}
+        WHERE br.id = $1 AND {visible}
+        "
+    );
+    sqlx::query_as::<_, BotRunListItem>(&sql)
     .bind(run_id)
     .bind(user_id)
     .fetch_optional(pool)

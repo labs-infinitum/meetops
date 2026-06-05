@@ -115,7 +115,11 @@ where
 
     let tab_capture_screenshot_dir = recording_dir.join("tab-capture-screenshots");
     let tab_capture_png = recording_dir.join("tab-capture.png");
-    let _ = tokio::fs::remove_file(&tab_capture_png).await;
+    if let Err(error) = tokio::fs::remove_file(&tab_capture_png).await
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        return Err(error.into());
+    }
 
     let join_options = chromium::JoinOptions::from_config(meet_url, config, x11_display.clone());
 

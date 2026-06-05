@@ -1,6 +1,22 @@
 use crate::db::DbPool;
 
-use super::now_unix;
+use super::{now_unix, sql_meeting_visible_to_user};
+
+const MEETING_SELECT: &str = r#"
+        SELECT
+            m.id,
+            m.title,
+            m.meet_url,
+            m.start_at,
+            m.end_at,
+            m.auto_join,
+            m.calendar_connection_id,
+            m.description,
+            m.attendees_json,
+            cc.label AS calendar_label
+        FROM meetings m
+        LEFT JOIN calendar_connections cc ON cc.id = m.calendar_connection_id
+"#;
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct MeetingRow {
@@ -17,30 +33,14 @@ pub struct MeetingRow {
 }
 
 pub async fn list_for_user(pool: &DbPool, user_id: &str) -> sqlx::Result<Vec<MeetingRow>> {
-    sqlx::query_as(
-        r#"
-        SELECT
-            m.id,
-            m.title,
-            m.meet_url,
-            m.start_at,
-            m.end_at,
-            m.auto_join,
-            m.calendar_connection_id,
-            m.description,
-            m.attendees_json,
-            cc.label AS calendar_label
-        FROM meetings m
-        LEFT JOIN calendar_connections cc ON cc.id = m.calendar_connection_id
-        WHERE (
-            m.user_id = $1
-            OR m.calendar_connection_id IN (
-                SELECT id FROM calendar_connections WHERE user_id = $1
-            )
-        )
+    let visible = sql_meeting_visible_to_user("m", "$1");
+    let sql = format!(
+        r#"{MEETING_SELECT}
+        WHERE {visible}
         ORDER BY m.start_at ASC
-        "#,
-    )
+        "#
+    );
+    sqlx::query_as(&sql)
     .bind(user_id)
     .fetch_all(pool)
     .await
@@ -51,30 +51,13 @@ pub async fn get_for_user(
     user_id: &str,
     meeting_id: &str,
 ) -> sqlx::Result<Option<MeetingRow>> {
-    sqlx::query_as(
-        r#"
-        SELECT
-            m.id,
-            m.title,
-            m.meet_url,
-            m.start_at,
-            m.end_at,
-            m.auto_join,
-            m.calendar_connection_id,
-            m.description,
-            m.attendees_json,
-            cc.label AS calendar_label
-        FROM meetings m
-        LEFT JOIN calendar_connections cc ON cc.id = m.calendar_connection_id
-        WHERE m.id = $1
-          AND (
-            m.user_id = $2
-            OR m.calendar_connection_id IN (
-                SELECT id FROM calendar_connections WHERE user_id = $2
-            )
-          )
-        "#,
-    )
+    let visible = sql_meeting_visible_to_user("m", "$2");
+    let sql = format!(
+        r#"{MEETING_SELECT}
+        WHERE m.id = $1 AND {visible}
+        "#
+    );
+    sqlx::query_as(&sql)
     .bind(meeting_id)
     .bind(user_id)
     .fetch_optional(pool)
@@ -87,20 +70,17 @@ pub async fn count_upcoming_within(
     now: i64,
     until: i64,
 ) -> sqlx::Result<i64> {
-    sqlx::query_scalar(
+    let visible = sql_meeting_visible_to_user("m", "$1");
+    let sql = format!(
         r#"
         SELECT COUNT(*)
         FROM meetings m
-        WHERE (
-            m.user_id = $1
-            OR m.calendar_connection_id IN (
-                SELECT id FROM calendar_connections WHERE user_id = $1
-            )
-        )
+        WHERE {visible}
           AND m.start_at > $2
           AND m.start_at <= $3
-        "#,
-    )
+        "#
+    );
+    sqlx::query_scalar(&sql)
     .bind(user_id)
     .bind(now)
     .bind(until)
@@ -115,19 +95,15 @@ pub async fn set_auto_join_for_user(
     auto_join: bool,
 ) -> sqlx::Result<bool> {
     let now = now_unix();
-    let result = sqlx::query(
+    let visible = sql_meeting_visible_to_user("meetings", "$4");
+    let sql = format!(
         r#"
         UPDATE meetings
         SET auto_join = $1, updated_at = $2
-        WHERE id = $3
-          AND (
-            user_id = $4
-            OR calendar_connection_id IN (
-                SELECT id FROM calendar_connections WHERE user_id = $4
-            )
-          )
-        "#,
-    )
+        WHERE id = $3 AND {visible}
+        "#
+    );
+    let result = sqlx::query(&sql)
     .bind(auto_join)
     .bind(now)
     .bind(meeting_id)
@@ -143,13 +119,18 @@ pub fn parse_attendees(attendees_json: Option<&str>) -> Vec<String> {
         email: Option<String>,
     }
 
-    attendees_json
-        .and_then(|json| serde_json::from_str::<Vec<Attendee>>(json).ok())
-        .map(|attendees| {
-            attendees
-                .into_iter()
-                .filter_map(|attendee| attendee.email)
-                .collect()
-        })
-        .unwrap_or_default()
+    let Some(json) = attendees_json else {
+        return Vec::new();
+    };
+    let attendees = match serde_json::from_str::<Vec<Attendee>>(json) {
+        Ok(attendees) => attendees,
+        Err(error) => {
+            tracing::warn!(%error, "invalid attendees_json; treating as empty");
+            return Vec::new();
+        }
+    };
+    attendees
+        .into_iter()
+        .filter_map(|attendee| attendee.email)
+        .collect()
 }

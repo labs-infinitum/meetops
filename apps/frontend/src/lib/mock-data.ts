@@ -1,3 +1,5 @@
+// Static fixtures for Notes/Todos until those APIs exist.
+
 import type { ActionItem, Note } from "@/types"
 
 const now = Math.floor(Date.now() / 1000)

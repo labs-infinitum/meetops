@@ -6,9 +6,7 @@ export type {
   CalendarProvider,
 } from "./constants"
 export {
-  BOT_RUN_STATUSES,
-  CALENDAR_CONNECT_ERROR_CODES,
-  CALENDAR_PROVIDERS,
+  isActiveBotRun,
   isBotRunStatus,
   isCalendarConnectErrorCode,
   isCalendarProvider,
@@ -23,7 +21,19 @@ export type {
   User,
 } from "./domain"
 
-export type { MeetingTimelineEventPayload } from "./timeline"
+export type {
+  ActiveSpeakerChangedPayload,
+  CollectorWarningPayload,
+  MeetingTimelineEventPayload,
+  MeetingTimelineEventType,
+  ParticipantJoinedPayload,
+  ParticipantLeftPayload,
+  ParticipantSnapshotPayload,
+  ScreenShareStartedPayload,
+  ScreenShareStoppedPayload,
+  TimelineParticipantRef,
+} from "./timeline"
+export { isMeetingTimelineEventType } from "./timeline"
 
 /** UI-enriched calendar connect error (titles/messages); codes align with `CalendarError` proto. */
 export type CalendarConnectError = {

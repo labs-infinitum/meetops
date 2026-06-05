@@ -1,8 +1,5 @@
 //! CLI: locate Chrome tab-share pale-blue Allow pill in a PNG; optional `xdotool getwindowgeometry`
-//! helper for noisy absolute coordinates. Detector lives in [`bot::allow_button_detect`] (`#[path]`).
-//!
-//! For automation prefer `cargo run`/binary from this crate and pass window id to correlate — or rely on
-//! the record command (`tab_capture_allow`) which clicks via `xdotool --window`.
+//! helper for noisy absolute coordinates. For live runs use `tab_capture_allow` (xdotool `--window`).
 
 use anyhow::{Context, Result};
 use std::ffi::OsString;

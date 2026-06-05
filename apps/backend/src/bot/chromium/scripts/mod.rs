@@ -10,7 +10,6 @@
 
 const ATTEMPT_JOIN: &str = include_str!("attempt_join.js");
 const INSTALL_RECORDING_CONTROL: &str = include_str!("install_recording_control.js");
-const RECORDING_STATUS: &str = include_str!("recording_status.js");
 const MEET_PARTICIPANT_COUNT: &str = include_str!("meet_participant_count.js");
 const RECORDING_RUNTIME_STATUS: &str = include_str!("recording_runtime_status.js");
 const STOP_TAB_RECORDING: &str = include_str!("stop_tab_recording.js");
@@ -31,10 +30,6 @@ pub fn attempt_join(display_name: &str) -> anyhow::Result<String> {
 
 pub fn install_recording_control() -> &'static str {
     INSTALL_RECORDING_CONTROL
-}
-
-pub fn recording_status() -> &'static str {
-    RECORDING_STATUS
 }
 
 pub fn meet_participant_count() -> &'static str {
@@ -95,7 +90,6 @@ mod tests {
     fn all_scripts_end_with_closing_brace() {
         assert_valid_function_expression(ATTEMPT_JOIN, "attempt_join.js");
         assert_valid_function_expression(INSTALL_RECORDING_CONTROL, "install_recording_control.js");
-        assert_valid_function_expression(RECORDING_STATUS, "recording_status.js");
         assert_valid_function_expression(MEET_PARTICIPANT_COUNT, "meet_participant_count.js");
         assert_valid_function_expression(RECORDING_RUNTIME_STATUS, "recording_runtime_status.js");
         assert_valid_function_expression(STOP_TAB_RECORDING, "stop_tab_recording.js");

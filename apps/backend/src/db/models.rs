@@ -40,6 +40,17 @@ impl BotRunStatus {
             _ => None,
         }
     }
+
+    pub const fn is_active(self) -> bool {
+        matches!(
+            self,
+            Self::Queued | Self::Joining | Self::InMeeting | Self::Recording
+        )
+    }
+
+    pub fn is_active_str(status: &str) -> bool {
+        Self::from_db_str(status).is_some_and(Self::is_active)
+    }
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]

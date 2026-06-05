@@ -11,7 +11,7 @@ export function registerSessionInvalidHandler(handler: () => void) {
   sessionInvalidHandler = handler
 }
 
-export function notifySessionInvalid() {
+function notifySessionInvalid() {
   sessionInvalidHandler?.()
 }
 
@@ -26,7 +26,7 @@ export function isSessionInvalidError(error: unknown): boolean {
   return hasStringProperty(error, "code") && error.code === SESSION_INVALID_CODE
 }
 
-export function guardApiError(error: unknown): never {
+function guardApiError(error: unknown): never {
   if (isSessionInvalidError(error)) {
     notifySessionInvalid()
   }
@@ -34,9 +34,5 @@ export function guardApiError(error: unknown): never {
 }
 
 export async function withAuthGuard<T>(fn: () => Promise<T>): Promise<T> {
-  try {
-    return await fn()
-  } catch (error) {
-    guardApiError(error)
-  }
+  return fn().catch((error) => guardApiError(error))
 }

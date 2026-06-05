@@ -1,5 +1,5 @@
 import type { BotRun, MeetingTimelineEvent } from "@/types"
-import { isBotRunStatus } from "@/types/constants"
+import { isBotRunStatus, isMeetingTimelineEventType } from "@/types"
 import { getRecordingClient } from "@/lib/grpc-client"
 import { parseTimelinePayloadJson } from "@/lib/timeline-payload"
 import { protoInt64, protoOptionalString } from "@/lib/proto-fields"
@@ -39,16 +39,20 @@ function mapRun(row: ProtoBotRun): BotRun {
   }
 }
 
-function mapTimelineEvent(row: ProtoMeetingTimelineEvent): MeetingTimelineEvent {
+function mapTimelineEvent(row: ProtoMeetingTimelineEvent): MeetingTimelineEvent | null {
+  if (!isMeetingTimelineEventType(row.eventType)) {
+    return null
+  }
+  const eventType = row.eventType
   return {
     id: protoInt64(row.id)!,
     botRunId: protoInt64(row.botRunId)!,
-    eventType: row.eventType,
+    eventType,
     occurredAt: protoInt64(row.occurredAt)!,
     relativeMs: protoInt64(row.relativeMs)!,
     participantId: protoOptionalString(row.participantId),
     participantName: protoOptionalString(row.participantName),
-    payload: parseTimelinePayloadJson(row.eventType, row.payloadJson),
+    payload: parseTimelinePayloadJson(eventType, row.payloadJson),
     createdAt: protoInt64(row.createdAt)!,
   }
 }
@@ -89,7 +93,10 @@ function unwrapPlayback(response: GetPlaybackUrlResponse): { url: string; expire
 
 function unwrapTimeline(response: ListMeetingTimelineEventsResponse): MeetingTimelineEvent[] {
   return unwrapGrpcOneof(response.result, {
-    success: (s) => s.events.map(mapTimelineEvent),
+    success: (s) =>
+      s.events
+        .map(mapTimelineEvent)
+        .filter((event): event is MeetingTimelineEvent => event !== null),
     error: parseError,
     emptyMessage: "Empty meeting timeline response.",
     EmptyError: RecordingApiError,
@@ -187,10 +194,6 @@ export async function apiStopRecording(token: string, runId: number): Promise<vo
     const { response } = await client.stopRecording({ token, runId: BigInt(runId) })
     unwrapStop(response)
   })
-}
-
-export function isActiveBotRun(status: BotRun["status"]): boolean {
-  return status === "queued" || status === "joining" || status === "in_meeting" || status === "recording"
 }
 
 export function recordingErrorMessage(error: unknown): string {

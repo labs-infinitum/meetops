@@ -7,7 +7,6 @@ function() {
     acceptedChunks: window.__gmrAcceptedChunks || 0,
     uploadErrors: window.__gmrUploadErrors || [],
     bindingAvailable: !!window.__gmrChunkBindingAvailable,
-    streamInfo: window.__gmrStreamInfo || null,
     lastParticipantCount: typeof window.__gmrLastParticipantCount === 'number' ? window.__gmrLastParticipantCount : null,
     lastParticipantSource: window.__gmrLastParticipantSource || null
   };

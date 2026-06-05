@@ -8,17 +8,17 @@ export class GrpcApiError extends Error {
   }
 }
 
-export const GRPC_CONNECTION_ERROR =
+const GRPC_CONNECTION_ERROR =
   "Cannot reach the server. Is the backend running?"
 
-export function isNetworkFetchError(error: Error): boolean {
+function isNetworkFetchError(error: Error): boolean {
   return (
     error.message.includes("Failed to fetch") ||
     error.message.includes("NetworkError")
   )
 }
 
-export function messageFromUnknownError(error: unknown, fallback: string): string {
+function messageFromUnknownError(error: unknown, fallback: string): string {
   if (error instanceof Error) {
     if (isNetworkFetchError(error)) {
       return GRPC_CONNECTION_ERROR
@@ -48,13 +48,13 @@ export type GrpcOneofResult<S, E> =
   | { oneofKind: "error"; error: E }
   | { oneofKind?: undefined }
 
-export function isGrpcSuccessVariant<S, E>(
+function isGrpcSuccessVariant<S, E>(
   result: GrpcOneofResult<S, E>,
 ): result is { oneofKind: "success"; success: S } {
   return result.oneofKind === "success"
 }
 
-export function isGrpcErrorVariant<S, E>(
+function isGrpcErrorVariant<S, E>(
   result: GrpcOneofResult<S, E>,
 ): result is { oneofKind: "error"; error: E } {
   return result.oneofKind === "error"

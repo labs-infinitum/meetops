@@ -99,7 +99,3 @@ export function groupCalendarsByProvider(calendars: CalendarConnection[]) {
     caldav: connected.filter((c) => c.provider === "caldav"),
   }
 }
-
-export function totalMeetingsAcrossCalendars(calendars: CalendarConnection[]) {
-  return calendars.filter((c) => c.connected).reduce((sum, c) => sum + c.meetingCount, 0)
-}

@@ -13,7 +13,6 @@ pub mod users;
 
 pub use models::BotRunStatus;
 
-/// Application database pool (PostgreSQL).
 pub type DbPool = PgPool;
 
 const MIGRATOR: Migrator = sqlx::migrate!("./migrations");
@@ -119,6 +118,21 @@ pub async fn migrate(pool: DbPool) -> Result<DbPool, sqlx::migrate::MigrateError
 
 pub fn now_unix() -> i64 {
     chrono::Utc::now().timestamp()
+}
+
+/// SQL fragment: meeting row owned by or linked to `user_bind` (same bind for both).
+pub fn sql_meeting_visible_to_user(meeting_alias: &str, user_bind: &str) -> String {
+    format!(
+        "({meeting_alias}.user_id = {user_bind} OR {meeting_alias}.calendar_connection_id IN (SELECT id FROM calendar_connections WHERE user_id = {user_bind}))"
+    )
+}
+
+/// SQL fragment: bot run visible to `user_bind` (direct owner or via meeting scope).
+pub fn sql_bot_run_visible_to_user(user_bind: &str) -> String {
+    format!(
+        "(br.user_id = {user_bind} OR {sql_meeting})",
+        sql_meeting = sql_meeting_visible_to_user("m", user_bind)
+    )
 }
 
 pub async fn get_kv(pool: &DbPool, key: &str) -> sqlx::Result<Option<String>> {

@@ -406,9 +406,7 @@ fn apply_chromeoxide_flags(
     builder
 }
 
-/// Value for the Chrome child `DISPLAY` env var.
-///
-/// On Linux, uses explicit `x11_display` or `$DISPLAY` (set by [`crate::bot::x11_display::prepare`]).
+/// Chrome child `DISPLAY`: explicit `x11_display` or `$DISPLAY` from [`crate::bot::x11_display::prepare`].
 fn resolved_chrome_display(x11_display: Option<&str>) -> anyhow::Result<Option<String>> {
     use crate::bot::x11_display::normalize_x11_display;
 
@@ -684,11 +682,10 @@ struct DismissMeetOverlayClick {
 
 /// Clicks visible Meet informational modals (e.g. self-view "Got it") when present.
 async fn dismiss_meet_overlays(page: &Page) -> anyhow::Result<DismissMeetOverlaysResult> {
-    let value: serde_json::Value = page
+    Ok(page
         .evaluate_function(scripts::dismiss_meet_overlays())
         .await?
-        .into_value()?;
-    Ok(serde_json::from_value(value)?)
+        .into_value()?)
 }
 
 pub async fn dismiss_meet_overlays_best_effort(page: &Page) {
@@ -724,11 +721,10 @@ struct PrimeParticipantRosterResult {
 /// Open Meet's People panel once after admission so roster listitems mount, then close it.
 async fn prime_participant_roster(page: &Page) -> PrimeParticipantRosterResult {
     let eval_result: anyhow::Result<PrimeParticipantRosterResult> = async {
-        let value: serde_json::Value = page
+        Ok(page
             .evaluate_function(scripts::prime_participant_roster())
             .await?
-            .into_value()?;
-        Ok(serde_json::from_value(value)?)
+            .into_value()?)
     }
     .await;
 
@@ -811,7 +807,7 @@ pub async fn start_tab_recording(
 
     // Poll quickly so we notice "recording" soon after the Allow click (500ms was very noticeable).
     for _ in 0..400 {
-        let status = recording_status(page).await?;
+        let status = recording_runtime_status(page).await?.status;
         match status.phase() {
             RecordingPhase::Recording => {
                 prompt_acceptor.abort();
@@ -1427,20 +1423,12 @@ async fn install_recording_binding(
 }
 
 async fn install_recording_button(page: &Page) -> anyhow::Result<()> {
-    let result: serde_json::Value = page
+    let result: RecordingStatus = page
         .evaluate_function(scripts::install_recording_control())
         .await?
         .into_value()?;
-    tracing::info!(%result, "installed browser recording control");
+    tracing::info!(?result, "installed browser recording control");
     Ok(())
-}
-
-async fn recording_status(page: &Page) -> anyhow::Result<RecordingStatus> {
-    let value: serde_json::Value = page
-        .evaluate_function(scripts::recording_status())
-        .await?
-        .into_value()?;
-    Ok(serde_json::from_value(value)?)
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -1449,20 +1437,18 @@ struct MeetParticipantSnapshot {
 }
 
 pub async fn meet_participant_count(page: &Page) -> anyhow::Result<Option<u64>> {
-    let value: serde_json::Value = page
+    let snapshot: MeetParticipantSnapshot = page
         .evaluate_function(scripts::meet_participant_count())
         .await?
         .into_value()?;
-    let snapshot: MeetParticipantSnapshot = serde_json::from_value(value)?;
     Ok(snapshot.count)
 }
 
 pub async fn recording_runtime_status(page: &Page) -> anyhow::Result<RecordingRuntimeStatus> {
-    let value: serde_json::Value = page
+    Ok(page
         .evaluate_function(scripts::recording_runtime_status())
         .await?
-        .into_value()?;
-    Ok(serde_json::from_value(value)?)
+        .into_value()?)
 }
 
 pub async fn stop_tab_recording(page: &Page) -> anyhow::Result<()> {

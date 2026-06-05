@@ -33,14 +33,14 @@ import {
   apiListBotRuns,
   apiListMeetingTimelineEvents,
   apiStopRecording,
-  isActiveBotRun,
   RecordingApiError,
   recordingErrorMessage,
 } from "@/lib/recording-api"
+import { isActiveBotRun } from "@/types"
 import { formatDate, formatDateTime, formatDuration } from "@/lib/format"
 import { useAuth } from "@/lib/auth-context"
 import { snapshotParticipantCount } from "@/lib/timeline-payload"
-import type { BotRun, MeetingTimelineEvent } from "@/types"
+import type { BotRun, MeetingTimelineEvent, MeetingTimelineEventType } from "@/types"
 import { toast } from "sonner"
 
 function formatRelativeTime(relativeMs: number): string {
@@ -63,12 +63,12 @@ function eventTitle(event: MeetingTimelineEvent): string {
       const count = snapshotParticipantCount(event.payload)
       return count === undefined ? "Participant snapshot" : `${count} participants in meeting`
     }
-    default:
-      return event.eventType.replaceAll("_", " ")
+    case "collector_warning":
+      return "Collector warning"
   }
 }
 
-function eventIcon(eventType: string) {
+function eventIcon(eventType: MeetingTimelineEventType) {
   switch (eventType) {
     case "participant_joined":
       return LogIn

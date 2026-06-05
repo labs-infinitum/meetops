@@ -1,10 +1,10 @@
 import type { AuthSession, User } from "@/types"
 import { getAuthClient } from "@/lib/grpc-client"
-import { formatGrpcApiError, GrpcApiError, isGrpcErrorVariant, isGrpcSuccessVariant } from "@/lib/api-errors"
+import { formatGrpcApiError, GrpcApiError, unwrapGrpcOneof } from "@/lib/api-errors"
 import { SESSION_EXPIRED_MESSAGE } from "@/lib/session-guard"
 import type { AuthResponse } from "@ai-meeting-notetaker/proto/notetaker/v1/auth"
 
-export class AuthApiError extends GrpcApiError {
+class AuthApiError extends GrpcApiError {
   constructor(code: string, message: string) {
     super(code, message, "AuthApiError")
   }
@@ -25,23 +25,21 @@ function mapUser(user: {
 }
 
 function parseAuthResponse(response: AuthResponse): AuthSession {
-  if (isGrpcSuccessVariant(response.result)) {
-    const success = response.result.success
-    if (!success.user) {
-      throw new AuthApiError("internal_error", "Missing user in auth response.")
-    }
-    return {
-      user: mapUser(success.user),
-      token: success.token,
-      expiresAt: Number(success.expiresAt),
-    }
-  }
-
-  if (isGrpcErrorVariant(response.result)) {
-    throw new AuthApiError(response.result.error.code, response.result.error.message)
-  }
-
-  throw new AuthApiError("internal_error", "Empty auth response.")
+  return unwrapGrpcOneof(response.result, {
+    success: (success) => {
+      if (!success.user) {
+        throw new AuthApiError("internal_error", "Missing user in auth response.")
+      }
+      return {
+        user: mapUser(success.user),
+        token: success.token,
+        expiresAt: Number(success.expiresAt),
+      }
+    },
+    error: (error) => new AuthApiError(error.code, error.message),
+    emptyMessage: "Empty auth response.",
+    EmptyError: AuthApiError,
+  })
 }
 
 export async function apiSignUp(

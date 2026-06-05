@@ -1,4 +1,20 @@
-/** Payload shapes emitted by the in-meet timeline collector (see backend bot chromium script). */
+// Timeline wire types from the in-meet collector (`install_recording_control.js`).
+
+const MEETING_TIMELINE_EVENT_TYPES = [
+  "participant_joined",
+  "participant_left",
+  "screen_share_started",
+  "screen_share_stopped",
+  "active_speaker_changed",
+  "participant_snapshot",
+  "collector_warning",
+] as const
+
+export type MeetingTimelineEventType = (typeof MEETING_TIMELINE_EVENT_TYPES)[number]
+
+export function isMeetingTimelineEventType(value: string): value is MeetingTimelineEventType {
+  return (MEETING_TIMELINE_EVENT_TYPES as readonly string[]).includes(value)
+}
 
 export type TimelineParticipantRef = {
   id: string

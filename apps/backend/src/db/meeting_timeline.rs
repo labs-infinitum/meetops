@@ -1,7 +1,7 @@
 use crate::db::DbPool;
 
 use super::models::{MeetingTimelineEvent, NewMeetingTimelineEvent};
-use super::now_unix;
+use super::{now_unix, sql_bot_run_visible_to_user};
 
 pub async fn insert_many(
     pool: &DbPool,
@@ -43,7 +43,8 @@ pub async fn list_for_user_run(
     bot_run_id: i64,
     limit: i64,
 ) -> sqlx::Result<Vec<MeetingTimelineEvent>> {
-    sqlx::query_as::<_, MeetingTimelineEvent>(
+    let visible = sql_bot_run_visible_to_user("$2");
+    let sql = format!(
         r#"
         SELECT
             e.id,
@@ -58,18 +59,12 @@ pub async fn list_for_user_run(
         FROM meeting_timeline_events e
         JOIN bot_runs br ON br.id = e.bot_run_id
         JOIN meetings m ON m.id = br.meeting_id
-        WHERE e.bot_run_id = $1
-          AND (
-            br.user_id = $2
-            OR m.user_id = $2
-            OR m.calendar_connection_id IN (
-                SELECT id FROM calendar_connections WHERE user_id = $2
-            )
-          )
+        WHERE e.bot_run_id = $1 AND {visible}
         ORDER BY e.occurred_at ASC, e.id ASC
         LIMIT $3
-        "#,
-    )
+        "#
+    );
+    sqlx::query_as::<_, MeetingTimelineEvent>(&sql)
     .bind(bot_run_id)
     .bind(user_id)
     .bind(limit)
