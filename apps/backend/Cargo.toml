@@ -17,9 +17,9 @@ path = "src/bin/preview_tab_capture_clicks.rs"
 aes-gcm = "0.10"
 anyhow = "1"
 argon2 = "0.5"
-aws-config = { version = "1", features = ["behavior-version-latest"] }
-aws-sdk-s3 = "1"
-aws-sdk-secretsmanager = "1"
+aws-config = { version = "1", default-features = false, features = ["behavior-version-latest", "rt-tokio", "default-https-client", "credentials-process", "sso"] }
+aws-sdk-s3 = { version = "1", default-features = false, features = ["behavior-version-latest", "rt-tokio", "default-https-client", "http-1x", "sigv4a"] }
+aws-sdk-secretsmanager = { version = "1", default-features = false, features = ["behavior-version-latest", "rt-tokio", "default-https-client"] }
 axum = "0.7"
 base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
