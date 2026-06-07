@@ -68,10 +68,7 @@ mod tests {
             return Err("script does not end with '}'".into());
         }
         let wrapped = format!("({source})");
-        let path = std::env::temp_dir().join(format!(
-            "gmr-script-check-{}.js",
-            std::process::id()
-        ));
+        let path = std::env::temp_dir().join(format!("gmr-script-check-{}.js", std::process::id()));
         std::fs::write(&path, &wrapped).map_err(|e| e.to_string())?;
         let ok = std::process::Command::new("node")
             .arg("--check")

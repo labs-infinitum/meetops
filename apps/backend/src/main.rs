@@ -2,6 +2,7 @@ use std::{net::SocketAddr, sync::Arc};
 
 use tokio::net::TcpListener;
 
+mod ai;
 mod auth;
 mod bot;
 mod calendar;
@@ -67,6 +68,13 @@ async fn main() -> anyhow::Result<()> {
     let active_recordings = Arc::new(bot::active_recordings::ActiveRecordings::default());
     let recording_tasks = Arc::new(RecordingTasks::default());
     let app_shutdown = AppShutdown::new();
+    workers::ai_pipeline::spawn(
+        Arc::clone(&config),
+        pool.clone(),
+        http.clone(),
+        Arc::clone(&recordings),
+        Arc::clone(&app_shutdown),
+    );
     workers::scheduler::spawn(
         Arc::clone(&config),
         pool.clone(),
@@ -140,9 +148,7 @@ async fn main() -> anyhow::Result<()> {
     if stopped > 0 {
         tracing::info!(stopped, "requested stop for active recordings");
     }
-    recording_tasks
-        .drain(recording_tasks::DRAIN_TIMEOUT)
-        .await;
+    recording_tasks.drain(recording_tasks::DRAIN_TIMEOUT).await;
 
     Ok(())
 }

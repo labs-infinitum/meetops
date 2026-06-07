@@ -40,10 +40,7 @@ pub async fn list_for_user(pool: &DbPool, user_id: &str) -> sqlx::Result<Vec<Mee
         ORDER BY m.start_at ASC
         "#
     );
-    sqlx::query_as(&sql)
-    .bind(user_id)
-    .fetch_all(pool)
-    .await
+    sqlx::query_as(&sql).bind(user_id).fetch_all(pool).await
 }
 
 pub async fn get_for_user(
@@ -58,10 +55,10 @@ pub async fn get_for_user(
         "#
     );
     sqlx::query_as(&sql)
-    .bind(meeting_id)
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await
+        .bind(meeting_id)
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await
 }
 
 pub async fn count_upcoming_within(
@@ -81,11 +78,11 @@ pub async fn count_upcoming_within(
         "#
     );
     sqlx::query_scalar(&sql)
-    .bind(user_id)
-    .bind(now)
-    .bind(until)
-    .fetch_one(pool)
-    .await
+        .bind(user_id)
+        .bind(now)
+        .bind(until)
+        .fetch_one(pool)
+        .await
 }
 
 pub async fn set_auto_join_for_user(
@@ -104,12 +101,12 @@ pub async fn set_auto_join_for_user(
         "#
     );
     let result = sqlx::query(&sql)
-    .bind(auto_join)
-    .bind(now)
-    .bind(meeting_id)
-    .bind(user_id)
-    .execute(pool)
-    .await?;
+        .bind(auto_join)
+        .bind(now)
+        .bind(meeting_id)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
     Ok(result.rows_affected() > 0)
 }
 

@@ -1,6 +1,5 @@
 use super::{
-    detect_restore_pages_popup, detect_tab_share_allow_button,
-    restore_popup::draw_click_marker,
+    detect_restore_pages_popup, detect_tab_share_allow_button, restore_popup::draw_click_marker,
 };
 use image::DynamicImage;
 use std::path::{Path, PathBuf};

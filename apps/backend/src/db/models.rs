@@ -89,3 +89,52 @@ pub struct NewMeetingTimelineEvent {
     pub participant_name: Option<String>,
     pub payload_json: Option<String>,
 }
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct Transcript {
+    pub id: i64,
+    pub bot_run_id: i64,
+    pub status: String,
+    pub text: Option<String>,
+    pub raw_text: Option<String>,
+    pub cleaned_text: Option<String>,
+    pub segments_json: Option<String>,
+    pub cleaned_segments_json: Option<String>,
+    pub language: Option<String>,
+    pub error: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct Summary {
+    pub id: i64,
+    pub transcript_id: i64,
+    pub status: String,
+    pub tldr: Option<String>,
+    pub summary_md: Option<String>,
+    pub action_items_json: Option<String>,
+    pub error: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct Job {
+    pub id: i64,
+    pub kind: String,
+    pub status: String,
+    pub meeting_id: Option<String>,
+    pub bot_run_id: Option<i64>,
+    pub transcript_id: Option<i64>,
+    pub payload_json: Option<String>,
+    pub attempts: i64,
+    pub run_after: i64,
+    pub locked_at: Option<i64>,
+    pub last_error: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}

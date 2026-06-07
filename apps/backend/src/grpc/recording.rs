@@ -2,9 +2,7 @@ use tonic::{Request, Response, Status};
 
 use crate::{
     db::BotRunStatus,
-    recording::{
-        RecordingService as DomainRecordingService, RecordingServiceError, duration_secs,
-    },
+    recording::{RecordingService as DomainRecordingService, RecordingServiceError, duration_secs},
 };
 
 pub mod proto {

@@ -53,10 +53,7 @@ pub async fn get_user_by_id(pool: &DbPool, id: &str) -> sqlx::Result<Option<User
         .await
 }
 
-pub async fn get_user_by_username(
-    pool: &DbPool,
-    username: &str,
-) -> sqlx::Result<Option<UserRow>> {
+pub async fn get_user_by_username(pool: &DbPool, username: &str) -> sqlx::Result<Option<UserRow>> {
     sqlx::query_as(
         "SELECT id, username, email, name, password_hash FROM users WHERE lower(username) = lower($1)",
     )

@@ -48,4 +48,4 @@ scheduler_poll_interval_secs = 15
 [groq]
 api_key_env = "GROQ_API_KEY"
 transcription_model = "whisper-large-v3-turbo"
-summarization_model = "qwen3-32b-131k"
+summarization_model = "qwen/qwen3-32b"

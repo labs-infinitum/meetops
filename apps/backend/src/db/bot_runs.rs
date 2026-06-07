@@ -239,10 +239,10 @@ pub async fn list_recent_for_user(
         "
     );
     sqlx::query_as::<_, BotRunListItem>(&sql)
-    .bind(user_id)
-    .bind(limit)
-    .fetch_all(pool)
-    .await
+        .bind(user_id)
+        .bind(limit)
+        .fetch_all(pool)
+        .await
 }
 
 pub async fn count_completed_for_user(pool: &DbPool, user_id: &str) -> sqlx::Result<i64> {
@@ -255,10 +255,7 @@ pub async fn count_completed_for_user(pool: &DbPool, user_id: &str) -> sqlx::Res
         WHERE br.status = 'completed' AND {visible}
         "#
     );
-    sqlx::query_scalar(&sql)
-    .bind(user_id)
-    .fetch_one(pool)
-    .await
+    sqlx::query_scalar(&sql).bind(user_id).fetch_one(pool).await
 }
 
 pub async fn get_for_user(
@@ -273,8 +270,8 @@ pub async fn get_for_user(
         "
     );
     sqlx::query_as::<_, BotRunListItem>(&sql)
-    .bind(run_id)
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await
+        .bind(run_id)
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await
 }

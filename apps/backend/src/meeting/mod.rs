@@ -121,7 +121,6 @@ impl MeetingService {
             upcoming_meetings,
         })
     }
-
 }
 
 pub fn row_to_proto_fields(row: &MeetingRow) -> (Vec<String>, String, String) {

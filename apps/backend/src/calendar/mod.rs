@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use reqwest::Client;
 use crate::db::DbPool;
+use reqwest::Client;
 use thiserror::Error;
 
 use crate::{
@@ -221,5 +221,4 @@ impl CalendarService {
             Err(error) => Err(CalendarConnectError::from(error)),
         }
     }
-
 }

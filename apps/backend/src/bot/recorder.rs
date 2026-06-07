@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use chrono::Utc;
 use crate::db::DbPool;
+use chrono::Utc;
 use tokio::sync::watch;
 use tokio::time::{Duration, Instant};
 
@@ -349,11 +349,7 @@ fn recording_stop_requested(
     stop_rx: &watch::Receiver<bool>,
     shutdown: Option<&AppShutdown>,
 ) -> bool {
-    RecordingStop {
-        stop_rx,
-        shutdown,
-    }
-    .requested()
+    RecordingStop { stop_rx, shutdown }.requested()
 }
 
 fn recording_stop_error(shutdown: Option<&AppShutdown>) -> anyhow::Error {

@@ -180,6 +180,29 @@ impl RecordingsStore {
         Ok(presigned.uri().to_string())
     }
 
+    pub async fn download_bot_run_audio(
+        &self,
+        user_id: &str,
+        run_id: i64,
+    ) -> anyhow::Result<Vec<u8>> {
+        let key = self.audio_object_key_for_bot_run(user_id, run_id);
+        let object = self
+            .s3
+            .get_object()
+            .bucket(&self.config.recordings.s3.bucket)
+            .key(&key)
+            .send()
+            .await?;
+        let bytes = object.body.collect().await?.into_bytes();
+        tracing::info!(
+            bucket = %self.config.recordings.s3.bucket,
+            key = %key,
+            bytes = bytes.len(),
+            "downloaded recording audio from S3"
+        );
+        Ok(bytes.to_vec())
+    }
+
     async fn upload_file(
         &self,
         client: &S3Client,

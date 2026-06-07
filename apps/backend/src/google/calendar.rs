@@ -1,7 +1,7 @@
+use crate::db::DbPool;
 use chrono::{DateTime, Duration, Utc};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use crate::db::DbPool;
 
 use crate::{
     config::Config,

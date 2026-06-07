@@ -3,6 +3,7 @@ use std::{
     time::Duration,
 };
 
+use crate::db::DbPool;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use chromiumoxide::browser::BrowserConfigBuilder;
 use chromiumoxide::cdp::browser_protocol::browser::{
@@ -12,7 +13,6 @@ use chromiumoxide::cdp::js_protocol::runtime::{AddBindingParams, EventBindingCal
 use chromiumoxide::{Browser, BrowserConfig, Page};
 use futures::StreamExt;
 use serde::Deserialize;
-use crate::db::DbPool;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tokio::task::JoinHandle;

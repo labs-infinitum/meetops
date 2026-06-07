@@ -37,10 +37,7 @@ impl ActiveRecordings {
     /// Request stop on every in-flight recording (used during process shutdown).
     pub fn request_stop_all(&self) -> usize {
         let guard = self.inner.lock().expect("active recordings lock");
-        guard
-            .values()
-            .filter(|tx| tx.send(true).is_ok())
-            .count()
+        guard.values().filter(|tx| tx.send(true).is_ok()).count()
     }
 }
 

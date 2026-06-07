@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use reqwest::Client;
 use crate::db::DbPool;
+use reqwest::Client;
 use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
 use tokio_stream::wrappers::TcpListenerStream;
@@ -136,12 +136,9 @@ pub async fn serve(
                 recording_service,
             ),
         ))
-        .serve_with_incoming_shutdown(
-            TcpListenerStream::new(listener),
-            async move {
-                shutdown.wait_server_stop().await;
-            },
-        )
+        .serve_with_incoming_shutdown(TcpListenerStream::new(listener), async move {
+            shutdown.wait_server_stop().await;
+        })
         .await?;
 
     Ok(())

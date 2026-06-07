@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
-use reqwest::Client;
 use crate::db::DbPool;
+use reqwest::Client;
 
 use crate::{config::Config, google};
 

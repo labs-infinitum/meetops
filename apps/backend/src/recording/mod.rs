@@ -8,7 +8,7 @@ use crate::{
     auth::{AuthError, AuthService},
     bot::{active_recordings::ActiveRecordings, recording_tasks::RecordingTasks},
     config::Config,
-    db::{self, bot_runs::BotRunListItem, BotRunStatus},
+    db::{self, BotRunStatus, bot_runs::BotRunListItem},
     meet_url::{InvalidMeetUrl, MeetUrl},
     shutdown::AppShutdown,
     storage::RecordingsStore,
@@ -260,7 +260,6 @@ impl RecordingService {
     fn store_presigned_ttl(&self) -> i64 {
         self.store.presigned_url_ttl_secs() as i64
     }
-
 }
 
 pub fn duration_secs(run: &BotRunListItem) -> i64 {

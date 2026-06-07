@@ -101,14 +101,31 @@ pub async fn run_with_permit(
                 .await
             {
                 Ok(stored) => {
-                    finalize_run_logged(
+                    if finalize_run_logged(
                         &pool,
                         run_id,
                         BotRunStatus::Completed,
                         None,
                         Some(stored.as_str()),
                     )
-                    .await;
+                    .await
+                    {
+                        match super::ai_pipeline::enqueue_transcription(&pool, run_id).await {
+                            Ok(Some(job_id)) => {
+                                tracing::info!(run_id, job_id, "enqueued AI transcription job");
+                            }
+                            Ok(None) => {
+                                tracing::debug!(run_id, "AI transcription job already exists");
+                            }
+                            Err(error) => {
+                                tracing::warn!(
+                                    %error,
+                                    run_id,
+                                    "failed to enqueue AI transcription job"
+                                );
+                            }
+                        }
+                    }
                 }
                 Err(error) => {
                     let message = format!("S3 upload failed: {error}");
@@ -205,9 +222,13 @@ async fn finalize_run_logged(
     status: BotRunStatus,
     error: Option<&str>,
     recording_path: Option<&str>,
-) {
-    if let Err(err) = bot_runs::finalize_run(pool, run_id, status, error, recording_path).await {
-        tracing::error!(%err, run_id, status = status.as_str(), "failed to finalize bot run");
+) -> bool {
+    match bot_runs::finalize_run(pool, run_id, status, error, recording_path).await {
+        Ok(()) => true,
+        Err(err) => {
+            tracing::error!(%err, run_id, status = status.as_str(), "failed to finalize bot run");
+            false
+        }
     }
 }
 

@@ -264,7 +264,7 @@ impl Default for Config {
             groq: GroqConfig {
                 api_key_env: "GROQ_API_KEY".to_owned(),
                 transcription_model: "whisper-large-v3-turbo".to_owned(),
-                summarization_model: "qwen3-32b-131k".to_owned(),
+                summarization_model: "qwen/qwen3-32b".to_owned(),
             },
         }
     }

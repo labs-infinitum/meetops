@@ -65,8 +65,37 @@ pub async fn list_for_user_run(
         "#
     );
     sqlx::query_as::<_, MeetingTimelineEvent>(&sql)
+        .bind(bot_run_id)
+        .bind(user_id)
+        .bind(limit)
+        .fetch_all(pool)
+        .await
+}
+
+pub async fn list_for_run(
+    pool: &DbPool,
+    bot_run_id: i64,
+    limit: i64,
+) -> sqlx::Result<Vec<MeetingTimelineEvent>> {
+    sqlx::query_as::<_, MeetingTimelineEvent>(
+        r#"
+        SELECT
+            id,
+            bot_run_id,
+            event_type,
+            occurred_at,
+            relative_ms,
+            participant_id,
+            participant_name,
+            payload_json,
+            created_at
+        FROM meeting_timeline_events
+        WHERE bot_run_id = $1
+        ORDER BY occurred_at ASC, id ASC
+        LIMIT $2
+        "#,
+    )
     .bind(bot_run_id)
-    .bind(user_id)
     .bind(limit)
     .fetch_all(pool)
     .await

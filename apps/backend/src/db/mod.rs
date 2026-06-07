@@ -1,14 +1,17 @@
 use aws_sdk_secretsmanager::Client as SecretsClient;
 use serde::Deserialize;
-use sqlx::{migrate::Migrator, postgres::PgPoolOptions, PgPool};
+use sqlx::{PgPool, migrate::Migrator, postgres::PgPoolOptions};
 
 use crate::config::Config;
 
 pub mod bot_runs;
 pub mod calendar_connections;
+pub mod jobs;
 pub mod meeting_timeline;
 pub mod meetings;
 pub mod models;
+pub mod summaries;
+pub mod transcripts;
 pub mod users;
 
 pub use models::BotRunStatus;
@@ -33,7 +36,13 @@ pub async fn connect(config: &Config) -> anyhow::Result<DbPool> {
 }
 
 async fn resolve_database_url(config: &Config) -> anyhow::Result<String> {
-    if let Some(url) = config.database.url.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+    if let Some(url) = config
+        .database
+        .url
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
         if url.starts_with("sqlite:") {
             anyhow::bail!("SQLite is not supported; use a postgres:// or postgresql:// URL");
         }

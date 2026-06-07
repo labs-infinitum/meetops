@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use crate::db::DbPool;
 use axum::{
     Router,
     extract::{Query, State},
@@ -10,7 +11,6 @@ use axum::{
 };
 use reqwest::Client;
 use serde::Deserialize;
-use crate::db::DbPool;
 use tower_http::trace::TraceLayer;
 
 use crate::{

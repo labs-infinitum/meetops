@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use tokio::sync::{broadcast, watch, Notify};
+use tokio::sync::{Notify, broadcast, watch};
 
 /// Signals scheduler/recorder shutdown and coordinates recording drain on SIGTERM/SIGINT.
 #[derive(Clone)]

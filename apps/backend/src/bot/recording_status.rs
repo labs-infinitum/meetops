@@ -239,7 +239,10 @@ mod tests {
             r#"{"kind":"chunk","size":12,"data":"YWJj","timelineEvents":[{"eventType":"participant_joined","occurredAt":10,"relativeMs":1000,"participantId":"spaces/abc","participantName":"Alice","payload":{"source":"listitem"}}]}"#,
         )
         .unwrap();
-        let RecordingBindingPayload::Chunk { timeline_events, .. } = chunk_with_timeline else {
+        let RecordingBindingPayload::Chunk {
+            timeline_events, ..
+        } = chunk_with_timeline
+        else {
             panic!("expected chunk");
         };
         assert_eq!(timeline_events.len(), 1);
@@ -266,10 +269,7 @@ mod tests {
             panic!("expected timeline events");
         };
         assert_eq!(events.len(), 1);
-        assert_eq!(
-            events[0].event_type,
-            TimelineEventType::ParticipantJoined
-        );
+        assert_eq!(events[0].event_type, TimelineEventType::ParticipantJoined);
     }
 
     #[test]

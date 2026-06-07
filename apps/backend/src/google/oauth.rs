@@ -1,8 +1,8 @@
+use crate::db::DbPool;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use rand::RngCore;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::{config::Config, db, db::calendar_connections};
@@ -281,10 +281,7 @@ pub async fn valid_access_token_for_connection(
     })
 }
 
-async fn verify_state(
-    pool: &DbPool,
-    state: &str,
-) -> Result<OAuthStatePayload, GoogleAuthError> {
+async fn verify_state(pool: &DbPool, state: &str) -> Result<OAuthStatePayload, GoogleAuthError> {
     let stored = db::get_kv(pool, &oauth_state_key(state)).await?;
     let Some(json) = stored else {
         return Err(GoogleAuthError::StateMismatch);
