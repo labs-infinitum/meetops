@@ -1,3 +1,4 @@
+use serde::Deserialize;
 use tonic::{Request, Response, Status};
 
 use crate::{
@@ -10,13 +11,23 @@ pub mod proto {
 }
 
 use proto::{
-    BotRun, GetBotRunRequest, GetBotRunResponse, GetPlaybackUrlRequest, GetPlaybackUrlResponse,
-    ListBotRunsRequest, ListBotRunsResponse, ListBotRunsSuccess, ListMeetingTimelineEventsRequest,
-    ListMeetingTimelineEventsResponse, ListMeetingTimelineEventsSuccess, MeetingTimelineEvent,
-    PlaybackUrlSuccess, RecordingError, StartAdHocRecordingRequest, StartAdHocRecordingResponse,
-    StartAdHocRecordingSuccess, StopRecordingRequest, StopRecordingResponse, StopRecordingSuccess,
+    BotRun, GeneratedActionItem, GeneratedNote, GetBotRunRequest, GetBotRunResponse,
+    GetGeneratedNoteRequest, GetGeneratedNoteResponse, GetPlaybackUrlRequest,
+    GetPlaybackUrlResponse, ListBotRunsRequest, ListBotRunsResponse, ListBotRunsSuccess,
+    ListGeneratedNotesRequest, ListGeneratedNotesResponse, ListGeneratedNotesSuccess,
+    ListMeetingTimelineEventsRequest, ListMeetingTimelineEventsResponse,
+    ListMeetingTimelineEventsSuccess, MeetingTimelineEvent, PlaybackUrlSuccess, RecordingError,
+    StartAdHocRecordingRequest, StartAdHocRecordingResponse, StartAdHocRecordingSuccess,
+    StopRecordingRequest, StopRecordingResponse, StopRecordingSuccess,
     recording_service_server::RecordingService,
 };
+
+#[derive(Debug, Deserialize)]
+struct ActionItemJson {
+    text: String,
+    owner: Option<String>,
+    due: Option<String>,
+}
 
 pub struct RecordingGrpcService {
     pub inner: DomainRecordingService,
@@ -112,6 +123,51 @@ impl RecordingService for RecordingGrpcService {
         }
     }
 
+    async fn list_generated_notes(
+        &self,
+        request: Request<ListGeneratedNotesRequest>,
+    ) -> Result<Response<ListGeneratedNotesResponse>, Status> {
+        let req = request.into_inner();
+        let limit = if req.limit == 0 { 50 } else { req.limit };
+        match self.inner.list_generated_notes(&req.token, limit).await {
+            Ok(notes) => Ok(Response::new(ListGeneratedNotesResponse {
+                result: Some(proto::list_generated_notes_response::Result::Success(
+                    ListGeneratedNotesSuccess {
+                        notes: notes.iter().map(to_proto_generated_note).collect(),
+                    },
+                )),
+            })),
+            Err(error) => Ok(Response::new(ListGeneratedNotesResponse {
+                result: Some(proto::list_generated_notes_response::Result::Error(
+                    to_proto_error(&error),
+                )),
+            })),
+        }
+    }
+
+    async fn get_generated_note(
+        &self,
+        request: Request<GetGeneratedNoteRequest>,
+    ) -> Result<Response<GetGeneratedNoteResponse>, Status> {
+        let req = request.into_inner();
+        match self
+            .inner
+            .get_generated_note(&req.token, req.transcript_id)
+            .await
+        {
+            Ok(note) => Ok(Response::new(GetGeneratedNoteResponse {
+                result: Some(proto::get_generated_note_response::Result::Success(
+                    to_proto_generated_note(&note),
+                )),
+            })),
+            Err(error) => Ok(Response::new(GetGeneratedNoteResponse {
+                result: Some(proto::get_generated_note_response::Result::Error(
+                    to_proto_error(&error),
+                )),
+            })),
+        }
+    }
+
     async fn start_ad_hoc_recording(
         &self,
         request: Request<StartAdHocRecordingRequest>,
@@ -190,6 +246,40 @@ fn to_proto_timeline_event(
         payload_json: event.payload_json.clone().unwrap_or_default(),
         created_at: event.created_at,
     }
+}
+
+fn to_proto_generated_note(note: &crate::db::models::GeneratedNote) -> GeneratedNote {
+    GeneratedNote {
+        transcript_id: note.transcript_id,
+        bot_run_id: note.bot_run_id,
+        meeting_id: note.meeting_id.clone(),
+        meeting_title: note.meeting_title.clone(),
+        recorded_at: note.recorded_at,
+        transcript_status: note.transcript_status.clone(),
+        summary_status: note.summary_status.clone().unwrap_or_default(),
+        tldr: note.tldr.clone().unwrap_or_default(),
+        summary_md: note.summary_md.clone().unwrap_or_default(),
+        raw_transcript: note.raw_transcript.clone().unwrap_or_default(),
+        cleaned_transcript: note.cleaned_transcript.clone().unwrap_or_default(),
+        action_items: parse_action_items(note.action_items_json.as_deref()),
+        error: note
+            .summary_error
+            .clone()
+            .or_else(|| note.transcript_error.clone())
+            .unwrap_or_default(),
+    }
+}
+
+fn parse_action_items(raw: Option<&str>) -> Vec<GeneratedActionItem> {
+    raw.and_then(|text| serde_json::from_str::<Vec<ActionItemJson>>(text).ok())
+        .unwrap_or_default()
+        .into_iter()
+        .map(|item| GeneratedActionItem {
+            text: item.text,
+            owner: item.owner.unwrap_or_default(),
+            due: item.due.unwrap_or_default(),
+        })
+        .collect()
 }
 
 fn to_proto_error(error: &RecordingServiceError) -> RecordingError {

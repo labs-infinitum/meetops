@@ -7,6 +7,8 @@ service RecordingService {
   rpc GetBotRun(GetBotRunRequest) returns (GetBotRunResponse);
   rpc GetPlaybackUrl(GetPlaybackUrlRequest) returns (GetPlaybackUrlResponse);
   rpc ListMeetingTimelineEvents(ListMeetingTimelineEventsRequest) returns (ListMeetingTimelineEventsResponse);
+  rpc ListGeneratedNotes(ListGeneratedNotesRequest) returns (ListGeneratedNotesResponse);
+  rpc GetGeneratedNote(GetGeneratedNoteRequest) returns (GetGeneratedNoteResponse);
   rpc StartAdHocRecording(StartAdHocRecordingRequest) returns (StartAdHocRecordingResponse);
   rpc StopRecording(StopRecordingRequest) returns (StopRecordingResponse);
 }
@@ -97,6 +99,56 @@ message ListMeetingTimelineEventsResponse {
 
 message ListMeetingTimelineEventsSuccess {
   repeated MeetingTimelineEvent events = 1;
+}
+
+message GeneratedActionItem {
+  string text = 1;
+  string owner = 2;
+  string due = 3;
+}
+
+message GeneratedNote {
+  int64 transcript_id = 1;
+  int64 bot_run_id = 2;
+  string meeting_id = 3;
+  string meeting_title = 4;
+  int64 recorded_at = 5;
+  string transcript_status = 6;
+  string summary_status = 7;
+  string tldr = 8;
+  string summary_md = 9;
+  string raw_transcript = 10;
+  string cleaned_transcript = 11;
+  repeated GeneratedActionItem action_items = 12;
+  string error = 13;
+}
+
+message ListGeneratedNotesRequest {
+  string token = 1;
+  int32 limit = 2;
+}
+
+message ListGeneratedNotesResponse {
+  oneof result {
+    ListGeneratedNotesSuccess success = 1;
+    RecordingError error = 2;
+  }
+}
+
+message ListGeneratedNotesSuccess {
+  repeated GeneratedNote notes = 1;
+}
+
+message GetGeneratedNoteRequest {
+  string token = 1;
+  int64 transcript_id = 2;
+}
+
+message GetGeneratedNoteResponse {
+  oneof result {
+    GeneratedNote success = 1;
+    RecordingError error = 2;
+  }
 }
 
 message RecordingError {

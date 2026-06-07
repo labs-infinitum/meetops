@@ -9,6 +9,10 @@ import type { StopRecordingResponse } from "./recording";
 import type { StopRecordingRequest } from "./recording";
 import type { StartAdHocRecordingResponse } from "./recording";
 import type { StartAdHocRecordingRequest } from "./recording";
+import type { GetGeneratedNoteResponse } from "./recording";
+import type { GetGeneratedNoteRequest } from "./recording";
+import type { ListGeneratedNotesResponse } from "./recording";
+import type { ListGeneratedNotesRequest } from "./recording";
 import type { ListMeetingTimelineEventsResponse } from "./recording";
 import type { ListMeetingTimelineEventsRequest } from "./recording";
 import type { GetPlaybackUrlResponse } from "./recording";
@@ -40,6 +44,14 @@ export interface IRecordingServiceClient {
      * @generated from protobuf rpc: ListMeetingTimelineEvents
      */
     listMeetingTimelineEvents(input: ListMeetingTimelineEventsRequest, options?: RpcOptions): UnaryCall<ListMeetingTimelineEventsRequest, ListMeetingTimelineEventsResponse>;
+    /**
+     * @generated from protobuf rpc: ListGeneratedNotes
+     */
+    listGeneratedNotes(input: ListGeneratedNotesRequest, options?: RpcOptions): UnaryCall<ListGeneratedNotesRequest, ListGeneratedNotesResponse>;
+    /**
+     * @generated from protobuf rpc: GetGeneratedNote
+     */
+    getGeneratedNote(input: GetGeneratedNoteRequest, options?: RpcOptions): UnaryCall<GetGeneratedNoteRequest, GetGeneratedNoteResponse>;
     /**
      * @generated from protobuf rpc: StartAdHocRecording
      */
@@ -87,17 +99,31 @@ export class RecordingServiceClient implements IRecordingServiceClient, ServiceI
         return stackIntercept<ListMeetingTimelineEventsRequest, ListMeetingTimelineEventsResponse>("unary", this._transport, method, opt, input);
     }
     /**
+     * @generated from protobuf rpc: ListGeneratedNotes
+     */
+    listGeneratedNotes(input: ListGeneratedNotesRequest, options?: RpcOptions): UnaryCall<ListGeneratedNotesRequest, ListGeneratedNotesResponse> {
+        const method = this.methods[4], opt = this._transport.mergeOptions(options);
+        return stackIntercept<ListGeneratedNotesRequest, ListGeneratedNotesResponse>("unary", this._transport, method, opt, input);
+    }
+    /**
+     * @generated from protobuf rpc: GetGeneratedNote
+     */
+    getGeneratedNote(input: GetGeneratedNoteRequest, options?: RpcOptions): UnaryCall<GetGeneratedNoteRequest, GetGeneratedNoteResponse> {
+        const method = this.methods[5], opt = this._transport.mergeOptions(options);
+        return stackIntercept<GetGeneratedNoteRequest, GetGeneratedNoteResponse>("unary", this._transport, method, opt, input);
+    }
+    /**
      * @generated from protobuf rpc: StartAdHocRecording
      */
     startAdHocRecording(input: StartAdHocRecordingRequest, options?: RpcOptions): UnaryCall<StartAdHocRecordingRequest, StartAdHocRecordingResponse> {
-        const method = this.methods[4], opt = this._transport.mergeOptions(options);
+        const method = this.methods[6], opt = this._transport.mergeOptions(options);
         return stackIntercept<StartAdHocRecordingRequest, StartAdHocRecordingResponse>("unary", this._transport, method, opt, input);
     }
     /**
      * @generated from protobuf rpc: StopRecording
      */
     stopRecording(input: StopRecordingRequest, options?: RpcOptions): UnaryCall<StopRecordingRequest, StopRecordingResponse> {
-        const method = this.methods[5], opt = this._transport.mergeOptions(options);
+        const method = this.methods[7], opt = this._transport.mergeOptions(options);
         return stackIntercept<StopRecordingRequest, StopRecordingResponse>("unary", this._transport, method, opt, input);
     }
 }

@@ -1,7 +1,8 @@
 use crate::db::DbPool;
 
-use super::models::Transcript;
+use super::models::{GeneratedNote, Transcript};
 use super::now_unix;
+use super::sql_bot_run_visible_to_user;
 
 const TRANSCRIPT_SELECT: &str = r#"
     SELECT
@@ -125,6 +126,82 @@ pub async fn get_by_id(pool: &DbPool, transcript_id: i64) -> sqlx::Result<Option
 pub async fn get_by_bot_run(pool: &DbPool, bot_run_id: i64) -> sqlx::Result<Option<Transcript>> {
     sqlx::query_as::<_, Transcript>(&format!("{TRANSCRIPT_SELECT} WHERE bot_run_id = $1"))
         .bind(bot_run_id)
+        .fetch_optional(pool)
+        .await
+}
+
+pub async fn list_generated_notes_for_user(
+    pool: &DbPool,
+    user_id: &str,
+    limit: i64,
+) -> sqlx::Result<Vec<GeneratedNote>> {
+    let visible = sql_bot_run_visible_to_user("$1");
+    let sql = format!(
+        r#"
+        SELECT
+            t.id AS transcript_id,
+            t.bot_run_id,
+            br.meeting_id,
+            m.title AS meeting_title,
+            COALESCE(br.ended_at, br.started_at, br.created_at) AS recorded_at,
+            t.status AS transcript_status,
+            s.status AS summary_status,
+            s.tldr,
+            s.summary_md,
+            t.raw_text AS raw_transcript,
+            t.cleaned_text AS cleaned_transcript,
+            s.action_items_json,
+            t.error AS transcript_error,
+            s.error AS summary_error
+        FROM transcripts t
+        JOIN bot_runs br ON br.id = t.bot_run_id
+        JOIN meetings m ON m.id = br.meeting_id
+        LEFT JOIN summaries s ON s.transcript_id = t.id
+        WHERE {visible}
+        ORDER BY COALESCE(br.ended_at, br.started_at, br.created_at) DESC, t.id DESC
+        LIMIT $2
+        "#
+    );
+    sqlx::query_as::<_, GeneratedNote>(&sql)
+        .bind(user_id)
+        .bind(limit)
+        .fetch_all(pool)
+        .await
+}
+
+pub async fn get_generated_note_for_user(
+    pool: &DbPool,
+    user_id: &str,
+    transcript_id: i64,
+) -> sqlx::Result<Option<GeneratedNote>> {
+    let visible = sql_bot_run_visible_to_user("$2");
+    let sql = format!(
+        r#"
+        SELECT
+            t.id AS transcript_id,
+            t.bot_run_id,
+            br.meeting_id,
+            m.title AS meeting_title,
+            COALESCE(br.ended_at, br.started_at, br.created_at) AS recorded_at,
+            t.status AS transcript_status,
+            s.status AS summary_status,
+            s.tldr,
+            s.summary_md,
+            t.raw_text AS raw_transcript,
+            t.cleaned_text AS cleaned_transcript,
+            s.action_items_json,
+            t.error AS transcript_error,
+            s.error AS summary_error
+        FROM transcripts t
+        JOIN bot_runs br ON br.id = t.bot_run_id
+        JOIN meetings m ON m.id = br.meeting_id
+        LEFT JOIN summaries s ON s.transcript_id = t.id
+        WHERE t.id = $1 AND {visible}
+        "#
+    );
+    sqlx::query_as::<_, GeneratedNote>(&sql)
+        .bind(transcript_id)
+        .bind(user_id)
         .fetch_optional(pool)
         .await
 }

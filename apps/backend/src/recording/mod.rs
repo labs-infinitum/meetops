@@ -171,6 +171,29 @@ impl RecordingService {
             .map_err(Into::into)
     }
 
+    pub async fn list_generated_notes(
+        &self,
+        token: &str,
+        limit: i32,
+    ) -> Result<Vec<db::models::GeneratedNote>, RecordingServiceError> {
+        let user_id = self.auth.require_user_id(token).await?;
+        let limit = i64::from(limit.clamp(1, 100));
+        db::transcripts::list_generated_notes_for_user(&self.db, &user_id, limit)
+            .await
+            .map_err(Into::into)
+    }
+
+    pub async fn get_generated_note(
+        &self,
+        token: &str,
+        transcript_id: i64,
+    ) -> Result<db::models::GeneratedNote, RecordingServiceError> {
+        let user_id = self.auth.require_user_id(token).await?;
+        db::transcripts::get_generated_note_for_user(&self.db, &user_id, transcript_id)
+            .await?
+            .ok_or(RecordingServiceError::NotFound)
+    }
+
     pub async fn start_ad_hoc_recording(
         &self,
         token: &str,

@@ -282,6 +282,161 @@ export interface ListMeetingTimelineEventsSuccess {
     events: MeetingTimelineEvent[];
 }
 /**
+ * @generated from protobuf message notetaker.v1.GeneratedActionItem
+ */
+export interface GeneratedActionItem {
+    /**
+     * @generated from protobuf field: string text = 1
+     */
+    text: string;
+    /**
+     * @generated from protobuf field: string owner = 2
+     */
+    owner: string;
+    /**
+     * @generated from protobuf field: string due = 3
+     */
+    due: string;
+}
+/**
+ * @generated from protobuf message notetaker.v1.GeneratedNote
+ */
+export interface GeneratedNote {
+    /**
+     * @generated from protobuf field: int64 transcript_id = 1
+     */
+    transcriptId: bigint;
+    /**
+     * @generated from protobuf field: int64 bot_run_id = 2
+     */
+    botRunId: bigint;
+    /**
+     * @generated from protobuf field: string meeting_id = 3
+     */
+    meetingId: string;
+    /**
+     * @generated from protobuf field: string meeting_title = 4
+     */
+    meetingTitle: string;
+    /**
+     * @generated from protobuf field: int64 recorded_at = 5
+     */
+    recordedAt: bigint;
+    /**
+     * @generated from protobuf field: string transcript_status = 6
+     */
+    transcriptStatus: string;
+    /**
+     * @generated from protobuf field: string summary_status = 7
+     */
+    summaryStatus: string;
+    /**
+     * @generated from protobuf field: string tldr = 8
+     */
+    tldr: string;
+    /**
+     * @generated from protobuf field: string summary_md = 9
+     */
+    summaryMd: string;
+    /**
+     * @generated from protobuf field: string raw_transcript = 10
+     */
+    rawTranscript: string;
+    /**
+     * @generated from protobuf field: string cleaned_transcript = 11
+     */
+    cleanedTranscript: string;
+    /**
+     * @generated from protobuf field: repeated notetaker.v1.GeneratedActionItem action_items = 12
+     */
+    actionItems: GeneratedActionItem[];
+    /**
+     * @generated from protobuf field: string error = 13
+     */
+    error: string;
+}
+/**
+ * @generated from protobuf message notetaker.v1.ListGeneratedNotesRequest
+ */
+export interface ListGeneratedNotesRequest {
+    /**
+     * @generated from protobuf field: string token = 1
+     */
+    token: string;
+    /**
+     * @generated from protobuf field: int32 limit = 2
+     */
+    limit: number;
+}
+/**
+ * @generated from protobuf message notetaker.v1.ListGeneratedNotesResponse
+ */
+export interface ListGeneratedNotesResponse {
+    /**
+     * @generated from protobuf oneof: result
+     */
+    result: {
+        oneofKind: "success";
+        /**
+         * @generated from protobuf field: notetaker.v1.ListGeneratedNotesSuccess success = 1
+         */
+        success: ListGeneratedNotesSuccess;
+    } | {
+        oneofKind: "error";
+        /**
+         * @generated from protobuf field: notetaker.v1.RecordingError error = 2
+         */
+        error: RecordingError;
+    } | {
+        oneofKind: undefined;
+    };
+}
+/**
+ * @generated from protobuf message notetaker.v1.ListGeneratedNotesSuccess
+ */
+export interface ListGeneratedNotesSuccess {
+    /**
+     * @generated from protobuf field: repeated notetaker.v1.GeneratedNote notes = 1
+     */
+    notes: GeneratedNote[];
+}
+/**
+ * @generated from protobuf message notetaker.v1.GetGeneratedNoteRequest
+ */
+export interface GetGeneratedNoteRequest {
+    /**
+     * @generated from protobuf field: string token = 1
+     */
+    token: string;
+    /**
+     * @generated from protobuf field: int64 transcript_id = 2
+     */
+    transcriptId: bigint;
+}
+/**
+ * @generated from protobuf message notetaker.v1.GetGeneratedNoteResponse
+ */
+export interface GetGeneratedNoteResponse {
+    /**
+     * @generated from protobuf oneof: result
+     */
+    result: {
+        oneofKind: "success";
+        /**
+         * @generated from protobuf field: notetaker.v1.GeneratedNote success = 1
+         */
+        success: GeneratedNote;
+    } | {
+        oneofKind: "error";
+        /**
+         * @generated from protobuf field: notetaker.v1.RecordingError error = 2
+         */
+        error: RecordingError;
+    } | {
+        oneofKind: undefined;
+    };
+}
+/**
  * @generated from protobuf message notetaker.v1.RecordingError
  */
 export interface RecordingError {
@@ -1240,6 +1395,489 @@ class ListMeetingTimelineEventsSuccess$Type extends MessageType<ListMeetingTimel
  */
 export const ListMeetingTimelineEventsSuccess = new ListMeetingTimelineEventsSuccess$Type();
 // @generated message type with reflection information, may provide speed optimized methods
+class GeneratedActionItem$Type extends MessageType<GeneratedActionItem> {
+    constructor() {
+        super("notetaker.v1.GeneratedActionItem", [
+            { no: 1, name: "text", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 2, name: "owner", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 3, name: "due", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<GeneratedActionItem>): GeneratedActionItem {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.text = "";
+        message.owner = "";
+        message.due = "";
+        if (value !== undefined)
+            reflectionMergePartial<GeneratedActionItem>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: GeneratedActionItem): GeneratedActionItem {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string text */ 1:
+                    message.text = reader.string();
+                    break;
+                case /* string owner */ 2:
+                    message.owner = reader.string();
+                    break;
+                case /* string due */ 3:
+                    message.due = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: GeneratedActionItem, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string text = 1; */
+        if (message.text !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.text);
+        /* string owner = 2; */
+        if (message.owner !== "")
+            writer.tag(2, WireType.LengthDelimited).string(message.owner);
+        /* string due = 3; */
+        if (message.due !== "")
+            writer.tag(3, WireType.LengthDelimited).string(message.due);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message notetaker.v1.GeneratedActionItem
+ */
+export const GeneratedActionItem = new GeneratedActionItem$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class GeneratedNote$Type extends MessageType<GeneratedNote> {
+    constructor() {
+        super("notetaker.v1.GeneratedNote", [
+            { no: 1, name: "transcript_id", kind: "scalar", T: 3 /*ScalarType.INT64*/, L: 0 /*LongType.BIGINT*/ },
+            { no: 2, name: "bot_run_id", kind: "scalar", T: 3 /*ScalarType.INT64*/, L: 0 /*LongType.BIGINT*/ },
+            { no: 3, name: "meeting_id", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 4, name: "meeting_title", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 5, name: "recorded_at", kind: "scalar", T: 3 /*ScalarType.INT64*/, L: 0 /*LongType.BIGINT*/ },
+            { no: 6, name: "transcript_status", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 7, name: "summary_status", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 8, name: "tldr", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 9, name: "summary_md", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 10, name: "raw_transcript", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 11, name: "cleaned_transcript", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 12, name: "action_items", kind: "message", repeat: 2 /*RepeatType.UNPACKED*/, T: () => GeneratedActionItem },
+            { no: 13, name: "error", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<GeneratedNote>): GeneratedNote {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.transcriptId = 0n;
+        message.botRunId = 0n;
+        message.meetingId = "";
+        message.meetingTitle = "";
+        message.recordedAt = 0n;
+        message.transcriptStatus = "";
+        message.summaryStatus = "";
+        message.tldr = "";
+        message.summaryMd = "";
+        message.rawTranscript = "";
+        message.cleanedTranscript = "";
+        message.actionItems = [];
+        message.error = "";
+        if (value !== undefined)
+            reflectionMergePartial<GeneratedNote>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: GeneratedNote): GeneratedNote {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* int64 transcript_id */ 1:
+                    message.transcriptId = reader.int64().toBigInt();
+                    break;
+                case /* int64 bot_run_id */ 2:
+                    message.botRunId = reader.int64().toBigInt();
+                    break;
+                case /* string meeting_id */ 3:
+                    message.meetingId = reader.string();
+                    break;
+                case /* string meeting_title */ 4:
+                    message.meetingTitle = reader.string();
+                    break;
+                case /* int64 recorded_at */ 5:
+                    message.recordedAt = reader.int64().toBigInt();
+                    break;
+                case /* string transcript_status */ 6:
+                    message.transcriptStatus = reader.string();
+                    break;
+                case /* string summary_status */ 7:
+                    message.summaryStatus = reader.string();
+                    break;
+                case /* string tldr */ 8:
+                    message.tldr = reader.string();
+                    break;
+                case /* string summary_md */ 9:
+                    message.summaryMd = reader.string();
+                    break;
+                case /* string raw_transcript */ 10:
+                    message.rawTranscript = reader.string();
+                    break;
+                case /* string cleaned_transcript */ 11:
+                    message.cleanedTranscript = reader.string();
+                    break;
+                case /* repeated notetaker.v1.GeneratedActionItem action_items */ 12:
+                    message.actionItems.push(GeneratedActionItem.internalBinaryRead(reader, reader.uint32(), options));
+                    break;
+                case /* string error */ 13:
+                    message.error = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: GeneratedNote, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* int64 transcript_id = 1; */
+        if (message.transcriptId !== 0n)
+            writer.tag(1, WireType.Varint).int64(message.transcriptId);
+        /* int64 bot_run_id = 2; */
+        if (message.botRunId !== 0n)
+            writer.tag(2, WireType.Varint).int64(message.botRunId);
+        /* string meeting_id = 3; */
+        if (message.meetingId !== "")
+            writer.tag(3, WireType.LengthDelimited).string(message.meetingId);
+        /* string meeting_title = 4; */
+        if (message.meetingTitle !== "")
+            writer.tag(4, WireType.LengthDelimited).string(message.meetingTitle);
+        /* int64 recorded_at = 5; */
+        if (message.recordedAt !== 0n)
+            writer.tag(5, WireType.Varint).int64(message.recordedAt);
+        /* string transcript_status = 6; */
+        if (message.transcriptStatus !== "")
+            writer.tag(6, WireType.LengthDelimited).string(message.transcriptStatus);
+        /* string summary_status = 7; */
+        if (message.summaryStatus !== "")
+            writer.tag(7, WireType.LengthDelimited).string(message.summaryStatus);
+        /* string tldr = 8; */
+        if (message.tldr !== "")
+            writer.tag(8, WireType.LengthDelimited).string(message.tldr);
+        /* string summary_md = 9; */
+        if (message.summaryMd !== "")
+            writer.tag(9, WireType.LengthDelimited).string(message.summaryMd);
+        /* string raw_transcript = 10; */
+        if (message.rawTranscript !== "")
+            writer.tag(10, WireType.LengthDelimited).string(message.rawTranscript);
+        /* string cleaned_transcript = 11; */
+        if (message.cleanedTranscript !== "")
+            writer.tag(11, WireType.LengthDelimited).string(message.cleanedTranscript);
+        /* repeated notetaker.v1.GeneratedActionItem action_items = 12; */
+        for (let i = 0; i < message.actionItems.length; i++)
+            GeneratedActionItem.internalBinaryWrite(message.actionItems[i], writer.tag(12, WireType.LengthDelimited).fork(), options).join();
+        /* string error = 13; */
+        if (message.error !== "")
+            writer.tag(13, WireType.LengthDelimited).string(message.error);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message notetaker.v1.GeneratedNote
+ */
+export const GeneratedNote = new GeneratedNote$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class ListGeneratedNotesRequest$Type extends MessageType<ListGeneratedNotesRequest> {
+    constructor() {
+        super("notetaker.v1.ListGeneratedNotesRequest", [
+            { no: 1, name: "token", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 2, name: "limit", kind: "scalar", T: 5 /*ScalarType.INT32*/ }
+        ]);
+    }
+    create(value?: PartialMessage<ListGeneratedNotesRequest>): ListGeneratedNotesRequest {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.token = "";
+        message.limit = 0;
+        if (value !== undefined)
+            reflectionMergePartial<ListGeneratedNotesRequest>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: ListGeneratedNotesRequest): ListGeneratedNotesRequest {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string token */ 1:
+                    message.token = reader.string();
+                    break;
+                case /* int32 limit */ 2:
+                    message.limit = reader.int32();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: ListGeneratedNotesRequest, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string token = 1; */
+        if (message.token !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.token);
+        /* int32 limit = 2; */
+        if (message.limit !== 0)
+            writer.tag(2, WireType.Varint).int32(message.limit);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message notetaker.v1.ListGeneratedNotesRequest
+ */
+export const ListGeneratedNotesRequest = new ListGeneratedNotesRequest$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class ListGeneratedNotesResponse$Type extends MessageType<ListGeneratedNotesResponse> {
+    constructor() {
+        super("notetaker.v1.ListGeneratedNotesResponse", [
+            { no: 1, name: "success", kind: "message", oneof: "result", T: () => ListGeneratedNotesSuccess },
+            { no: 2, name: "error", kind: "message", oneof: "result", T: () => RecordingError }
+        ]);
+    }
+    create(value?: PartialMessage<ListGeneratedNotesResponse>): ListGeneratedNotesResponse {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.result = { oneofKind: undefined };
+        if (value !== undefined)
+            reflectionMergePartial<ListGeneratedNotesResponse>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: ListGeneratedNotesResponse): ListGeneratedNotesResponse {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* notetaker.v1.ListGeneratedNotesSuccess success */ 1:
+                    message.result = {
+                        oneofKind: "success",
+                        success: ListGeneratedNotesSuccess.internalBinaryRead(reader, reader.uint32(), options, (message.result as any).success)
+                    };
+                    break;
+                case /* notetaker.v1.RecordingError error */ 2:
+                    message.result = {
+                        oneofKind: "error",
+                        error: RecordingError.internalBinaryRead(reader, reader.uint32(), options, (message.result as any).error)
+                    };
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: ListGeneratedNotesResponse, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* notetaker.v1.ListGeneratedNotesSuccess success = 1; */
+        if (message.result.oneofKind === "success")
+            ListGeneratedNotesSuccess.internalBinaryWrite(message.result.success, writer.tag(1, WireType.LengthDelimited).fork(), options).join();
+        /* notetaker.v1.RecordingError error = 2; */
+        if (message.result.oneofKind === "error")
+            RecordingError.internalBinaryWrite(message.result.error, writer.tag(2, WireType.LengthDelimited).fork(), options).join();
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message notetaker.v1.ListGeneratedNotesResponse
+ */
+export const ListGeneratedNotesResponse = new ListGeneratedNotesResponse$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class ListGeneratedNotesSuccess$Type extends MessageType<ListGeneratedNotesSuccess> {
+    constructor() {
+        super("notetaker.v1.ListGeneratedNotesSuccess", [
+            { no: 1, name: "notes", kind: "message", repeat: 2 /*RepeatType.UNPACKED*/, T: () => GeneratedNote }
+        ]);
+    }
+    create(value?: PartialMessage<ListGeneratedNotesSuccess>): ListGeneratedNotesSuccess {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.notes = [];
+        if (value !== undefined)
+            reflectionMergePartial<ListGeneratedNotesSuccess>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: ListGeneratedNotesSuccess): ListGeneratedNotesSuccess {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* repeated notetaker.v1.GeneratedNote notes */ 1:
+                    message.notes.push(GeneratedNote.internalBinaryRead(reader, reader.uint32(), options));
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: ListGeneratedNotesSuccess, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* repeated notetaker.v1.GeneratedNote notes = 1; */
+        for (let i = 0; i < message.notes.length; i++)
+            GeneratedNote.internalBinaryWrite(message.notes[i], writer.tag(1, WireType.LengthDelimited).fork(), options).join();
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message notetaker.v1.ListGeneratedNotesSuccess
+ */
+export const ListGeneratedNotesSuccess = new ListGeneratedNotesSuccess$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class GetGeneratedNoteRequest$Type extends MessageType<GetGeneratedNoteRequest> {
+    constructor() {
+        super("notetaker.v1.GetGeneratedNoteRequest", [
+            { no: 1, name: "token", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 2, name: "transcript_id", kind: "scalar", T: 3 /*ScalarType.INT64*/, L: 0 /*LongType.BIGINT*/ }
+        ]);
+    }
+    create(value?: PartialMessage<GetGeneratedNoteRequest>): GetGeneratedNoteRequest {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.token = "";
+        message.transcriptId = 0n;
+        if (value !== undefined)
+            reflectionMergePartial<GetGeneratedNoteRequest>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: GetGeneratedNoteRequest): GetGeneratedNoteRequest {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string token */ 1:
+                    message.token = reader.string();
+                    break;
+                case /* int64 transcript_id */ 2:
+                    message.transcriptId = reader.int64().toBigInt();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: GetGeneratedNoteRequest, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string token = 1; */
+        if (message.token !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.token);
+        /* int64 transcript_id = 2; */
+        if (message.transcriptId !== 0n)
+            writer.tag(2, WireType.Varint).int64(message.transcriptId);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message notetaker.v1.GetGeneratedNoteRequest
+ */
+export const GetGeneratedNoteRequest = new GetGeneratedNoteRequest$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class GetGeneratedNoteResponse$Type extends MessageType<GetGeneratedNoteResponse> {
+    constructor() {
+        super("notetaker.v1.GetGeneratedNoteResponse", [
+            { no: 1, name: "success", kind: "message", oneof: "result", T: () => GeneratedNote },
+            { no: 2, name: "error", kind: "message", oneof: "result", T: () => RecordingError }
+        ]);
+    }
+    create(value?: PartialMessage<GetGeneratedNoteResponse>): GetGeneratedNoteResponse {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.result = { oneofKind: undefined };
+        if (value !== undefined)
+            reflectionMergePartial<GetGeneratedNoteResponse>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: GetGeneratedNoteResponse): GetGeneratedNoteResponse {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* notetaker.v1.GeneratedNote success */ 1:
+                    message.result = {
+                        oneofKind: "success",
+                        success: GeneratedNote.internalBinaryRead(reader, reader.uint32(), options, (message.result as any).success)
+                    };
+                    break;
+                case /* notetaker.v1.RecordingError error */ 2:
+                    message.result = {
+                        oneofKind: "error",
+                        error: RecordingError.internalBinaryRead(reader, reader.uint32(), options, (message.result as any).error)
+                    };
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: GetGeneratedNoteResponse, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* notetaker.v1.GeneratedNote success = 1; */
+        if (message.result.oneofKind === "success")
+            GeneratedNote.internalBinaryWrite(message.result.success, writer.tag(1, WireType.LengthDelimited).fork(), options).join();
+        /* notetaker.v1.RecordingError error = 2; */
+        if (message.result.oneofKind === "error")
+            RecordingError.internalBinaryWrite(message.result.error, writer.tag(2, WireType.LengthDelimited).fork(), options).join();
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message notetaker.v1.GetGeneratedNoteResponse
+ */
+export const GetGeneratedNoteResponse = new GetGeneratedNoteResponse$Type();
+// @generated message type with reflection information, may provide speed optimized methods
 class RecordingError$Type extends MessageType<RecordingError> {
     constructor() {
         super("notetaker.v1.RecordingError", [
@@ -1624,6 +2262,8 @@ export const RecordingService = new ServiceType("notetaker.v1.RecordingService",
     { name: "GetBotRun", options: {}, I: GetBotRunRequest, O: GetBotRunResponse },
     { name: "GetPlaybackUrl", options: {}, I: GetPlaybackUrlRequest, O: GetPlaybackUrlResponse },
     { name: "ListMeetingTimelineEvents", options: {}, I: ListMeetingTimelineEventsRequest, O: ListMeetingTimelineEventsResponse },
+    { name: "ListGeneratedNotes", options: {}, I: ListGeneratedNotesRequest, O: ListGeneratedNotesResponse },
+    { name: "GetGeneratedNote", options: {}, I: GetGeneratedNoteRequest, O: GetGeneratedNoteResponse },
     { name: "StartAdHocRecording", options: {}, I: StartAdHocRecordingRequest, O: StartAdHocRecordingResponse },
     { name: "StopRecording", options: {}, I: StopRecordingRequest, O: StopRecordingResponse }
 ]);

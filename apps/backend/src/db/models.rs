@@ -138,3 +138,21 @@ pub struct Job {
     pub created_at: i64,
     pub updated_at: i64,
 }
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct GeneratedNote {
+    pub transcript_id: i64,
+    pub bot_run_id: i64,
+    pub meeting_id: String,
+    pub meeting_title: String,
+    pub recorded_at: i64,
+    pub transcript_status: String,
+    pub summary_status: Option<String>,
+    pub tldr: Option<String>,
+    pub summary_md: Option<String>,
+    pub raw_transcript: Option<String>,
+    pub cleaned_transcript: Option<String>,
+    pub action_items_json: Option<String>,
+    pub transcript_error: Option<String>,
+    pub summary_error: Option<String>,
+}
