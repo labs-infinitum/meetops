@@ -100,6 +100,11 @@ if [ "$#" -gt 0 ] && [ "$wait_secs" -gt 0 ] 2>/dev/null; then
 fi
 
 if [ "$#" -eq 0 ]; then
+  if [ "${DEBUG_RUN_SERVER_ON_NO_COMMAND:-false}" = "true" ]; then
+    echo "[debug] No command — starting google-meeting-recorder server."
+    exec "$RECORDER"
+  fi
+
   echo "[debug] No command — starting interactive shell."
   exec bash
 fi

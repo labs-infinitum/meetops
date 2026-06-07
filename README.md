@@ -109,6 +109,14 @@ docker compose --profile debug run --rm --build backend-debug profile
 
 The container registers with your **self-hosted RustDesk server** (`hbbs`/`hbbr`), prints a **RustDesk ID**, and waits `DEBUG_WAIT_SECS` (default 15s). Connect from the [RustDesk client](https://rustdesk.com/) on your laptop — your client must use the **same ID server and key** (Settings → Network). Enter the container password, then Chrome opens on display `:99`. Sign into Google and close Chrome.
 
+To run the full app while watching UI/scheduler-triggered Chrome windows in RustDesk, swap the main `backend` service to the debug image:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.debug.yml up --build
+```
+
+Use this override when testing recordings from the frontend. `docker compose --profile debug up` starts a separate `backend-debug` helper container, but the frontend still talks to the normal `backend` service, so Chrome from scheduled runs will not appear in that helper's RustDesk desktop.
+
 With a self-hosted server, the debug container does **not** need inbound ports `21115–21117` on AWS — only your RustDesk server does. The bot container connects outbound to `hbbs`.
 
 Without RustDesk (local machine with a display):
