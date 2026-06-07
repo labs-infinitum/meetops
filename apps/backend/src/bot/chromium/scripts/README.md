@@ -35,7 +35,7 @@ for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.js'))) {
 | OK to use | Avoid |
 |-----------|--------|
 | ARIA roles/states: `role`, `aria-label`, `aria-labelledby`, `aria-expanded`, `aria-haspopup` | `jsname`, `jscontroller`, `jsaction` (obfuscated per build) |
-| Stable Meet data attrs: `data-participant-id`, `data-requested-participant-id` | Random `class` names, dynamic element `id` literals (e.g. `DPUxh-nav9Xe`) |
+| Stable Meet data attrs: `data-participant-id`, `data-requested-participant-id`, `data-tile-media-id` | Random `class` names, dynamic element `id` literals (e.g. `DPUxh-nav9Xe`) |
 | Visible copy: “People”, “Show everyone”, “Leave call”, … | CSS module hashes / `class="JgybGf"` style tokens |
 | Bot-owned: `#gmr-start-recording`, `window.__gmr*` | — |
 
@@ -45,9 +45,13 @@ Runtime `getElementById` is only used to resolve **whatever** id Meet puts in `a
 
 Queries `[role="listitem"][data-participant-id]` in the document. Meet must **hydrate the roster at least once** per call: `prime_participant_roster.js` runs after `attempt_join.js` reports `joined` (in-call, not lobby). It polls until the “Please wait until a meeting host…” lobby copy disappears, finds the People control via a **“People”** label / `aria-labelledby`, toggles open, waits for rows, toggles closed (budget **~20s**). After that, diffs work with the panel collapsed.
 
-Excludes **(You)**, lobby rows (**Admit** / **Deny** / **Ask to join**), and **presentation** rows (subtitle “Presentation”, Safari “Visitor” + “Presentation”, or any control `aria-label` mentioning “presentation”, including “You can't unmute someone else's presentation”). Those rows emit **`screen_share_started`** / **`screen_share_stopped`**, not join/leave. Events set top-level **`participantId`** to the presenter’s person row when resolved (`presenterParticipantId` in payload); **`presentationId`** is the presentation listitem id. Duplicate names are disambiguated via Meet space prefix, roster avatar URL, then nearest person row above the presentation row. Join/leave diffs run on each **video chunk (~1s)** and on a **5s** interval (snapshots + active speaker).
+Excludes **(You)**, lobby rows (**Admit** / **Deny** / **Ask to join**), and **presentation** rows (subtitle “Presentation”, Safari “Visitor” + “Presentation”, or any control `aria-label` mentioning “presentation”, including “You can't unmute someone else's presentation”). Those rows emit **`screen_share_started`** / **`screen_share_stopped`**, not join/leave. Events set top-level **`participantId`** to the presenter’s person row when resolved (`presenterParticipantId` in payload); **`presentationId`** is the presentation listitem id. Duplicate names are disambiguated via Meet space prefix, roster avatar URL, then nearest person row above the presentation row. Join/leave diffs run on each **video chunk (~1s)** and on a **5s** interval. Participant snapshots run on the 5s interval.
 
 **Edge cases:** if the People toggle cannot be found or `rosterCount` stays 0, join still succeeds but timeline participant events may be wrong until the panel is opened manually.
+
+## Active speaker
+
+`install_recording_control.js` detects active speaker changes from Meet tiles every **1s**. It locates tiles with `data-participant-id` + `data-tile-media-id`, then checks for the visible speaking-ring effect via computed `::before` / `::after` styles on large tile overlays. Meet renders that effect on at most one tile at a time, so the collector treats the first matching tile as the active speaker and records no speaker when no tile has the effect. This intentionally avoids hardcoding Meet's obfuscated speaker classes while still following the visual state Meet renders.
 
 ## Global state (`window.__gmr*`)
 

@@ -40,6 +40,7 @@ import { isActiveBotRun } from "@/types"
 import { formatDate, formatDateTime, formatDuration } from "@/lib/format"
 import { useAuth } from "@/lib/auth-context"
 import { snapshotParticipantCount } from "@/lib/timeline-payload"
+import { cn } from "@/lib/utils"
 import type { BotRun, MeetingTimelineEvent, MeetingTimelineEventType } from "@/types"
 import { toast } from "sonner"
 
@@ -88,6 +89,12 @@ function eventIcon(eventType: MeetingTimelineEventType) {
 function timelineEventsToShow(events: MeetingTimelineEvent[]): MeetingTimelineEvent[] {
   const withoutFrequentSnapshots = events.filter((event) => event.eventType !== "participant_snapshot")
   return (withoutFrequentSnapshots.length > 0 ? withoutFrequentSnapshots : events).slice(0, 100)
+}
+
+function latestActiveSpeakerEvent(events: MeetingTimelineEvent[]): MeetingTimelineEvent | undefined {
+  return events
+    .filter((event) => event.eventType === "active_speaker_changed" && event.participantName)
+    .at(-1)
 }
 
 export function RecordingsPage() {
@@ -192,6 +199,7 @@ export function RecordingDetailPage({ recordingId }: { recordingId: string }) {
   const runId = Number(recordingId)
   const noteLink = run ? `/app/notes?meeting=${encodeURIComponent(run.meetingId)}` : "/app/notes"
   const isActive = run ? isActiveBotRun(run.status) : false
+  const activeSpeakerEvent = latestActiveSpeakerEvent(timelineEvents)
 
   async function loadRun(showLoading = false) {
     if (!session?.token || Number.isNaN(runId)) return
@@ -376,6 +384,22 @@ export function RecordingDetailPage({ recordingId }: { recordingId: string }) {
             <Badge variant="secondary">{timelineEvents.length} events</Badge>
           </div>
 
+          {activeSpeakerEvent && (
+            <div className="bg-muted/60 mt-6 flex items-center gap-3 rounded-lg border p-3">
+              <div className="bg-background flex size-9 shrink-0 items-center justify-center rounded-full border">
+                <Mic2 className="text-primary size-4" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-medium">
+                  Current active speaker: {activeSpeakerEvent.participantName}
+                </p>
+                <p className="text-muted-foreground text-xs">
+                  Updated at {formatRelativeTime(activeSpeakerEvent.relativeMs)}
+                </p>
+              </div>
+            </div>
+          )}
+
           {timelineEvents.length === 0 ? (
             <p className="text-muted-foreground mt-6 text-sm">
               No meeting activity has been captured for this recording yet.
@@ -384,14 +408,26 @@ export function RecordingDetailPage({ recordingId }: { recordingId: string }) {
             <div className="mt-6 space-y-4">
               {timelineEventsToShow(timelineEvents).map((event) => {
                 const Icon = eventIcon(event.eventType)
+                const isSpeakerEvent = event.eventType === "active_speaker_changed"
                 return (
                   <div key={event.id} className="flex gap-3">
-                    <div className="bg-muted mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full">
-                      <Icon className="text-muted-foreground size-4" />
+                    <div
+                      className={cn(
+                        "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full",
+                        isSpeakerEvent ? "bg-primary/10" : "bg-muted",
+                      )}
+                    >
+                      <Icon
+                        className={cn(
+                          "size-4",
+                          isSpeakerEvent ? "text-primary" : "text-muted-foreground",
+                        )}
+                      />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-medium">{eventTitle(event)}</p>
+                        {isSpeakerEvent && <Badge variant="secondary">Active speaker</Badge>}
                         <Badge variant="outline">{formatRelativeTime(event.relativeMs)}</Badge>
                       </div>
                       <p className="text-muted-foreground mt-1 text-xs">

@@ -268,18 +268,108 @@ async function() {
     return { events, current };
   }
 
-  /** Active speaker from the same people list rows (IDs align with join/leave diffs). */
-  function gmrExtractActiveSpeaker(participants) {
-    const rows = [...document.querySelectorAll('[role="listitem"][data-participant-id]')];
-    for (const row of rows) {
-      const id = row.getAttribute('data-participant-id');
-      if (!id) continue;
-      const label = `${row.getAttribute('aria-label') || ''} ${row.textContent || ''}`;
-      if (!/\b(speaking|is speaking|active speaker)\b/i.test(label)) continue;
-      const participant = participants.find((p) => p.id === id);
-      if (participant) {
-        return { id: participant.id, name: participant.name, source: 'listitem' };
+  function gmrFindParticipantById(participants, id) {
+    const exact = participants.find((participant) => participant.id === id);
+    if (exact) {
+      return exact;
+    }
+
+    const space = gmrParticipantSpacePrefix(id);
+    if (!space) {
+      return null;
+    }
+    const sameSpace = participants.filter(
+      (participant) => gmrParticipantSpacePrefix(participant.id) === space
+    );
+    return sameSpace.length === 1 ? sameSpace[0] : null;
+  }
+
+  function gmrTileName(tile) {
+    const moreOptions = tile.querySelector('[aria-label^="More options for "]');
+    if (moreOptions) {
+      return moreOptions.getAttribute('aria-label').replace(/^More options for\s+/, '').trim();
+    }
+    const pin = tile.querySelector('[aria-label^="Pin "]');
+    if (pin) {
+      return pin
+        .getAttribute('aria-label')
+        .replace(/^Pin\s+/, '')
+        .replace(/\s+to your main screen$/, '')
+        .trim();
+    }
+    const mute = tile.querySelector('[aria-label^="Mute "]');
+    if (mute) {
+      return mute
+        .getAttribute('aria-label')
+        .replace(/^Mute\s+/, '')
+        .replace(/'s microphone$/, '')
+        .trim();
+    }
+    return '';
+  }
+
+  function gmrPseudoStyleVisible(style) {
+    if (!style) {
+      return false;
+    }
+    const opacity = Number(style.opacity || '0');
+    return (
+      opacity > 0.5 &&
+      style.content !== 'none' &&
+      style.display !== 'none' &&
+      style.visibility !== 'hidden'
+    );
+  }
+
+  function gmrElementCoversTile(elementRect, tileRect) {
+    if (!elementRect.width || !elementRect.height || !tileRect.width || !tileRect.height) {
+      return false;
+    }
+    return (
+      elementRect.width >= tileRect.width * 0.45 &&
+      elementRect.height >= tileRect.height * 0.45
+    );
+  }
+
+  function gmrTileHasVisibleSpeakingEffect(tile) {
+    const tileRect = tile.getBoundingClientRect();
+    if (!tileRect.width || !tileRect.height) {
+      return false;
+    }
+    for (const element of tile.querySelectorAll('*')) {
+      if (element.closest('button, [role="button"]')) {
+        continue;
       }
+      if (!gmrElementCoversTile(element.getBoundingClientRect(), tileRect)) {
+        continue;
+      }
+      if (
+        gmrPseudoStyleVisible(getComputedStyle(element, '::before')) ||
+        gmrPseudoStyleVisible(getComputedStyle(element, '::after'))
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Active speaker from Meet tile visual state. Meet exposes at most one tile with this effect. */
+  function gmrExtractActiveSpeaker(participants) {
+    const tileIds = [
+      ...document.querySelectorAll('[data-participant-id][data-tile-media-id]')
+    ];
+    for (const tileId of tileIds) {
+      const id = tileId.getAttribute('data-participant-id');
+      const tile = tileId.parentElement;
+      if (!id || !tile || !gmrTileHasVisibleSpeakingEffect(tile)) {
+        continue;
+      }
+      const participant = gmrFindParticipantById(participants, id);
+      if (participant) {
+        return { id: participant.id, name: participant.name, source: 'tile_visual_effect' };
+      }
+      const name = gmrTileName(tile);
+      return { id, name, source: 'tile_visual_effect' };
     }
     return null;
   }
@@ -319,18 +409,28 @@ async function() {
         state.previousPresentations = shareDiff.current;
         return [...peopleDiff.events, ...shareDiff.events];
       },
-      collect() {
+      collectActiveSpeaker() {
         const events = [];
         try {
-          const { people, presentations } = gmrParseMeetRoster();
-          events.push(...this.diffRoster());
-
+          const { people } = gmrParseMeetRoster();
           const activeSpeaker = gmrExtractActiveSpeaker(people);
           const activeSpeakerId = activeSpeaker ? activeSpeaker.id : null;
           if (activeSpeakerId && activeSpeakerId !== state.activeSpeakerId) {
             events.push(makeEvent('active_speaker_changed', activeSpeaker, { source: activeSpeaker.source }));
           }
           state.activeSpeakerId = activeSpeakerId;
+        } catch (error) {
+          events.push(makeEvent('collector_warning', null, {
+            message: String(error && error.message ? error.message : error)
+          }));
+        }
+        return events;
+      },
+      collect() {
+        const events = [];
+        try {
+          const { people, presentations } = gmrParseMeetRoster();
+          events.push(...this.diffRoster());
 
           state.snapshotCounter += 1;
           if (state.snapshotCounter === 1 || state.snapshotCounter % 6 === 0) {
@@ -349,7 +449,7 @@ async function() {
                 presenterParticipantId: presentation.presenterParticipantId || null,
                 source: presentation.source
               })),
-              activeSpeakerId
+              activeSpeakerId: state.activeSpeakerId
             }));
           }
         } catch (error) {
@@ -548,6 +648,10 @@ async function() {
     window.__gmrRecordingStartedAtMs = Date.now();
     window.__gmrTimelineCollector = gmrCreateTimelineCollector(window.__gmrRecordingStartedAtMs);
     gmrSendTimelineEvents(window.__gmrTimelineCollector.collect());
+    gmrSendTimelineEvents(window.__gmrTimelineCollector.collectActiveSpeaker());
+    window.__gmrActiveSpeakerInterval = window.setInterval(() => {
+      gmrSendTimelineEvents(window.__gmrTimelineCollector.collectActiveSpeaker());
+    }, 1000);
     window.__gmrTimelineInterval = window.setInterval(() => {
       gmrSendTimelineEvents(window.__gmrTimelineCollector.collect());
     }, 5000);

@@ -25,6 +25,10 @@ async function() {
     window.clearInterval(window.__gmrTimelineInterval);
     window.__gmrTimelineInterval = null;
   }
+  if (window.__gmrActiveSpeakerInterval) {
+    window.clearInterval(window.__gmrActiveSpeakerInterval);
+    window.__gmrActiveSpeakerInterval = null;
+  }
   if (window.__gmrTimelineCollector && typeof window.__gmrSendTimelineEvents === 'function') {
     window.__gmrSendTimelineEvents(window.__gmrTimelineCollector.collect());
   }
