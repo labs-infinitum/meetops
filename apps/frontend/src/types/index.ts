@@ -66,3 +66,25 @@ export type Note = {
   actionItems: ActionItem[]
   tags: string[]
 }
+
+export type GeneratedActionItem = {
+  text: string
+  owner?: string
+  due?: string
+}
+
+export type GeneratedNote = {
+  transcriptId: number
+  botRunId: number
+  meetingId: string
+  meetingTitle: string
+  recordedAt: number
+  transcriptStatus: string
+  summaryStatus?: string
+  tldr?: string
+  summaryMd?: string
+  rawTranscript?: string
+  cleanedTranscript?: string
+  actionItems: GeneratedActionItem[]
+  error?: string
+}

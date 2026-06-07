@@ -1,6 +1,6 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
-import { CheckSquare } from "lucide-react"
+import { CheckSquare, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -8,13 +8,46 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { PageHeader } from "@/components/shared/PageHeader"
 import { EmptyState } from "@/components/shared/EmptyState"
-import { mockActionItems } from "@/lib/mock-data"
-import { formatDate } from "@/lib/format"
-import type { ActionItem } from "@/types"
+import { useAuth } from "@/lib/auth-context"
+import { apiListGeneratedNotes, recordingErrorMessage } from "@/lib/recording-api"
 import { toast } from "sonner"
 
+type TodoItem = {
+  id: string
+  text: string
+  owner?: string
+  due?: string
+  completed: boolean
+  transcriptId: number
+  meetingTitle: string
+}
+
 export function TodosPage() {
-  const [items, setItems] = useState(mockActionItems)
+  const { session } = useAuth()
+  const [items, setItems] = useState<TodoItem[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!session?.token) return
+    apiListGeneratedNotes(session.token, 100)
+      .then((notes) => {
+        setItems(
+          notes.flatMap((note) =>
+            note.actionItems.map((item, index) => ({
+              id: `${note.transcriptId}:${index}:${item.text}`,
+              text: item.text,
+              owner: item.owner,
+              due: item.due,
+              completed: false,
+              transcriptId: note.transcriptId,
+              meetingTitle: note.meetingTitle,
+            })),
+          ),
+        )
+      })
+      .catch((error) => toast.error(recordingErrorMessage(error)))
+      .finally(() => setLoading(false))
+  }, [session?.token])
 
   function toggleItem(id: string) {
     setItems((prev) =>
@@ -34,6 +67,12 @@ export function TodosPage() {
         description="Action items extracted from your meeting notes."
       />
 
+      {loading ? (
+        <div className="text-muted-foreground flex items-center gap-2 text-sm">
+          <Loader2 className="size-4 animate-spin" />
+          Loading action items…
+        </div>
+      ) : (
       <Tabs defaultValue="open">
         <TabsList>
           <TabsTrigger value="open">Open ({open.length})</TabsTrigger>
@@ -65,6 +104,7 @@ export function TodosPage() {
           )}
         </TabsContent>
       </Tabs>
+      )}
     </div>
   )
 }
@@ -73,7 +113,7 @@ function TodoList({
   items,
   onToggle,
 }: {
-  items: ActionItem[]
+  items: TodoItem[]
   onToggle: (id: string) => void
 }) {
   return (
@@ -97,19 +137,19 @@ function TodoList({
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <Link
-                  to="/app/notes"
+                  to={`/app/notes/${item.transcriptId}`}
                   className="text-muted-foreground hover:text-foreground text-xs hover:underline"
                 >
                   {item.meetingTitle}
                 </Link>
-                {item.assignee && (
+                {item.owner && (
                   <Badge variant="outline" className="text-xs">
-                    {item.assignee}
+                    {item.owner}
                   </Badge>
                 )}
-                {item.dueDate && (
+                {item.due && (
                   <Badge variant="secondary" className="text-xs">
-                    Due {formatDate(item.dueDate)}
+                    Due {item.due}
                   </Badge>
                 )}
               </div>

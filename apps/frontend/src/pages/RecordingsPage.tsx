@@ -3,19 +3,23 @@ import { Link } from "react-router-dom"
 import {
   AlertCircle,
   ChevronRight,
+  FileText,
   Film,
+  ListChecks,
   Loader2,
   LogIn,
   LogOut,
   Mic2,
   MonitorOff,
   MonitorUp,
+  Sparkles,
   Square,
   Users,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Separator } from "@/components/ui/separator"
 import {
   Table,
   TableBody,
@@ -31,6 +35,7 @@ import {
   apiGetBotRun,
   apiGetPlaybackUrl,
   apiListBotRuns,
+  apiListGeneratedNotes,
   apiListMeetingTimelineEvents,
   apiStopRecording,
   RecordingApiError,
@@ -41,7 +46,7 @@ import { formatDate, formatDateTime, formatDuration } from "@/lib/format"
 import { useAuth } from "@/lib/auth-context"
 import { snapshotParticipantCount } from "@/lib/timeline-payload"
 import { cn } from "@/lib/utils"
-import type { BotRun, MeetingTimelineEvent, MeetingTimelineEventType } from "@/types"
+import type { BotRun, GeneratedNote, MeetingTimelineEvent, MeetingTimelineEventType } from "@/types"
 import { toast } from "sonner"
 
 function formatRelativeTime(relativeMs: number): string {
@@ -97,19 +102,88 @@ function latestActiveSpeakerEvent(events: MeetingTimelineEvent[]): MeetingTimeli
     .at(-1)
 }
 
+function aiStatusVariant(status?: string): "default" | "secondary" | "destructive" | "outline" {
+  switch (status) {
+    case "completed":
+    case "cleaned":
+      return "default"
+    case "failed":
+      return "destructive"
+    case "processing":
+    case "transcribed":
+      return "secondary"
+    default:
+      return "outline"
+  }
+}
+
+function renderMarkdownLite(markdown: string) {
+  return markdown.split("\n").map((line, i) => {
+    if (line.startsWith("## ")) {
+      return (
+        <h2 key={i} className="mt-6 mb-2 text-lg font-semibold first:mt-0">
+          {line.slice(3)}
+        </h2>
+      )
+    }
+    if (line.startsWith("### ")) {
+      return (
+        <h3 key={i} className="mt-4 mb-1 text-base font-medium">
+          {line.slice(4)}
+        </h3>
+      )
+    }
+    if (line.startsWith("- ")) {
+      return (
+        <p key={i} className="text-muted-foreground ml-4 text-sm">
+          • {line.slice(2)}
+        </p>
+      )
+    }
+    if (/^\d+\./.test(line)) {
+      return (
+        <p key={i} className="text-muted-foreground ml-4 text-sm">
+          {line}
+        </p>
+      )
+    }
+    if (line.trim() === "") return <br key={i} />
+    return (
+      <p key={i} className="text-muted-foreground text-sm leading-relaxed">
+        {line}
+      </p>
+    )
+  })
+}
+
+async function fetchRecordingDetail(token: string, runId: number) {
+  const loaded = await apiGetBotRun(token, runId)
+  const [timelineEvents, generatedNotes] = await Promise.all([
+    apiListMeetingTimelineEvents(token, runId),
+    apiListGeneratedNotes(token, 100).catch(() => []),
+  ])
+  const generatedNote = generatedNotes.find((note) => note.botRunId === runId) ?? null
+  let playbackUrl: string | null = null
+  if (loaded.status === "completed" && loaded.recordingPath) {
+    const playback = await apiGetPlaybackUrl(token, runId)
+    playbackUrl = playback.url
+  }
+  return { loaded, timelineEvents, generatedNote, playbackUrl }
+}
+
 export function RecordingsPage() {
   const { session } = useAuth()
+  const token = session?.token
   const [runs, setRuns] = useState<BotRun[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!session?.token) return
-    setLoading(true)
-    apiListBotRuns(session.token)
+    if (!token) return
+    apiListBotRuns(token)
       .then(setRuns)
       .catch((error) => toast.error(recordingErrorMessage(error)))
       .finally(() => setLoading(false))
-  }, [session?.token])
+  }, [token])
 
   return (
     <div className="space-y-8">
@@ -189,67 +263,67 @@ export function RecordingsPage() {
 
 export function RecordingDetailPage({ recordingId }: { recordingId: string }) {
   const { session } = useAuth()
+  const token = session?.token
   const [run, setRun] = useState<BotRun | null>(null)
   const [playbackUrl, setPlaybackUrl] = useState<string | null>(null)
   const [timelineEvents, setTimelineEvents] = useState<MeetingTimelineEvent[]>([])
+  const [generatedNote, setGeneratedNote] = useState<GeneratedNote | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [stopping, setStopping] = useState(false)
 
   const runId = Number(recordingId)
-  const noteLink = run ? `/app/notes?meeting=${encodeURIComponent(run.meetingId)}` : "/app/notes"
+  const noteLink = generatedNote ? `/app/notes/${generatedNote.transcriptId}` : "/app/notes"
   const isActive = run ? isActiveBotRun(run.status) : false
   const activeSpeakerEvent = latestActiveSpeakerEvent(timelineEvents)
 
-  async function loadRun(showLoading = false) {
-    if (!session?.token || Number.isNaN(runId)) return
-    if (showLoading) setLoading(true)
-
-    try {
-      const loaded = await apiGetBotRun(session.token, runId)
-      setRun(loaded)
-      setNotFound(false)
-      setTimelineEvents(await apiListMeetingTimelineEvents(session.token, runId))
-
-      if (
-        loaded.status === "completed" &&
-        loaded.recordingPath
-      ) {
-        const playback = await apiGetPlaybackUrl(session.token, runId)
-        setPlaybackUrl(playback.url)
-      } else if (!isActiveBotRun(loaded.status)) {
-        setPlaybackUrl(null)
-      }
-    } catch (error) {
-      if (error instanceof RecordingApiError && error.code === "not_found") {
-        setNotFound(true)
-      } else {
-        toast.error(recordingErrorMessage(error))
-      }
-    } finally {
-      if (showLoading) setLoading(false)
-    }
-  }
+  useEffect(() => {
+    if (!token || Number.isNaN(runId)) return
+    void Promise.resolve()
+      .then(() => fetchRecordingDetail(token, runId))
+      .then(({ loaded, timelineEvents, generatedNote, playbackUrl }) => {
+        setRun(loaded)
+        setNotFound(false)
+        setTimelineEvents(timelineEvents)
+        setGeneratedNote(generatedNote)
+        setPlaybackUrl(playbackUrl)
+      })
+      .catch((error) => {
+        if (error instanceof RecordingApiError && error.code === "not_found") {
+          setNotFound(true)
+        } else {
+          toast.error(recordingErrorMessage(error))
+        }
+      })
+      .finally(() => setLoading(false))
+  }, [token, runId])
 
   useEffect(() => {
-    loadRun(true)
-  }, [session?.token, runId])
-
-  useEffect(() => {
-    if (!session?.token || Number.isNaN(runId) || !isActive) return
+    if (!token || Number.isNaN(runId) || !isActive) return
     const interval = window.setInterval(() => {
-      loadRun()
+      void fetchRecordingDetail(token, runId)
+        .then(({ loaded, timelineEvents, generatedNote, playbackUrl }) => {
+          setRun(loaded)
+          setTimelineEvents(timelineEvents)
+          setGeneratedNote(generatedNote)
+          setPlaybackUrl(playbackUrl)
+        })
+        .catch((error) => toast.error(recordingErrorMessage(error)))
     }, 3000)
     return () => window.clearInterval(interval)
-  }, [session?.token, runId, isActive])
+  }, [token, runId, isActive])
 
   async function stopRecording() {
-    if (!session?.token || !run) return
+    if (!token || !run) return
     setStopping(true)
     try {
-      await apiStopRecording(session.token, run.id)
+      await apiStopRecording(token, run.id)
       toast.success("Stopping bot and ending recording…")
-      await loadRun()
+      const detail = await fetchRecordingDetail(token, runId)
+      setRun(detail.loaded)
+      setTimelineEvents(detail.timelineEvents)
+      setGeneratedNote(detail.generatedNote)
+      setPlaybackUrl(detail.playbackUrl)
     } catch (error) {
       toast.error(recordingErrorMessage(error))
     } finally {
@@ -371,6 +445,136 @@ export function RecordingDetailPage({ recordingId }: { recordingId: string }) {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <FileText className="size-4" />
+                Transcript and AI outputs
+              </CardTitle>
+              <CardDescription>
+                Transcription, speaker-attributed transcript, notes, and action items for this recording.
+              </CardDescription>
+            </div>
+            {generatedNote ? (
+              <div className="flex flex-wrap gap-1.5">
+                <Badge variant={aiStatusVariant(generatedNote.transcriptStatus)}>
+                  Transcript {generatedNote.transcriptStatus}
+                </Badge>
+                <Badge variant={aiStatusVariant(generatedNote.summaryStatus)}>
+                  Notes {generatedNote.summaryStatus || "pending"}
+                </Badge>
+              </div>
+            ) : (
+              <Badge variant="outline">Awaiting AI pipeline</Badge>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {!generatedNote ? (
+            <p className="text-muted-foreground text-sm">
+              {run.status === "completed"
+                ? "The recording is complete, but transcript data has not been created yet."
+                : "Transcript data will appear here once the recording completes and the AI pipeline starts."}
+            </p>
+          ) : (
+            <>
+              {generatedNote.error && (
+                <div className="border-destructive/30 bg-destructive/5 flex gap-3 rounded-lg border p-3">
+                  <AlertCircle className="text-destructive mt-0.5 size-4 shrink-0" />
+                  <p className="text-destructive text-sm">{generatedNote.error}</p>
+                </div>
+              )}
+
+              <div className="grid gap-4 lg:grid-cols-3">
+                <div className="lg:col-span-2">
+                  <div className="mb-2 flex items-center gap-2">
+                    <Sparkles className="text-primary size-4" />
+                    <h3 className="text-sm font-semibold">TL;DR</h3>
+                  </div>
+                  <p className="text-muted-foreground text-sm leading-relaxed">
+                    {generatedNote.tldr || "TL;DR will appear after notes are generated."}
+                  </p>
+                </div>
+
+                <div>
+                  <div className="mb-2 flex items-center gap-2">
+                    <ListChecks className="text-primary size-4" />
+                    <h3 className="text-sm font-semibold">Action items</h3>
+                  </div>
+                  {generatedNote.actionItems.length === 0 ? (
+                    <p className="text-muted-foreground text-sm">No action items generated yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {generatedNote.actionItems.slice(0, 4).map((item, index) => (
+                        <div key={`${item.text}-${index}`} className="rounded-md border p-2">
+                          <p className="text-sm">{item.text}</p>
+                          <div className="mt-1 flex flex-wrap gap-1.5">
+                            {item.owner && <Badge variant="outline">{item.owner}</Badge>}
+                            {item.due && <Badge variant="secondary">Due {item.due}</Badge>}
+                          </div>
+                        </div>
+                      ))}
+                      {generatedNote.actionItems.length > 4 && (
+                        <p className="text-muted-foreground text-xs">
+                          +{generatedNote.actionItems.length - 4} more in the Notes page
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {generatedNote.summaryMd && (
+                <>
+                  <Separator />
+                  <div>
+                    <h3 className="mb-3 text-sm font-semibold">Meeting notes</h3>
+                    <div className="prose prose-sm dark:prose-invert max-w-none">
+                      {renderMarkdownLite(generatedNote.summaryMd)}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              <Separator />
+
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div>
+                  <div className="mb-2 flex items-center gap-2">
+                    <Mic2 className="text-primary size-4" />
+                    <h3 className="text-sm font-semibold">Speaker-attributed transcript</h3>
+                  </div>
+                  {generatedNote.cleanedTranscript ? (
+                    <pre className="bg-muted text-muted-foreground max-h-96 overflow-auto rounded-lg border p-4 whitespace-pre-wrap text-sm leading-relaxed">
+                      {generatedNote.cleanedTranscript}
+                    </pre>
+                  ) : (
+                    <p className="text-muted-foreground text-sm">
+                      Cleaned speaker-attributed transcript is not available yet.
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <h3 className="mb-2 text-sm font-semibold">Raw transcription</h3>
+                  {generatedNote.rawTranscript ? (
+                    <pre className="bg-muted text-muted-foreground max-h-96 overflow-auto rounded-lg border p-4 whitespace-pre-wrap text-xs leading-relaxed">
+                      {generatedNote.rawTranscript}
+                    </pre>
+                  ) : (
+                    <p className="text-muted-foreground text-sm">
+                      Raw transcription is not available yet.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardContent className="p-6">

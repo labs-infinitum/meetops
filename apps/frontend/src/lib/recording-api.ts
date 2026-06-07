@@ -1,4 +1,4 @@
-import type { BotRun, MeetingTimelineEvent } from "@/types"
+import type { BotRun, GeneratedNote, MeetingTimelineEvent } from "@/types"
 import { isBotRunStatus, isMeetingTimelineEventType } from "@/types"
 import { getRecordingClient } from "@/lib/grpc-client"
 import { parseTimelinePayloadJson } from "@/lib/timeline-payload"
@@ -7,9 +7,12 @@ import { formatGrpcApiError, GrpcApiError, unwrapGrpcOneof } from "@/lib/api-err
 import { withAuthGuard, SESSION_EXPIRED_MESSAGE } from "@/lib/session-guard"
 import type {
   BotRun as ProtoBotRun,
+  GeneratedNote as ProtoGeneratedNote,
   GetBotRunResponse,
+  GetGeneratedNoteResponse,
   GetPlaybackUrlResponse,
   ListBotRunsResponse,
+  ListGeneratedNotesResponse,
   ListMeetingTimelineEventsResponse,
   MeetingTimelineEvent as ProtoMeetingTimelineEvent,
   RecordingError,
@@ -57,6 +60,28 @@ function mapTimelineEvent(row: ProtoMeetingTimelineEvent): MeetingTimelineEvent 
   }
 }
 
+function mapGeneratedNote(row: ProtoGeneratedNote): GeneratedNote {
+  return {
+    transcriptId: protoInt64(row.transcriptId)!,
+    botRunId: protoInt64(row.botRunId)!,
+    meetingId: row.meetingId,
+    meetingTitle: row.meetingTitle,
+    recordedAt: protoInt64(row.recordedAt)!,
+    transcriptStatus: row.transcriptStatus,
+    summaryStatus: protoOptionalString(row.summaryStatus),
+    tldr: protoOptionalString(row.tldr),
+    summaryMd: protoOptionalString(row.summaryMd),
+    rawTranscript: protoOptionalString(row.rawTranscript),
+    cleanedTranscript: protoOptionalString(row.cleanedTranscript),
+    actionItems: row.actionItems.map((item) => ({
+      text: item.text,
+      owner: protoOptionalString(item.owner),
+      due: protoOptionalString(item.due),
+    })),
+    error: protoOptionalString(row.error),
+  }
+}
+
 function parseError(error: RecordingError): RecordingApiError {
   return new RecordingApiError(error.code, error.message)
 }
@@ -99,6 +124,24 @@ function unwrapTimeline(response: ListMeetingTimelineEventsResponse): MeetingTim
         .filter((event): event is MeetingTimelineEvent => event !== null),
     error: parseError,
     emptyMessage: "Empty meeting timeline response.",
+    EmptyError: RecordingApiError,
+  })
+}
+
+function unwrapGeneratedNotes(response: ListGeneratedNotesResponse): GeneratedNote[] {
+  return unwrapGrpcOneof(response.result, {
+    success: (s) => s.notes.map(mapGeneratedNote),
+    error: parseError,
+    emptyMessage: "Empty generated notes response.",
+    EmptyError: RecordingApiError,
+  })
+}
+
+function unwrapGeneratedNote(response: GetGeneratedNoteResponse): GeneratedNote {
+  return unwrapGrpcOneof(response.result, {
+    success: mapGeneratedNote,
+    error: parseError,
+    emptyMessage: "Empty generated note response.",
     EmptyError: RecordingApiError,
   })
 }
@@ -177,6 +220,28 @@ export async function apiListMeetingTimelineEvents(
       limit,
     })
     return unwrapTimeline(response)
+  })
+}
+
+export async function apiListGeneratedNotes(token: string, limit = 50): Promise<GeneratedNote[]> {
+  return withAuthGuard(async () => {
+    const client = getRecordingClient()
+    const { response } = await client.listGeneratedNotes({ token, limit })
+    return unwrapGeneratedNotes(response)
+  })
+}
+
+export async function apiGetGeneratedNote(
+  token: string,
+  transcriptId: number,
+): Promise<GeneratedNote> {
+  return withAuthGuard(async () => {
+    const client = getRecordingClient()
+    const { response } = await client.getGeneratedNote({
+      token,
+      transcriptId: BigInt(transcriptId),
+    })
+    return unwrapGeneratedNote(response)
   })
 }
 
