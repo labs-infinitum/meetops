@@ -8,6 +8,10 @@ service AuthService {
   rpc Login(LoginRequest) returns (AuthResponse);
   rpc Logout(LogoutRequest) returns (LogoutResponse);
   rpc GetSession(GetSessionRequest) returns (AuthResponse);
+  rpc RequestPasswordReset(RequestPasswordResetRequest) returns (AuthMessageResponse);
+  rpc ResetPassword(ResetPasswordRequest) returns (AuthMessageResponse);
+  rpc VerifyEmail(VerifyEmailRequest) returns (AuthResponse);
+  rpc ResendVerificationEmail(ResendVerificationEmailRequest) returns (AuthMessageResponse);
 }
 
 message SignUpRequest {
@@ -30,17 +34,36 @@ message GetSessionRequest {
   string token = 1;
 }
 
+message RequestPasswordResetRequest {
+  string email = 1;
+}
+
+message ResetPasswordRequest {
+  string token = 1;
+  string new_password = 2;
+}
+
+message VerifyEmailRequest {
+  string token = 1;
+}
+
+message ResendVerificationEmailRequest {
+  string email = 1;
+}
+
 message User {
   string id = 1;
   string name = 2;
   string email = 3;
   string username = 4;
+  bool email_verified = 5;
 }
 
 message AuthSuccess {
   User user = 1;
   string token = 2;
   int64 expires_at = 3;
+  bool email_verification_required = 4;
 }
 
 message AuthError {
@@ -51,6 +74,17 @@ message AuthError {
 message AuthResponse {
   oneof result {
     AuthSuccess success = 1;
+    AuthError error = 2;
+  }
+}
+
+message AuthMessageSuccess {
+  string message = 1;
+}
+
+message AuthMessageResponse {
+  oneof result {
+    AuthMessageSuccess success = 1;
     AuthError error = 2;
   }
 }

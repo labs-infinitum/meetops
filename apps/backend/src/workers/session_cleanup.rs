@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use crate::db::DbPool;
 
-use crate::db::users;
+use crate::db::{auth_email_tokens, users};
 
 const CLEANUP_INTERVAL_SECS: u64 = 3600;
 
@@ -22,5 +22,10 @@ async fn cleanup(db: &DbPool) {
         Ok(0) => {}
         Ok(deleted) => tracing::info!(deleted, "removed expired sessions"),
         Err(error) => tracing::warn!(%error, "session cleanup failed"),
+    }
+    match auth_email_tokens::delete_expired_tokens(db).await {
+        Ok(0) => {}
+        Ok(deleted) => tracing::info!(deleted, "removed expired auth email tokens"),
+        Err(error) => tracing::warn!(%error, "auth email token cleanup failed"),
     }
 }

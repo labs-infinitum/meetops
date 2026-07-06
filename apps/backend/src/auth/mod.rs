@@ -12,6 +12,14 @@ pub enum AuthError {
     InvalidCredentials,
     #[error("session not found or expired")]
     SessionNotFound,
+    #[error("email address is not verified")]
+    EmailNotVerified,
+    #[error("email is already verified")]
+    EmailAlreadyVerified,
+    #[error("invalid or expired token")]
+    InvalidToken,
+    #[error("failed to send email: {0}")]
+    EmailSendFailed(String),
     #[error(transparent)]
     Internal(#[from] anyhow::Error),
 }
@@ -30,6 +38,10 @@ impl AuthError {
             Self::EmailTaken => "email_taken",
             Self::InvalidCredentials => "invalid_credentials",
             Self::SessionNotFound => "session_not_found",
+            Self::EmailNotVerified => "email_not_verified",
+            Self::EmailAlreadyVerified => "email_already_verified",
+            Self::InvalidToken => "invalid_token",
+            Self::EmailSendFailed(_) => "email_send_failed",
             Self::Internal(_) => "internal_error",
         }
     }

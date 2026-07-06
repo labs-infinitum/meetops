@@ -9,6 +9,7 @@ mod calendar;
 mod config;
 mod crypto;
 mod db;
+mod email;
 mod error;
 mod google;
 mod grpc;
@@ -85,7 +86,11 @@ async fn main() -> anyhow::Result<()> {
         Arc::clone(&app_shutdown),
     );
 
-    let auth_service = auth::AuthService::new(pool.clone(), Arc::new(config.auth.clone()));
+    let auth_service = auth::AuthService::new(
+        pool.clone(),
+        Arc::new(config.auth.clone()),
+        email::EmailSender::from_config(http.clone(), &config.email),
+    );
 
     let http_addr = SocketAddr::from((config.server.host, config.server.port));
     let grpc_addr = SocketAddr::from((config.grpc.host, config.grpc.port));

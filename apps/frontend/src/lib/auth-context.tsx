@@ -13,6 +13,7 @@ import {
   apiLogin,
   apiLogout,
   apiSignUp,
+  AuthApiError,
   authErrorMessage,
 } from "@/lib/auth-api"
 import { parseStoredAuthSession } from "@/lib/domain-validators"
@@ -28,9 +29,24 @@ type AuthContextValue = {
   session: AuthSession | null
   isAuthenticated: boolean
   isLoading: boolean
-  login: (username: string, password: string) => Promise<{ ok: true } | { ok: false; error: string }>
-  signup: (name: string, email: string, username: string, password: string) => Promise<{ ok: true } | { ok: false; error: string }>
+  login: (
+    username: string,
+    password: string,
+  ) => Promise<
+    | { ok: true }
+    | { ok: false; error: string; emailNotVerified?: boolean }
+  >
+  signup: (
+    name: string,
+    email: string,
+    username: string,
+    password: string,
+  ) => Promise<
+    | { ok: true; verificationRequired?: boolean }
+    | { ok: false; error: string }
+  >
   logout: () => Promise<void>
+  setSessionFromVerify: (session: AuthSession) => void
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -61,7 +77,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const token = session?.token
     setSession(null)
     saveSession(null)
-    // Best-effort server revoke; local session is already cleared.
     if (token) {
       void apiLogout(token).catch(() => undefined)
     }
@@ -131,23 +146,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       saveSession(next)
       return { ok: true as const }
     } catch (error) {
-      return { ok: false as const, error: authErrorMessage(error) }
+      return {
+        ok: false as const,
+        error: authErrorMessage(error),
+        emailNotVerified:
+          error instanceof AuthApiError && error.code === "email_not_verified",
+      }
     }
   }, [])
 
   const signup = useCallback(
     async (name: string, email: string, username: string, password: string) => {
       try {
-        const next = await apiSignUp(name, email, username, password)
-        setSession(next)
-        saveSession(next)
-        return { ok: true as const }
+        const result = await apiSignUp(name, email, username, password)
+        if (result.kind === "session") {
+          setSession(result.session)
+          saveSession(result.session)
+          return { ok: true as const }
+        }
+        return { ok: true as const, verificationRequired: true }
       } catch (error) {
         return { ok: false as const, error: authErrorMessage(error) }
       }
     },
     [],
   )
+
+  const setSessionFromVerify = useCallback((next: AuthSession) => {
+    setSession(next)
+    saveSession(next)
+  }, [])
 
   const value = useMemo(
     () => ({
@@ -157,8 +185,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       signup,
       logout,
+      setSessionFromVerify,
     }),
-    [session, isLoading, login, signup, logout],
+    [session, isLoading, login, signup, logout, setSessionFromVerify],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

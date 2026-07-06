@@ -65,6 +65,46 @@ export interface GetSessionRequest {
     token: string;
 }
 /**
+ * @generated from protobuf message notetaker.v1.RequestPasswordResetRequest
+ */
+export interface RequestPasswordResetRequest {
+    /**
+     * @generated from protobuf field: string email = 1
+     */
+    email: string;
+}
+/**
+ * @generated from protobuf message notetaker.v1.ResetPasswordRequest
+ */
+export interface ResetPasswordRequest {
+    /**
+     * @generated from protobuf field: string token = 1
+     */
+    token: string;
+    /**
+     * @generated from protobuf field: string new_password = 2
+     */
+    newPassword: string;
+}
+/**
+ * @generated from protobuf message notetaker.v1.VerifyEmailRequest
+ */
+export interface VerifyEmailRequest {
+    /**
+     * @generated from protobuf field: string token = 1
+     */
+    token: string;
+}
+/**
+ * @generated from protobuf message notetaker.v1.ResendVerificationEmailRequest
+ */
+export interface ResendVerificationEmailRequest {
+    /**
+     * @generated from protobuf field: string email = 1
+     */
+    email: string;
+}
+/**
  * @generated from protobuf message notetaker.v1.User
  */
 export interface User {
@@ -84,6 +124,10 @@ export interface User {
      * @generated from protobuf field: string username = 4
      */
     username: string;
+    /**
+     * @generated from protobuf field: bool email_verified = 5
+     */
+    emailVerified: boolean;
 }
 /**
  * @generated from protobuf message notetaker.v1.AuthSuccess
@@ -101,6 +145,10 @@ export interface AuthSuccess {
      * @generated from protobuf field: int64 expires_at = 3
      */
     expiresAt: bigint;
+    /**
+     * @generated from protobuf field: bool email_verification_required = 4
+     */
+    emailVerificationRequired: boolean;
 }
 /**
  * @generated from protobuf message notetaker.v1.AuthError
@@ -128,6 +176,38 @@ export interface AuthResponse {
          * @generated from protobuf field: notetaker.v1.AuthSuccess success = 1
          */
         success: AuthSuccess;
+    } | {
+        oneofKind: "error";
+        /**
+         * @generated from protobuf field: notetaker.v1.AuthError error = 2
+         */
+        error: AuthError;
+    } | {
+        oneofKind: undefined;
+    };
+}
+/**
+ * @generated from protobuf message notetaker.v1.AuthMessageSuccess
+ */
+export interface AuthMessageSuccess {
+    /**
+     * @generated from protobuf field: string message = 1
+     */
+    message: string;
+}
+/**
+ * @generated from protobuf message notetaker.v1.AuthMessageResponse
+ */
+export interface AuthMessageResponse {
+    /**
+     * @generated from protobuf oneof: result
+     */
+    result: {
+        oneofKind: "success";
+        /**
+         * @generated from protobuf field: notetaker.v1.AuthMessageSuccess success = 1
+         */
+        success: AuthMessageSuccess;
     } | {
         oneofKind: "error";
         /**
@@ -368,13 +448,210 @@ class GetSessionRequest$Type extends MessageType<GetSessionRequest> {
  */
 export const GetSessionRequest = new GetSessionRequest$Type();
 // @generated message type with reflection information, may provide speed optimized methods
+class RequestPasswordResetRequest$Type extends MessageType<RequestPasswordResetRequest> {
+    constructor() {
+        super("notetaker.v1.RequestPasswordResetRequest", [
+            { no: 1, name: "email", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<RequestPasswordResetRequest>): RequestPasswordResetRequest {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.email = "";
+        if (value !== undefined)
+            reflectionMergePartial<RequestPasswordResetRequest>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: RequestPasswordResetRequest): RequestPasswordResetRequest {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string email */ 1:
+                    message.email = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: RequestPasswordResetRequest, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string email = 1; */
+        if (message.email !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.email);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message notetaker.v1.RequestPasswordResetRequest
+ */
+export const RequestPasswordResetRequest = new RequestPasswordResetRequest$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class ResetPasswordRequest$Type extends MessageType<ResetPasswordRequest> {
+    constructor() {
+        super("notetaker.v1.ResetPasswordRequest", [
+            { no: 1, name: "token", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 2, name: "new_password", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<ResetPasswordRequest>): ResetPasswordRequest {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.token = "";
+        message.newPassword = "";
+        if (value !== undefined)
+            reflectionMergePartial<ResetPasswordRequest>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: ResetPasswordRequest): ResetPasswordRequest {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string token */ 1:
+                    message.token = reader.string();
+                    break;
+                case /* string new_password */ 2:
+                    message.newPassword = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: ResetPasswordRequest, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string token = 1; */
+        if (message.token !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.token);
+        /* string new_password = 2; */
+        if (message.newPassword !== "")
+            writer.tag(2, WireType.LengthDelimited).string(message.newPassword);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message notetaker.v1.ResetPasswordRequest
+ */
+export const ResetPasswordRequest = new ResetPasswordRequest$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class VerifyEmailRequest$Type extends MessageType<VerifyEmailRequest> {
+    constructor() {
+        super("notetaker.v1.VerifyEmailRequest", [
+            { no: 1, name: "token", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<VerifyEmailRequest>): VerifyEmailRequest {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.token = "";
+        if (value !== undefined)
+            reflectionMergePartial<VerifyEmailRequest>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: VerifyEmailRequest): VerifyEmailRequest {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string token */ 1:
+                    message.token = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: VerifyEmailRequest, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string token = 1; */
+        if (message.token !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.token);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message notetaker.v1.VerifyEmailRequest
+ */
+export const VerifyEmailRequest = new VerifyEmailRequest$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class ResendVerificationEmailRequest$Type extends MessageType<ResendVerificationEmailRequest> {
+    constructor() {
+        super("notetaker.v1.ResendVerificationEmailRequest", [
+            { no: 1, name: "email", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<ResendVerificationEmailRequest>): ResendVerificationEmailRequest {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.email = "";
+        if (value !== undefined)
+            reflectionMergePartial<ResendVerificationEmailRequest>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: ResendVerificationEmailRequest): ResendVerificationEmailRequest {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string email */ 1:
+                    message.email = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: ResendVerificationEmailRequest, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string email = 1; */
+        if (message.email !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.email);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message notetaker.v1.ResendVerificationEmailRequest
+ */
+export const ResendVerificationEmailRequest = new ResendVerificationEmailRequest$Type();
+// @generated message type with reflection information, may provide speed optimized methods
 class User$Type extends MessageType<User> {
     constructor() {
         super("notetaker.v1.User", [
             { no: 1, name: "id", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
             { no: 2, name: "name", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
             { no: 3, name: "email", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
-            { no: 4, name: "username", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+            { no: 4, name: "username", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 5, name: "email_verified", kind: "scalar", T: 8 /*ScalarType.BOOL*/ }
         ]);
     }
     create(value?: PartialMessage<User>): User {
@@ -383,6 +660,7 @@ class User$Type extends MessageType<User> {
         message.name = "";
         message.email = "";
         message.username = "";
+        message.emailVerified = false;
         if (value !== undefined)
             reflectionMergePartial<User>(this, message, value);
         return message;
@@ -403,6 +681,9 @@ class User$Type extends MessageType<User> {
                     break;
                 case /* string username */ 4:
                     message.username = reader.string();
+                    break;
+                case /* bool email_verified */ 5:
+                    message.emailVerified = reader.bool();
                     break;
                 default:
                     let u = options.readUnknownField;
@@ -428,6 +709,9 @@ class User$Type extends MessageType<User> {
         /* string username = 4; */
         if (message.username !== "")
             writer.tag(4, WireType.LengthDelimited).string(message.username);
+        /* bool email_verified = 5; */
+        if (message.emailVerified !== false)
+            writer.tag(5, WireType.Varint).bool(message.emailVerified);
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
@@ -444,13 +728,15 @@ class AuthSuccess$Type extends MessageType<AuthSuccess> {
         super("notetaker.v1.AuthSuccess", [
             { no: 1, name: "user", kind: "message", T: () => User },
             { no: 2, name: "token", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
-            { no: 3, name: "expires_at", kind: "scalar", T: 3 /*ScalarType.INT64*/, L: 0 /*LongType.BIGINT*/ }
+            { no: 3, name: "expires_at", kind: "scalar", T: 3 /*ScalarType.INT64*/, L: 0 /*LongType.BIGINT*/ },
+            { no: 4, name: "email_verification_required", kind: "scalar", T: 8 /*ScalarType.BOOL*/ }
         ]);
     }
     create(value?: PartialMessage<AuthSuccess>): AuthSuccess {
         const message = globalThis.Object.create((this.messagePrototype!));
         message.token = "";
         message.expiresAt = 0n;
+        message.emailVerificationRequired = false;
         if (value !== undefined)
             reflectionMergePartial<AuthSuccess>(this, message, value);
         return message;
@@ -468,6 +754,9 @@ class AuthSuccess$Type extends MessageType<AuthSuccess> {
                     break;
                 case /* int64 expires_at */ 3:
                     message.expiresAt = reader.int64().toBigInt();
+                    break;
+                case /* bool email_verification_required */ 4:
+                    message.emailVerificationRequired = reader.bool();
                     break;
                 default:
                     let u = options.readUnknownField;
@@ -490,6 +779,9 @@ class AuthSuccess$Type extends MessageType<AuthSuccess> {
         /* int64 expires_at = 3; */
         if (message.expiresAt !== 0n)
             writer.tag(3, WireType.Varint).int64(message.expiresAt);
+        /* bool email_verification_required = 4; */
+        if (message.emailVerificationRequired !== false)
+            writer.tag(4, WireType.Varint).bool(message.emailVerificationRequired);
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
@@ -616,6 +908,113 @@ class AuthResponse$Type extends MessageType<AuthResponse> {
  */
 export const AuthResponse = new AuthResponse$Type();
 // @generated message type with reflection information, may provide speed optimized methods
+class AuthMessageSuccess$Type extends MessageType<AuthMessageSuccess> {
+    constructor() {
+        super("notetaker.v1.AuthMessageSuccess", [
+            { no: 1, name: "message", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<AuthMessageSuccess>): AuthMessageSuccess {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.message = "";
+        if (value !== undefined)
+            reflectionMergePartial<AuthMessageSuccess>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: AuthMessageSuccess): AuthMessageSuccess {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string message */ 1:
+                    message.message = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: AuthMessageSuccess, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string message = 1; */
+        if (message.message !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.message);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message notetaker.v1.AuthMessageSuccess
+ */
+export const AuthMessageSuccess = new AuthMessageSuccess$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class AuthMessageResponse$Type extends MessageType<AuthMessageResponse> {
+    constructor() {
+        super("notetaker.v1.AuthMessageResponse", [
+            { no: 1, name: "success", kind: "message", oneof: "result", T: () => AuthMessageSuccess },
+            { no: 2, name: "error", kind: "message", oneof: "result", T: () => AuthError }
+        ]);
+    }
+    create(value?: PartialMessage<AuthMessageResponse>): AuthMessageResponse {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.result = { oneofKind: undefined };
+        if (value !== undefined)
+            reflectionMergePartial<AuthMessageResponse>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: AuthMessageResponse): AuthMessageResponse {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* notetaker.v1.AuthMessageSuccess success */ 1:
+                    message.result = {
+                        oneofKind: "success",
+                        success: AuthMessageSuccess.internalBinaryRead(reader, reader.uint32(), options, (message.result as any).success)
+                    };
+                    break;
+                case /* notetaker.v1.AuthError error */ 2:
+                    message.result = {
+                        oneofKind: "error",
+                        error: AuthError.internalBinaryRead(reader, reader.uint32(), options, (message.result as any).error)
+                    };
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: AuthMessageResponse, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* notetaker.v1.AuthMessageSuccess success = 1; */
+        if (message.result.oneofKind === "success")
+            AuthMessageSuccess.internalBinaryWrite(message.result.success, writer.tag(1, WireType.LengthDelimited).fork(), options).join();
+        /* notetaker.v1.AuthError error = 2; */
+        if (message.result.oneofKind === "error")
+            AuthError.internalBinaryWrite(message.result.error, writer.tag(2, WireType.LengthDelimited).fork(), options).join();
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message notetaker.v1.AuthMessageResponse
+ */
+export const AuthMessageResponse = new AuthMessageResponse$Type();
+// @generated message type with reflection information, may provide speed optimized methods
 class LogoutResponse$Type extends MessageType<LogoutResponse> {
     constructor() {
         super("notetaker.v1.LogoutResponse", [
@@ -669,5 +1068,9 @@ export const AuthService = new ServiceType("notetaker.v1.AuthService", [
     { name: "SignUp", options: {}, I: SignUpRequest, O: AuthResponse },
     { name: "Login", options: {}, I: LoginRequest, O: AuthResponse },
     { name: "Logout", options: {}, I: LogoutRequest, O: LogoutResponse },
-    { name: "GetSession", options: {}, I: GetSessionRequest, O: AuthResponse }
+    { name: "GetSession", options: {}, I: GetSessionRequest, O: AuthResponse },
+    { name: "RequestPasswordReset", options: {}, I: RequestPasswordResetRequest, O: AuthMessageResponse },
+    { name: "ResetPassword", options: {}, I: ResetPasswordRequest, O: AuthMessageResponse },
+    { name: "VerifyEmail", options: {}, I: VerifyEmailRequest, O: AuthResponse },
+    { name: "ResendVerificationEmail", options: {}, I: ResendVerificationEmailRequest, O: AuthMessageResponse }
 ]);

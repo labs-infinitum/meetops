@@ -5,6 +5,11 @@
 import type { RpcTransport } from "@protobuf-ts/runtime-rpc";
 import type { ServiceInfo } from "@protobuf-ts/runtime-rpc";
 import { AuthService } from "./auth";
+import type { ResendVerificationEmailRequest } from "./auth";
+import type { VerifyEmailRequest } from "./auth";
+import type { ResetPasswordRequest } from "./auth";
+import type { AuthMessageResponse } from "./auth";
+import type { RequestPasswordResetRequest } from "./auth";
 import type { GetSessionRequest } from "./auth";
 import type { LogoutResponse } from "./auth";
 import type { LogoutRequest } from "./auth";
@@ -36,6 +41,22 @@ export interface IAuthServiceClient {
      * @generated from protobuf rpc: GetSession
      */
     getSession(input: GetSessionRequest, options?: RpcOptions): UnaryCall<GetSessionRequest, AuthResponse>;
+    /**
+     * @generated from protobuf rpc: RequestPasswordReset
+     */
+    requestPasswordReset(input: RequestPasswordResetRequest, options?: RpcOptions): UnaryCall<RequestPasswordResetRequest, AuthMessageResponse>;
+    /**
+     * @generated from protobuf rpc: ResetPassword
+     */
+    resetPassword(input: ResetPasswordRequest, options?: RpcOptions): UnaryCall<ResetPasswordRequest, AuthMessageResponse>;
+    /**
+     * @generated from protobuf rpc: VerifyEmail
+     */
+    verifyEmail(input: VerifyEmailRequest, options?: RpcOptions): UnaryCall<VerifyEmailRequest, AuthResponse>;
+    /**
+     * @generated from protobuf rpc: ResendVerificationEmail
+     */
+    resendVerificationEmail(input: ResendVerificationEmailRequest, options?: RpcOptions): UnaryCall<ResendVerificationEmailRequest, AuthMessageResponse>;
 }
 /**
  * Auth API for the web frontend (grpc-web).
@@ -75,5 +96,33 @@ export class AuthServiceClient implements IAuthServiceClient, ServiceInfo {
     getSession(input: GetSessionRequest, options?: RpcOptions): UnaryCall<GetSessionRequest, AuthResponse> {
         const method = this.methods[3], opt = this._transport.mergeOptions(options);
         return stackIntercept<GetSessionRequest, AuthResponse>("unary", this._transport, method, opt, input);
+    }
+    /**
+     * @generated from protobuf rpc: RequestPasswordReset
+     */
+    requestPasswordReset(input: RequestPasswordResetRequest, options?: RpcOptions): UnaryCall<RequestPasswordResetRequest, AuthMessageResponse> {
+        const method = this.methods[4], opt = this._transport.mergeOptions(options);
+        return stackIntercept<RequestPasswordResetRequest, AuthMessageResponse>("unary", this._transport, method, opt, input);
+    }
+    /**
+     * @generated from protobuf rpc: ResetPassword
+     */
+    resetPassword(input: ResetPasswordRequest, options?: RpcOptions): UnaryCall<ResetPasswordRequest, AuthMessageResponse> {
+        const method = this.methods[5], opt = this._transport.mergeOptions(options);
+        return stackIntercept<ResetPasswordRequest, AuthMessageResponse>("unary", this._transport, method, opt, input);
+    }
+    /**
+     * @generated from protobuf rpc: VerifyEmail
+     */
+    verifyEmail(input: VerifyEmailRequest, options?: RpcOptions): UnaryCall<VerifyEmailRequest, AuthResponse> {
+        const method = this.methods[6], opt = this._transport.mergeOptions(options);
+        return stackIntercept<VerifyEmailRequest, AuthResponse>("unary", this._transport, method, opt, input);
+    }
+    /**
+     * @generated from protobuf rpc: ResendVerificationEmail
+     */
+    resendVerificationEmail(input: ResendVerificationEmailRequest, options?: RpcOptions): UnaryCall<ResendVerificationEmailRequest, AuthMessageResponse> {
+        const method = this.methods[7], opt = this._transport.mergeOptions(options);
+        return stackIntercept<ResendVerificationEmailRequest, AuthMessageResponse>("unary", this._transport, method, opt, input);
     }
 }

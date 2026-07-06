@@ -11,6 +11,8 @@ pub struct Config {
     pub server: ServerConfig,
     pub grpc: GrpcConfig,
     pub auth: AuthConfig,
+    #[serde(default)]
+    pub email: EmailConfig,
     pub logging: LoggingConfig,
     pub storage: StorageConfig,
     #[serde(default)]
@@ -38,6 +40,50 @@ pub struct GrpcConfig {
 pub struct AuthConfig {
     /// Session lifetime in seconds (default 30 days).
     pub session_ttl_secs: u64,
+    /// Email verification link lifetime in seconds (default 24 hours).
+    #[serde(default = "default_email_verification_token_ttl_secs")]
+    pub email_verification_token_ttl_secs: u64,
+    /// Password reset link lifetime in seconds (default 1 hour).
+    #[serde(default = "default_password_reset_token_ttl_secs")]
+    pub password_reset_token_ttl_secs: u64,
+    /// When true, new users must verify email before signing in.
+    #[serde(default = "default_true")]
+    pub require_email_verification: bool,
+    /// Public frontend base URL for links in transactional email.
+    #[serde(default = "default_app_base_url")]
+    pub app_base_url: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct EmailConfig {
+    /// Environment variable holding the Resend API key.
+    #[serde(default = "default_resend_api_key_env")]
+    pub api_key_env: String,
+    /// Verified sender address in Resend (e.g. onboarding@yourdomain.com).
+    #[serde(default)]
+    pub from_email: String,
+    #[serde(default = "default_email_from_name")]
+    pub from_name: String,
+}
+
+fn default_resend_api_key_env() -> String {
+    "RESEND_API_KEY".to_owned()
+}
+
+fn default_email_from_name() -> String {
+    "AI Notetaker".to_owned()
+}
+
+fn default_email_verification_token_ttl_secs() -> u64 {
+    60 * 60 * 24
+}
+
+fn default_password_reset_token_ttl_secs() -> u64 {
+    60 * 60
+}
+
+fn default_app_base_url() -> String {
+    "http://localhost:5173".to_owned()
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -221,6 +267,15 @@ impl Default for Config {
             },
             auth: AuthConfig {
                 session_ttl_secs: 60 * 60 * 24 * 30,
+                email_verification_token_ttl_secs: default_email_verification_token_ttl_secs(),
+                password_reset_token_ttl_secs: default_password_reset_token_ttl_secs(),
+                require_email_verification: true,
+                app_base_url: default_app_base_url(),
+            },
+            email: EmailConfig {
+                api_key_env: default_resend_api_key_env(),
+                from_email: String::new(),
+                from_name: default_email_from_name(),
             },
             logging: LoggingConfig {
                 filter: default_log_filter(),

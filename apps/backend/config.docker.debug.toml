@@ -9,6 +9,12 @@ allow_origin = "http://localhost:3000"
 
 [auth]
 session_ttl_secs = 2592000
+require_email_verification = true
+app_base_url = "http://localhost:3000"
+
+[email]
+from_email = ""
+from_name = "AI Notetaker"
 
 [logging]
 filter = "info,google_meeting_recorder=debug,tower_http=debug,tonic=info"

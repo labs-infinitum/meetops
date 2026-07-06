@@ -7,6 +7,13 @@ pub struct UserRow {
     pub email: String,
     pub name: String,
     pub password_hash: String,
+    pub email_verified_at: Option<i64>,
+}
+
+impl UserRow {
+    pub fn is_email_verified(&self) -> bool {
+        self.email_verified_at.is_some()
+    }
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -23,12 +30,13 @@ pub async fn create_user(
     email: &str,
     name: &str,
     password_hash: &str,
+    email_verified_at: Option<i64>,
 ) -> sqlx::Result<UserRow> {
     let now = super::now_unix();
     sqlx::query(
         r#"
-        INSERT INTO users (id, username, email, name, password_hash, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        INSERT INTO users (id, username, email, name, password_hash, email_verified_at, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         "#,
     )
     .bind(id)
@@ -36,6 +44,7 @@ pub async fn create_user(
     .bind(email)
     .bind(name)
     .bind(password_hash)
+    .bind(email_verified_at)
     .bind(now)
     .bind(now)
     .execute(pool)
@@ -46,29 +55,56 @@ pub async fn create_user(
         .ok_or(sqlx::Error::RowNotFound)
 }
 
+const USER_COLUMNS: &str =
+    "id, username, email, name, password_hash, email_verified_at";
+
 pub async fn get_user_by_id(pool: &DbPool, id: &str) -> sqlx::Result<Option<UserRow>> {
-    sqlx::query_as("SELECT id, username, email, name, password_hash FROM users WHERE id = $1")
+    let sql = format!("SELECT {USER_COLUMNS} FROM users WHERE id = $1");
+    sqlx::query_as(&sql)
         .bind(id)
         .fetch_optional(pool)
         .await
 }
 
 pub async fn get_user_by_username(pool: &DbPool, username: &str) -> sqlx::Result<Option<UserRow>> {
-    sqlx::query_as(
-        "SELECT id, username, email, name, password_hash FROM users WHERE lower(username) = lower($1)",
-    )
-    .bind(username)
-    .fetch_optional(pool)
-    .await
+    let sql = format!("SELECT {USER_COLUMNS} FROM users WHERE lower(username) = lower($1)");
+    sqlx::query_as(&sql)
+        .bind(username)
+        .fetch_optional(pool)
+        .await
 }
 
 pub async fn get_user_by_email(pool: &DbPool, email: &str) -> sqlx::Result<Option<UserRow>> {
-    sqlx::query_as(
-        "SELECT id, username, email, name, password_hash FROM users WHERE lower(email) = lower($1)",
-    )
-    .bind(email)
-    .fetch_optional(pool)
-    .await
+    let sql = format!("SELECT {USER_COLUMNS} FROM users WHERE lower(email) = lower($1)");
+    sqlx::query_as(&sql)
+        .bind(email)
+        .fetch_optional(pool)
+        .await
+}
+
+pub async fn mark_email_verified(pool: &DbPool, user_id: &str) -> sqlx::Result<()> {
+    let now = super::now_unix();
+    sqlx::query("UPDATE users SET email_verified_at = $1, updated_at = $1 WHERE id = $2")
+        .bind(now)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn update_password_hash(
+    pool: &DbPool,
+    user_id: &str,
+    password_hash: &str,
+) -> sqlx::Result<()> {
+    let now = super::now_unix();
+    sqlx::query("UPDATE users SET password_hash = $1, updated_at = $2 WHERE id = $3")
+        .bind(password_hash)
+        .bind(now)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 pub async fn create_session(

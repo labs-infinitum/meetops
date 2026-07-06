@@ -10,6 +10,8 @@ function isUser(value: unknown): value is User {
     hasStringProperty(value, "name") &&
     hasStringProperty(value, "email") &&
     hasStringProperty(value, "username") &&
+    (!("emailVerified" in value) ||
+      typeof (value as { emailVerified?: unknown }).emailVerified === "boolean") &&
     (!("avatarUrl" in value) ||
       (value as { avatarUrl?: unknown }).avatarUrl === undefined ||
       typeof (value as { avatarUrl?: unknown }).avatarUrl === "string")

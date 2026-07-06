@@ -4,6 +4,7 @@ use sqlx::{PgPool, migrate::Migrator, postgres::PgPoolOptions};
 
 use crate::config::Config;
 
+pub mod auth_email_tokens;
 pub mod bot_runs;
 pub mod calendar_connections;
 pub mod jobs;

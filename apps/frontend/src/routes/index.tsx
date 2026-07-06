@@ -1,7 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom"
 import { AppShell } from "@/components/layout/AppShell"
 import { LandingPage } from "@/pages/LandingPage"
-import { LoginPage, SignupPage } from "@/pages/AuthPages"
+import { LoginPage, SignupPage, ForgotPasswordPage, ResetPasswordPage, VerifyEmailPage, CheckEmailPage } from "@/pages/AuthPages"
 import { DashboardPage } from "@/pages/DashboardPage"
 import { CalendarsPage } from "@/pages/CalendarsPage"
 import { MeetingsPage, MeetingDetailPage } from "@/pages/MeetingsPage"
@@ -32,6 +32,24 @@ export function AppRoutes() {
             </GuestRoute>
           }
         />
+        <Route
+          path="/forgot-password"
+          element={
+            <GuestRoute>
+              <ForgotPasswordPage />
+            </GuestRoute>
+          }
+        />
+        <Route
+          path="/reset-password"
+          element={
+            <GuestRoute>
+              <ResetPasswordPage />
+            </GuestRoute>
+          }
+        />
+        <Route path="/verify-email" element={<VerifyEmailPage />} />
+        <Route path="/check-email" element={<CheckEmailPage />} />
 
         <Route
           path="/app"
