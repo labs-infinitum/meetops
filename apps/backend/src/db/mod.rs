@@ -171,6 +171,29 @@ pub async fn set_kv(pool: &DbPool, key: &str, value: &str) -> sqlx::Result<()> {
     Ok(())
 }
 
+/// Garbage-collect KV rows under a key prefix whose `updated_at` is older than
+/// `cutoff` (used to sweep abandoned OAuth states).
+pub async fn delete_kv_prefix_older_than(
+    pool: &DbPool,
+    prefix: &str,
+    cutoff: i64,
+) -> sqlx::Result<u64> {
+    let mut escaped = String::with_capacity(prefix.len());
+    for ch in prefix.chars() {
+        if matches!(ch, '%' | '_' | '\\') {
+            escaped.push('\\');
+        }
+        escaped.push(ch);
+    }
+    let pattern = format!("{escaped}%");
+    let result = sqlx::query("DELETE FROM app_kv WHERE key LIKE $1 AND updated_at < $2")
+        .bind(pattern)
+        .bind(cutoff)
+        .execute(pool)
+        .await?;
+    Ok(result.rows_affected())
+}
+
 pub async fn delete_kv(pool: &DbPool, key: &str) -> sqlx::Result<()> {
     sqlx::query("DELETE FROM app_kv WHERE key = $1")
         .bind(key)

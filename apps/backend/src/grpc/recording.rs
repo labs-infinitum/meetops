@@ -285,6 +285,18 @@ fn parse_action_items(raw: Option<&str>) -> Vec<GeneratedActionItem> {
 fn to_proto_error(error: &RecordingServiceError) -> RecordingError {
     RecordingError {
         code: error.code().to_owned(),
-        message: error.to_string(),
+        message: client_safe_message(error),
+    }
+}
+
+/// Internal errors (sqlx/anyhow chains) are logged server-side but never
+/// stringified into the response, so schema/infra details don't leak.
+fn client_safe_message(error: &RecordingServiceError) -> String {
+    match error {
+        RecordingServiceError::Internal(detail) => {
+            tracing::error!(%detail, "internal recording service error");
+            "internal server error".to_owned()
+        }
+        other => other.to_string(),
     }
 }

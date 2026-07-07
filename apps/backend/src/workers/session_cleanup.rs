@@ -3,6 +3,7 @@ use std::time::Duration;
 use crate::db::DbPool;
 
 use crate::db::{auth_email_tokens, users};
+use crate::google::oauth;
 
 const CLEANUP_INTERVAL_SECS: u64 = 3600;
 
@@ -27,5 +28,17 @@ async fn cleanup(db: &DbPool) {
         Ok(0) => {}
         Ok(deleted) => tracing::info!(deleted, "removed expired auth email tokens"),
         Err(error) => tracing::warn!(%error, "auth email token cleanup failed"),
+    }
+    let oauth_state_cutoff = crate::db::now_unix() - oauth::OAUTH_STATE_TTL_SECS;
+    match crate::db::delete_kv_prefix_older_than(
+        db,
+        oauth::OAUTH_STATE_KEY_PREFIX,
+        oauth_state_cutoff,
+    )
+    .await
+    {
+        Ok(0) => {}
+        Ok(deleted) => tracing::info!(deleted, "removed abandoned OAuth states"),
+        Err(error) => tracing::warn!(%error, "OAuth state cleanup failed"),
     }
 }

@@ -12,8 +12,14 @@ const GOOGLE_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 const GOOGLE_USERINFO_URL: &str = "https://www.googleapis.com/oauth2/v2/userinfo";
 pub const OAUTH_SCOPES: &str = "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.email";
 
+pub const OAUTH_STATE_KEY_PREFIX: &str = "oauth_state:";
+
+/// Abandoned OAuth flows expire after this many seconds; a leaked callback URL
+/// is not replayable indefinitely.
+pub const OAUTH_STATE_TTL_SECS: i64 = 600;
+
 fn oauth_state_key(state: &str) -> String {
-    format!("oauth_state:{state}")
+    format!("{OAUTH_STATE_KEY_PREFIX}{state}")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,6 +28,8 @@ pub struct OAuthStatePayload {
     pub provider: String,
     pub label: Option<String>,
     pub color: Option<String>,
+    #[serde(default)]
+    pub created_at: i64,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -73,7 +81,7 @@ struct GoogleUserInfo {
 pub async fn start_url(
     pool: &DbPool,
     config: &Config,
-    payload: OAuthStatePayload,
+    mut payload: OAuthStatePayload,
 ) -> Result<String, GoogleAuthError> {
     ensure_config(config)?;
 
@@ -81,6 +89,7 @@ pub async fn start_url(
         return Err(GoogleAuthError::MissingUser);
     }
 
+    payload.created_at = db::now_unix();
     let state = random_state();
     let json = serde_json::to_string(&payload).map_err(|error| {
         GoogleAuthError::Token(format!("failed to serialize oauth state: {error}"))
@@ -286,7 +295,14 @@ async fn verify_state(pool: &DbPool, state: &str) -> Result<OAuthStatePayload, G
     let Some(json) = stored else {
         return Err(GoogleAuthError::StateMismatch);
     };
-    serde_json::from_str(&json).map_err(|_| GoogleAuthError::StateMismatch)
+    let payload: OAuthStatePayload =
+        serde_json::from_str(&json).map_err(|_| GoogleAuthError::StateMismatch)?;
+    // `created_at == 0` covers rows written before the TTL existed: treat as expired.
+    if db::now_unix() - payload.created_at > OAUTH_STATE_TTL_SECS {
+        db::delete_kv(pool, &oauth_state_key(state)).await?;
+        return Err(GoogleAuthError::StateMismatch);
+    }
+    Ok(payload)
 }
 
 fn ensure_config(config: &Config) -> Result<(), GoogleAuthError> {

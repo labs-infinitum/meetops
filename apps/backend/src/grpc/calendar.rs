@@ -141,9 +141,20 @@ fn to_proto_connection(
 fn to_proto_error(error: &CalendarConnectError) -> CalendarError {
     CalendarError {
         code: error.code().to_owned(),
-        message: error.to_string(),
+        message: client_safe_message(error),
         email: error.email().unwrap_or("").to_owned(),
         provider: error.provider().unwrap_or("").to_owned(),
         other_account_hint: error.other_account_hint().unwrap_or("").to_owned(),
+    }
+}
+
+/// Internal errors are logged server-side; clients get a generic message.
+fn client_safe_message(error: &CalendarConnectError) -> String {
+    match error {
+        CalendarConnectError::Internal(detail) => {
+            tracing::error!(%detail, "internal calendar service error");
+            "internal server error".to_owned()
+        }
+        other => other.to_string(),
     }
 }

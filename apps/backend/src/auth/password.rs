@@ -21,6 +21,19 @@ pub fn verify_password(password: &str, password_hash: &str) -> Result<bool, Auth
         .is_ok())
 }
 
+/// Burn the same argon2 work as a real verification when the username does not
+/// exist, so login timing does not reveal whether an account exists.
+pub fn verify_password_dummy(password: &str) {
+    use std::sync::OnceLock;
+
+    static DUMMY_HASH: OnceLock<String> = OnceLock::new();
+    let hash = DUMMY_HASH.get_or_init(|| {
+        hash_password("dummy-password-for-timing-equalization")
+            .expect("hashing a constant password cannot fail")
+    });
+    let _ = verify_password(password, hash);
+}
+
 #[cfg(test)]
 mod tests {
     use super::{hash_password, verify_password};

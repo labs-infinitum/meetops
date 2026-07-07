@@ -133,6 +133,17 @@ fn to_proto_meeting(row: &crate::db::meetings::MeetingRow) -> Meeting {
 fn to_proto_error(error: &MeetingError) -> ProtoMeetingError {
     ProtoMeetingError {
         code: error.code().to_owned(),
-        message: error.to_string(),
+        message: client_safe_message(error),
+    }
+}
+
+/// Internal errors are logged server-side; clients get a generic message.
+fn client_safe_message(error: &MeetingError) -> String {
+    match error {
+        MeetingError::Internal(detail) => {
+            tracing::error!(%detail, "internal meeting service error");
+            "internal server error".to_owned()
+        }
+        other => other.to_string(),
     }
 }

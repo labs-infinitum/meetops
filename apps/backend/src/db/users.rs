@@ -147,10 +147,17 @@ pub async fn get_session(pool: &DbPool, token: &str) -> sqlx::Result<Option<Sess
     .await
 }
 
+/// Only rewrite `last_used_at` when it is stale; every authenticated gRPC call
+/// touches the session, and an unconditional UPDATE per request is needless
+/// write load for a value that only needs minute-level resolution.
+const TOUCH_SESSION_MIN_INTERVAL_SECS: i64 = 60;
+
 pub async fn touch_session(pool: &DbPool, token: &str) -> sqlx::Result<()> {
-    sqlx::query("UPDATE sessions SET last_used_at = $1 WHERE token = $2")
-        .bind(super::now_unix())
+    let now = super::now_unix();
+    sqlx::query("UPDATE sessions SET last_used_at = $1 WHERE token = $2 AND last_used_at < $3")
+        .bind(now)
         .bind(token)
+        .bind(now - TOUCH_SESSION_MIN_INTERVAL_SECS)
         .execute(pool)
         .await?;
     Ok(())

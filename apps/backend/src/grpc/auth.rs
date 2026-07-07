@@ -186,10 +186,26 @@ fn session_response(session: crate::auth::service::AuthSession) -> AuthResponse 
 
 fn error_response(error: &AuthError) -> AuthResponse {
     AuthResponse {
-        result: Some(proto::auth_response::Result::Error(ProtoAuthError {
-            code: error.code().to_owned(),
-            message: error.to_string(),
-        })),
+        result: Some(proto::auth_response::Result::Error(to_proto_error(error))),
+    }
+}
+
+/// Internal errors are logged server-side; clients get a generic message.
+fn to_proto_error(error: &AuthError) -> ProtoAuthError {
+    let message = match error {
+        AuthError::Internal(detail) => {
+            tracing::error!(%detail, "internal auth service error");
+            "internal server error".to_owned()
+        }
+        AuthError::EmailSendFailed(detail) => {
+            tracing::error!(%detail, "failed to send auth email");
+            "failed to send email; try again later".to_owned()
+        }
+        other => other.to_string(),
+    };
+    ProtoAuthError {
+        code: error.code().to_owned(),
+        message,
     }
 }
 
@@ -203,10 +219,9 @@ fn message_success_response(message: String) -> AuthMessageResponse {
 
 fn message_error_response(error: &AuthError) -> AuthMessageResponse {
     AuthMessageResponse {
-        result: Some(proto::auth_message_response::Result::Error(ProtoAuthError {
-            code: error.code().to_owned(),
-            message: error.to_string(),
-        })),
+        result: Some(proto::auth_message_response::Result::Error(to_proto_error(
+            error,
+        ))),
     }
 }
 

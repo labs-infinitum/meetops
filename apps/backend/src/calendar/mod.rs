@@ -148,6 +148,7 @@ impl CalendarService {
                 provider: provider.to_owned(),
                 label: label.map(str::to_owned),
                 color: color.map(str::to_owned),
+                created_at: 0, // stamped by start_url
             },
         )
         .await

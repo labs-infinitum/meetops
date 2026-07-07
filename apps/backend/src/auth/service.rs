@@ -103,9 +103,12 @@ impl AuthService {
             ));
         }
 
-        let user = users::get_user_by_username(&self.db, username)
-            .await?
-            .ok_or(AuthError::InvalidCredentials)?;
+        let Some(user) = users::get_user_by_username(&self.db, username).await? else {
+            // Equalize timing with the wrong-password path to prevent
+            // username enumeration via response latency.
+            password::verify_password_dummy(password);
+            return Err(AuthError::InvalidCredentials);
+        };
 
         if !password::verify_password(password, &user.password_hash)? {
             return Err(AuthError::InvalidCredentials);
