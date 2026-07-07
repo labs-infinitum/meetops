@@ -262,15 +262,13 @@ fn require_bot_run_id(job: &Job) -> anyhow::Result<i64> {
 fn timeline_events_for_prompt(events: &[MeetingTimelineEvent]) -> Vec<serde_json::Value> {
     events
         .iter()
+        .filter(|event| event.event_type == "active_speaker_changed")
         .map(|event| {
             serde_json::json!({
                 "event_type": event.event_type,
                 "relative_ms": event.relative_ms,
                 "participant_id": event.participant_id,
                 "participant_name": event.participant_name,
-                "payload": event.payload_json.as_deref()
-                    .and_then(|json| serde_json::from_str::<serde_json::Value>(json).ok())
-                    .unwrap_or(serde_json::Value::Null)
             })
         })
         .collect()
@@ -283,19 +281,34 @@ mod tests {
     use super::timeline_events_for_prompt;
 
     #[test]
-    fn timeline_prompt_parses_payload_json() {
-        let events = vec![MeetingTimelineEvent {
-            id: 1,
-            bot_run_id: 2,
-            event_type: "active_speaker_changed".to_owned(),
-            occurred_at: 10,
-            relative_ms: 1500,
-            participant_id: Some("p1".to_owned()),
-            participant_name: Some("Alice".to_owned()),
-            payload_json: Some(r#"{"source":"tile_visual_effect"}"#.to_owned()),
-            created_at: 10,
-        }];
+    fn timeline_prompt_keeps_only_active_speaker_changes() {
+        let events = vec![
+            MeetingTimelineEvent {
+                id: 1,
+                bot_run_id: 2,
+                event_type: "active_speaker_changed".to_owned(),
+                occurred_at: 10,
+                relative_ms: 1500,
+                participant_id: Some("p1".to_owned()),
+                participant_name: Some("Alice".to_owned()),
+                payload_json: Some(r#"{"source":"tile_visual_effect"}"#.to_owned()),
+                created_at: 10,
+            },
+            MeetingTimelineEvent {
+                id: 2,
+                bot_run_id: 2,
+                event_type: "participant_snapshot".to_owned(),
+                occurred_at: 11,
+                relative_ms: 1600,
+                participant_id: None,
+                participant_name: None,
+                payload_json: Some(r#"{"participants":[]}"#.to_owned()),
+                created_at: 11,
+            },
+        ];
         let prompt_events = timeline_events_for_prompt(&events);
-        assert_eq!(prompt_events[0]["payload"]["source"], "tile_visual_effect");
+        assert_eq!(prompt_events.len(), 1);
+        assert_eq!(prompt_events[0]["event_type"], "active_speaker_changed");
+        assert!(prompt_events[0].get("payload").is_none());
     }
 }

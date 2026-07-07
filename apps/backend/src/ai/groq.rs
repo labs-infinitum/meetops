@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, time::Duration};
 
 use serde::{Deserialize, Serialize};
 
@@ -6,6 +6,10 @@ use crate::config::GroqConfig;
 
 const GROQ_BASE_URL: &str = "https://api.groq.com/openai/v1";
 const GROQ_TRANSCRIPTION_MAX_BYTES: usize = 100 * 1024 * 1024;
+const CLEAN_TRANSCRIPT_RAW_MAX_CHARS: usize = 12_000;
+const CLEAN_TRANSCRIPT_SEGMENTS_MAX_CHARS: usize = 4_000;
+const CLEAN_TRANSCRIPT_TIMELINE_MAX_CHARS: usize = 4_000;
+const MEETING_NOTES_TRANSCRIPT_MAX_CHARS: usize = 14_000;
 
 #[derive(Clone)]
 pub struct GroqClient {
@@ -81,6 +85,12 @@ impl GroqClient {
         if api_key.trim().is_empty() {
             anyhow::bail!("{} is empty", config.api_key_env);
         }
+        let http = reqwest::Client::builder()
+            .http1_only()
+            .connect_timeout(Duration::from_secs(15))
+            .timeout(Duration::from_secs(180))
+            .build()
+            .unwrap_or(http);
         Ok(Self {
             http,
             api_key,
@@ -104,36 +114,23 @@ impl GroqClient {
                 GROQ_TRANSCRIPTION_MAX_BYTES
             );
         }
-        let file_part = reqwest::multipart::Part::bytes(audio_webm)
-            .file_name("audio.webm")
-            .mime_str("audio/webm")?;
-        let form = reqwest::multipart::Form::new()
-            .text("model", self.transcription_model.clone())
-            .text("response_format", "verbose_json")
-            .part("file", file_part);
-
-        let response = self
-            .http
-            .post(format!("{GROQ_BASE_URL}/audio/transcriptions"))
-            .bearer_auth(&self.api_key)
-            .multipart(form)
-            .send()
+        let response = match self
+            .send_transcription_request(&audio_webm, audio_bytes)
             .await
-            .map_err(|error| {
-                anyhow::anyhow!(
-                    "failed to send Groq transcription request: model={} audio_bytes={} timeout={} connect={} request={} body={} source={}",
-                    self.transcription_model,
+        {
+            Ok(response) => response,
+            Err(first_error) if is_transient_send_error(&first_error) => {
+                tracing::warn!(
+                    %first_error,
+                    model = %self.transcription_model,
                     audio_bytes,
-                    error.is_timeout(),
-                    error.is_connect(),
-                    error.is_request(),
-                    error.is_body(),
-                    error
-                        .source()
-                        .map(|source| source.to_string())
-                        .unwrap_or_else(|| "none".to_owned())
-                )
-            })?;
+                    "Groq transcription request send failed; retrying once"
+                );
+                self.send_transcription_request(&audio_webm, audio_bytes)
+                    .await?
+            }
+            Err(error) => return Err(error),
+        };
         let status = response.status();
         let body = response.text().await?;
         if !status.is_success() {
@@ -151,20 +148,80 @@ impl GroqClient {
         })
     }
 
+    async fn send_transcription_request(
+        &self,
+        audio_webm: &[u8],
+        audio_bytes: usize,
+    ) -> anyhow::Result<reqwest::Response> {
+        let file_part = reqwest::multipart::Part::bytes(audio_webm.to_vec())
+            .file_name("audio.webm")
+            .mime_str("audio/webm")?;
+        let form = reqwest::multipart::Form::new()
+            .text("model", self.transcription_model.clone())
+            .text("response_format", "verbose_json")
+            .part("file", file_part);
+
+        self.http
+            .post(format!("{GROQ_BASE_URL}/audio/transcriptions"))
+            .bearer_auth(&self.api_key)
+            .multipart(form)
+            .send()
+            .await
+            .map_err(|error| {
+                transcription_send_error(error, &self.transcription_model, audio_bytes)
+            })
+    }
+
     pub async fn clean_transcript(
         &self,
         raw_text: &str,
         segments_json: Option<&str>,
         timeline_events_json: &str,
     ) -> anyhow::Result<CleanTranscriptResult> {
+        let raw_text_for_prompt = truncate_for_prompt(raw_text, CLEAN_TRANSCRIPT_RAW_MAX_CHARS);
+        let segments_for_prompt = segments_json
+            .and_then(compact_segments_for_prompt)
+            .map(|segments| truncate_for_prompt(&segments, CLEAN_TRANSCRIPT_SEGMENTS_MAX_CHARS));
+        let timeline_for_prompt =
+            truncate_for_prompt(timeline_events_json, CLEAN_TRANSCRIPT_TIMELINE_MAX_CHARS);
+        if raw_text_for_prompt.truncated
+            || segments_for_prompt
+                .as_ref()
+                .is_some_and(|segments| segments.truncated)
+            || timeline_for_prompt.truncated
+        {
+            tracing::warn!(
+                raw_chars = raw_text.chars().count(),
+                raw_prompt_chars = raw_text_for_prompt.text.chars().count(),
+                segments_prompt_chars = segments_for_prompt
+                    .as_ref()
+                    .map(|segments| segments.text.chars().count())
+                    .unwrap_or(0),
+                timeline_chars = timeline_events_json.chars().count(),
+                timeline_prompt_chars = timeline_for_prompt.text.chars().count(),
+                "truncated Groq transcript-cleaning prompt to fit on-demand TPM limits"
+            );
+        }
         let prompt = format!(
             "Create a speaker-attributed cleaned transcript from the raw transcription and meeting timeline events.\n\
              Use active_speaker_changed event times to infer speaker turns. Preserve meaning, remove filler where safe, and do not invent speakers.\n\
              Return strict JSON with keys: cleaned_transcript (markdown string), speaker_turns (array of objects with speaker, start_ms, end_ms, text).\n\n\
-             Raw transcription:\n{raw_text}\n\n\
-             Transcription segments JSON:\n{}\n\n\
-             Timeline events JSON:\n{timeline_events_json}",
-            segments_json.unwrap_or("null")
+             Raw transcription{}:\n{}\n\n\
+             Compact transcription segments JSON{}:\n{}\n\n\
+             Active-speaker timeline JSON{}:\n{}",
+            truncation_suffix(raw_text_for_prompt.truncated),
+            raw_text_for_prompt.text,
+            truncation_suffix(
+                segments_for_prompt
+                    .as_ref()
+                    .is_some_and(|segments| segments.truncated)
+            ),
+            segments_for_prompt
+                .as_ref()
+                .map(|segments| segments.text.as_str())
+                .unwrap_or("null"),
+            truncation_suffix(timeline_for_prompt.truncated),
+            timeline_for_prompt.text
         );
         let content = self
             .chat_json(
@@ -179,11 +236,22 @@ impl GroqClient {
         &self,
         cleaned_transcript: &str,
     ) -> anyhow::Result<MeetingNotesResult> {
+        let cleaned_transcript_for_prompt =
+            truncate_for_prompt(cleaned_transcript, MEETING_NOTES_TRANSCRIPT_MAX_CHARS);
+        if cleaned_transcript_for_prompt.truncated {
+            tracing::warn!(
+                transcript_chars = cleaned_transcript.chars().count(),
+                prompt_chars = cleaned_transcript_for_prompt.text.chars().count(),
+                "truncated Groq meeting-notes prompt to fit on-demand TPM limits"
+            );
+        }
         let prompt = format!(
             "Create meeting notes from this speaker-attributed cleaned transcript.\n\
              Return strict JSON with keys: tldr (string), summary_md (markdown string), action_items (array of objects with text, owner, due).\n\
              Use null for unknown owner or due. Do not invent action items.\n\n\
-             Cleaned transcript:\n{cleaned_transcript}"
+             Cleaned transcript{}:\n{}",
+            truncation_suffix(cleaned_transcript_for_prompt.truncated),
+            cleaned_transcript_for_prompt.text
         );
         let content = self
             .chat_json(
@@ -280,9 +348,87 @@ where
         .map_err(|error| anyhow::anyhow!("LLM returned invalid JSON: {error}; content={content}"))
 }
 
+#[derive(Debug)]
+struct PromptText {
+    text: String,
+    truncated: bool,
+}
+
+fn truncate_for_prompt(value: &str, max_chars: usize) -> PromptText {
+    if value.chars().count() <= max_chars {
+        return PromptText {
+            text: value.to_owned(),
+            truncated: false,
+        };
+    }
+
+    let mut text: String = value.chars().take(max_chars).collect();
+    text.push_str("\n[TRUNCATED]");
+    PromptText {
+        text,
+        truncated: true,
+    }
+}
+
+fn truncation_suffix(truncated: bool) -> &'static str {
+    if truncated { " (truncated)" } else { "" }
+}
+
+fn compact_segments_for_prompt(segments_json: &str) -> Option<String> {
+    let segments = serde_json::from_str::<serde_json::Value>(segments_json).ok()?;
+    let array = segments.as_array()?;
+    let compact: Vec<serde_json::Value> = array
+        .iter()
+        .filter_map(|segment| {
+            let text = segment.get("text")?.as_str()?.trim();
+            if text.is_empty() {
+                return None;
+            }
+            Some(serde_json::json!({
+                "start": segment.get("start").and_then(|value| value.as_f64()),
+                "end": segment.get("end").and_then(|value| value.as_f64()),
+                "text": text,
+            }))
+        })
+        .collect();
+    if compact.is_empty() {
+        None
+    } else {
+        serde_json::to_string(&compact).ok()
+    }
+}
+
+fn transcription_send_error(
+    error: reqwest::Error,
+    model: &str,
+    audio_bytes: usize,
+) -> anyhow::Error {
+    anyhow::anyhow!(
+        "failed to send Groq transcription request: model={} audio_bytes={} timeout={} connect={} request={} body={} source={}",
+        model,
+        audio_bytes,
+        error.is_timeout(),
+        error.is_connect(),
+        error.is_request(),
+        error.is_body(),
+        error
+            .source()
+            .map(|source| source.to_string())
+            .unwrap_or_else(|| "none".to_owned())
+    )
+}
+
+fn is_transient_send_error(error: &anyhow::Error) -> bool {
+    let message = error.to_string();
+    message.contains("timeout=true")
+        || message.contains("connect=true")
+        || message.contains("request=true")
+        || message.contains("SendRequest")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{CleanTranscriptResult, GroqClient, parse_json_content};
+    use super::{CleanTranscriptResult, GroqClient, is_transient_send_error, parse_json_content};
 
     #[test]
     fn parses_json_inside_model_text() {
@@ -326,5 +472,34 @@ mod tests {
             .await
             .expect_err("empty audio should fail before request");
         assert!(error.to_string().contains("empty"));
+    }
+
+    #[test]
+    fn classifies_send_request_as_transient() {
+        let error = anyhow::anyhow!(
+            "failed to send Groq transcription request: model=whisper-large-v3-turbo audio_bytes=10 timeout=false connect=false request=true body=false source=client error (SendRequest)"
+        );
+        assert!(is_transient_send_error(&error));
+    }
+
+    #[test]
+    fn compact_segments_removes_verbose_fields() {
+        let compact = super::compact_segments_for_prompt(
+            r#"[{"id":0,"start":1.25,"end":2.5,"text":" Hello ","tokens":[1,2],"words":[{"word":"Hello"}]}]"#,
+        )
+        .expect("segments should compact");
+        let parsed: serde_json::Value = serde_json::from_str(&compact).expect("valid json");
+        assert_eq!(parsed[0]["start"], 1.25);
+        assert_eq!(parsed[0]["end"], 2.5);
+        assert_eq!(parsed[0]["text"], "Hello");
+        assert!(!compact.contains("tokens"));
+        assert!(!compact.contains("words"));
+    }
+
+    #[test]
+    fn truncate_for_prompt_is_utf8_safe() {
+        let prompt = super::truncate_for_prompt("hello नमस्ते", 8);
+        assert!(prompt.truncated);
+        assert!(prompt.text.ends_with("[TRUNCATED]"));
     }
 }
