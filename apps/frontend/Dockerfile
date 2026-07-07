@@ -25,12 +25,19 @@ RUN bun run build
 
 FROM ${CADDY_IMAGE} AS runtime
 
-RUN apk add --no-cache curl
+RUN apk add --no-cache curl \
+    && adduser -D -u 1000 appuser
 
 COPY apps/frontend/Caddyfile /etc/caddy/Caddyfile
 COPY --from=builder /app/apps/frontend/dist /srv
 
-EXPOSE 80
+# Caddy state (certificates/config autosave) must be writable by appuser.
+ENV XDG_DATA_HOME=/home/appuser/.local/share \
+    XDG_CONFIG_HOME=/home/appuser/.config
+
+USER appuser
+
+EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -fsS http://127.0.0.1/ >/dev/null || exit 1
+    CMD curl -fsS http://127.0.0.1:8080/ >/dev/null || exit 1

@@ -1,4 +1,5 @@
-:80 {
+# Unprivileged port so Caddy can run as a non-root user.
+:8080 {
 	root * /srv
 
 	@grpc path /notetaker.v1.*

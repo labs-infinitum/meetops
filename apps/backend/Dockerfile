@@ -68,10 +68,17 @@ COPY apps/backend/docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.s
 COPY --from=builder /app/bin/google-meeting-recorder /usr/local/bin/google-meeting-recorder
 COPY --from=builder /app/bin/find-chrome-tab-allow-click /usr/local/bin/find-chrome-tab-allow-click
 
-RUN mkdir -p /data /data/chrome-profile /data/recordings \
-    && chmod +x /usr/local/bin/docker-entrypoint.sh
+# Non-root user for the app + Chrome; the entrypoint (root) fixes /data
+# ownership for bind mounts and then drops privileges via setpriv.
+RUN useradd --create-home --uid 1000 appuser \
+    && mkdir -p /data /data/chrome-profile /data/recordings \
+    && chown -R appuser:appuser /data \
+    && chmod +x /usr/local/bin/docker-entrypoint.sh \
+    && apt-get purge -y --auto-remove gnupg wget \
+    && rm -rf /var/lib/apt/lists/*
 
-ENV RUST_LOG=info,google_meeting_recorder=debug,tower_http=debug,tonic=info,chromiumoxide::handler=error
+# tower_http at debug would log OAuth callback URLs (codes/state) — keep it at info.
+ENV RUST_LOG=info,google_meeting_recorder=debug,tower_http=info,tonic=info,chromiumoxide::handler=error
 
 EXPOSE 8080 50051
 

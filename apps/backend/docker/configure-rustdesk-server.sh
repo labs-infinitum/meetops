@@ -16,9 +16,11 @@ configure_rustdesk_server() {
   fi
 
   if [ -z "${RUSTDESK_ID_SERVER:-}" ]; then
-    echo "[debug] RUSTDESK_ID_SERVER unset — RustDesk will use public servers."
-    echo "[debug] Set RUSTDESK_ID_SERVER + RUSTDESK_KEY for your self-hosted hbbs."
-    return 0
+    # Never fall back to public relays: this container holds a signed-in
+    # Google session and OAuth tokens.
+    echo "[debug] ERROR: RUSTDESK_ID_SERVER is unset — refusing to start RustDesk on public servers." >&2
+    echo "[debug] Set RUSTDESK_ID_SERVER + RUSTDESK_KEY (self-hosted hbbs) or RUSTDESK_CONFIG." >&2
+    return 1
   fi
 
   local id_server="$RUSTDESK_ID_SERVER"

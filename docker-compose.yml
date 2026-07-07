@@ -56,7 +56,7 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "${FRONTEND_PORT:-3000}:80"
+      - "${FRONTEND_PORT:-3000}:8080"
     restart: unless-stopped
 
   # Remote desktop into the bot's Xvfb display (:99) via RustDesk — for profile sign-in and debugging.

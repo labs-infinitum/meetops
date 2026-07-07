@@ -7,6 +7,7 @@ data
 .env
 **/.env
 !apps/backend/.env.example
+debug.env
 apps/backend/config.toml
 **/*.db
 chrome-window-*.png

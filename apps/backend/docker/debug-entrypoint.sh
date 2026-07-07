@@ -40,41 +40,44 @@ if command -v dbus-launch >/dev/null; then
   export DBUS_SESSION_BUS_ADDRESS
 fi
 
-# Self-hosted hbbs/hbbr (see debug.env.example).
-/usr/local/bin/configure-rustdesk-server.sh
-
-if [ -n "${RUSTDESK_PASSWORD:-}" ]; then
+# Self-hosted hbbs/hbbr (see debug.env.example). RustDesk exposes a remote
+# desktop into a container holding Google sessions/OAuth tokens, so it only
+# starts when a self-hosted server AND a password are configured.
+RUSTDESK_PID=
+if [ -z "${RUSTDESK_PASSWORD:-}" ]; then
+  echo "[debug] RUSTDESK_PASSWORD unset — skipping RustDesk (remote desktop disabled)." >&2
+elif ! /usr/local/bin/configure-rustdesk-server.sh; then
+  echo "[debug] RustDesk not configured for a self-hosted server — skipping RustDesk." >&2
+else
   echo "[debug] Setting RustDesk password..."
   mkdir -p "${HOME}/.config/rustdesk"
   rustdesk --password "$RUSTDESK_PASSWORD" || echo "[debug] WARNING: rustdesk --password failed (continuing)" >&2
-fi
 
-echo "[debug] Starting RustDesk..."
-export LIBGL_ALWAYS_SOFTWARE=1
-rustdesk &
-RUSTDESK_PID=$!
+  echo "[debug] Starting RustDesk..."
+  export LIBGL_ALWAYS_SOFTWARE=1
+  rustdesk &
+  RUSTDESK_PID=$!
 
-for i in $(seq 1 10); do
-  if kill -0 "$RUSTDESK_PID" 2>/dev/null; then
-    break
+  for i in $(seq 1 10); do
+    if kill -0 "$RUSTDESK_PID" 2>/dev/null; then
+      break
+    fi
+    sleep 0.5
+  done
+  if ! kill -0 "$RUSTDESK_PID" 2>/dev/null; then
+    echo "[debug] WARNING: RustDesk exited early — check libEGL/Mesa packages in the debug image" >&2
+    RUSTDESK_PID=
   fi
-  sleep 0.5
-done
-if ! kill -0 "$RUSTDESK_PID" 2>/dev/null; then
-  echo "[debug] WARNING: RustDesk exited early — check libEGL/Mesa packages in the debug image" >&2
-  RUSTDESK_PID=
-fi
-sleep 2
+  sleep 2
 
-rustdesk_id="$(rustdesk --get-id 2>/dev/null || echo "unknown")"
-rustdesk_server="${RUSTDESK_ID_SERVER:-public RustDesk}"
-cat <<EOF
+  rustdesk_id="$(rustdesk --get-id 2>/dev/null || echo "unknown")"
+  cat <<EOF
 
 ========================================
  RustDesk remote desktop (debug)
 ========================================
  ID:       ${rustdesk_id}
- Server:   ${rustdesk_server}
+ Server:   ${RUSTDESK_ID_SERVER:-from RUSTDESK_CONFIG}
  Display:  ${display}
  Password: (RUSTDESK_PASSWORD env var)
 ========================================
@@ -84,6 +87,7 @@ cat <<EOF
 ========================================
 
 EOF
+fi
 
 cleanup() {
   if [ -n "${RUSTDESK_PID:-}" ]; then

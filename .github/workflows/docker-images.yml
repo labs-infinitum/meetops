@@ -56,7 +56,13 @@ jobs:
         run: |
           set -euo pipefail
           short_sha="${GITHUB_SHA::12}"
-          should_push=true
+          # PRs only build (validation); pushing to ECR is reserved for main
+          # and manual dispatch so unreviewed code never lands in the registry.
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            should_push=false
+          else
+            should_push=true
+          fi
           echo "short_sha=${short_sha}" >> "${GITHUB_OUTPUT}"
           echo "should_push=${should_push}" >> "${GITHUB_OUTPUT}"
           {
