@@ -274,7 +274,7 @@ async fn upsert_meeting(
             attendees_json, calendar_etag, auto_join, user_id, calendar_connection_id,
             google_event_id, created_at, updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, $9, $10, $11, $12, $12)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE, $10, $11, $12, $13, $14)
         ON CONFLICT(id) DO UPDATE SET
             title = excluded.title,
             description = excluded.description,
