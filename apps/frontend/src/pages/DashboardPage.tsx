@@ -18,7 +18,11 @@ import {
   meetingErrorMessage,
   meetingPath,
 } from "@/lib/meeting-api"
-import { apiListBotRuns, recordingErrorMessage } from "@/lib/recording-api"
+import {
+  apiListBotRuns,
+  apiListGeneratedNotes,
+  recordingErrorMessage,
+} from "@/lib/recording-api"
 import { formatDate, formatRelative, meetingTimeRange } from "@/lib/format"
 import { useAuth } from "@/lib/auth-context"
 import { StatusBadge } from "@/components/shared/StatusBadge"
@@ -44,16 +48,17 @@ export function DashboardPage() {
     Promise.all([
       apiGetDashboardSummary(session.token),
       apiListBotRuns(session.token, 4),
+      apiListGeneratedNotes(session.token, 100),
     ])
-      .then(([summary, runs]) => {
+      .then(([summary, runs, notes]) => {
         setUpcomingMeetings(summary.upcomingMeetings)
         setRecentRuns(runs)
-        setStats((prev) => ({
-          ...prev,
+        setStats({
           upcoming7d: summary.upcoming7d,
           connectedCalendars: summary.connectedCalendars,
           completedRecordings: summary.completedRecordings,
-        }))
+          openTodos: notes.reduce((sum, note) => sum + note.actionItems.length, 0),
+        })
       })
       .catch((error) => toast.error(meetingErrorMessage(error) || recordingErrorMessage(error)))
       .finally(() => setLoading(false))

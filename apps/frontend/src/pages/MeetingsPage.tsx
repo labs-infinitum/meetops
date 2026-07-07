@@ -21,12 +21,13 @@ import { useAuth } from "@/lib/auth-context"
 import type { Meeting } from "@/types"
 import { toast } from "sonner"
 
-const now = Math.floor(Date.now() / 1000)
-
 export function MeetingsPage() {
   const { session } = useAuth()
   const [meetings, setMeetings] = useState<Meeting[]>([])
   const [loading, setLoading] = useState(true)
+  // Evaluated per render (not at module scope) so meetings are classified
+  // against the current time even in long-lived tabs.
+  const now = Math.floor(Date.now() / 1000)
 
   useEffect(() => {
     if (!session?.token) return
@@ -187,7 +188,7 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
     )
   }
 
-  const isPast = meeting.startAt <= now
+  const isPast = meeting.startAt <= Math.floor(Date.now() / 1000)
 
   return (
     <div className="space-y-8">

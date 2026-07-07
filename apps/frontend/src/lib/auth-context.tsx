@@ -122,10 +122,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       } catch (error) {
         if (!cancelled) {
-          setSession(null)
-          saveSession(null)
           if (isSessionInvalidError(error)) {
+            setSession(null)
+            saveSession(null)
             window.location.assign("/login")
+          } else {
+            // Network/server failure: keep the locally-valid session instead
+            // of logging the user out; it will be re-validated on the next
+            // API call and downgraded then if actually invalid.
+            setSession(stored)
           }
         }
       } finally {
