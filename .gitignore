@@ -23,3 +23,5 @@ node_modules
 /target
 
 debug.env
+
+.DS_Store
