@@ -225,6 +225,28 @@ pub async fn finalize_run(
     Ok(())
 }
 
+/// Startup reconciliation: any non-terminal run from a previous process is
+/// dead (its task no longer exists), so mark it failed instead of leaving it
+/// stuck in `queued`/`joining`/`in_meeting`/`recording` forever.
+pub async fn fail_abandoned_runs(pool: &DbPool) -> sqlx::Result<u64> {
+    let now = now_unix();
+    let result = sqlx::query(
+        r#"
+        UPDATE bot_runs
+        SET status = $1,
+            error = 'server restarted while this run was in progress',
+            ended_at = $2,
+            updated_at = $2
+        WHERE status IN ('queued', 'joining', 'in_meeting', 'recording')
+        "#,
+    )
+    .bind(BotRunStatus::Failed.as_str())
+    .bind(now)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected())
+}
+
 pub async fn list_recent_for_user(
     pool: &DbPool,
     user_id: &str,

@@ -114,16 +114,27 @@ impl RecordingsStore {
         let key = self.object_key_for_bot_run(user_id, run_id);
         self.upload_file(&self.s3, local_path, &key, "video/webm")
             .await?;
+        // The main video upload above is the success boundary. Secondary
+        // artifacts (audio, tab-capture PNG) are best-effort: failing them
+        // must not mark an uploaded, playable recording as failed.
         if let Some(audio_path) = audio_path_for(local_path) {
-            self.persist_audio_if_present(
-                &audio_path,
-                &self.audio_object_key_for_bot_run(user_id, run_id),
-            )
-            .await?;
+            if let Err(error) = self
+                .persist_audio_if_present(
+                    &audio_path,
+                    &self.audio_object_key_for_bot_run(user_id, run_id),
+                )
+                .await
+            {
+                tracing::warn!(%error, run_id, "failed to upload recording audio artifact (continuing)");
+            }
         }
         if let Some(staging_dir) = local_path.parent() {
-            self.persist_tab_capture_if_present(staging_dir, user_id, run_id)
-                .await?;
+            if let Err(error) = self
+                .persist_tab_capture_if_present(staging_dir, user_id, run_id)
+                .await
+            {
+                tracing::warn!(%error, run_id, "failed to upload tab-capture artifact (continuing)");
+            }
         }
         if self.config.recordings.delete_local_after_upload {
             self.remove_staging_artifacts(local_path).await;
@@ -156,11 +167,15 @@ impl RecordingsStore {
         self.upload_file(&self.s3, local_path, &key, "video/webm")
             .await?;
         if let Some(audio_path) = audio_path_for(local_path) {
-            self.persist_audio_if_present(
-                &audio_path,
-                &self.audio_object_key_for_manual(recording_id),
-            )
-            .await?;
+            if let Err(error) = self
+                .persist_audio_if_present(
+                    &audio_path,
+                    &self.audio_object_key_for_manual(recording_id),
+                )
+                .await
+            {
+                tracing::warn!(%error, recording_id, "failed to upload recording audio artifact (continuing)");
+            }
         }
         if self.config.recordings.delete_local_after_upload {
             self.remove_staging_artifacts(local_path).await;

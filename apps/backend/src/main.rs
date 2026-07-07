@@ -58,6 +58,11 @@ async fn main() -> anyhow::Result<()> {
 
     let pool = db::connect(&config).await?;
     let pool = db::migrate(pool).await?;
+    match db::bot_runs::fail_abandoned_runs(&pool).await {
+        Ok(0) => {}
+        Ok(failed) => tracing::warn!(failed, "marked bot runs abandoned by a previous process as failed"),
+        Err(error) => tracing::error!(%error, "failed to reconcile abandoned bot runs at startup"),
+    }
     workers::session_cleanup::spawn(pool.clone());
     let http = reqwest::Client::new();
     let recordings = Arc::new(RecordingsStore::connect(&config.storage).await?);

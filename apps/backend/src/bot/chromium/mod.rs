@@ -115,7 +115,17 @@ impl MeetingSession {
     pub async fn close(mut self) {
         graceful_browser_shutdown(&mut self.browser, "browser").await;
         self.handler_task.abort();
-        let _ = tokio::time::timeout(Duration::from_secs(1), self.handler_task).await;
+        let _ = tokio::time::timeout(Duration::from_secs(1), &mut self.handler_task).await;
+    }
+}
+
+/// Cancellation-safety net: if the session is dropped without `close()` (task
+/// cancelled, panic, early return), stop the CDP handler task so it does not
+/// outlive the session. The browser child itself is killed by chromiumoxide's
+/// own `Drop` (`kill_on_drop`), which releases the shared profile lock.
+impl Drop for MeetingSession {
+    fn drop(&mut self) {
+        self.handler_task.abort();
     }
 }
 
@@ -939,6 +949,9 @@ end tell"#,
 #[cfg(target_os = "linux")]
 pub(super) fn linux_xdotool_apply_display(cmd: &mut Command, display: Option<&str>) {
     use crate::bot::x11_display::normalize_x11_display;
+    // Timeouts drop the status()/output() future; without kill_on_drop the
+    // child (xdotool/ffmpeg/import) would be orphaned and accumulate over runs.
+    cmd.kill_on_drop(true);
     if let Some(d) = display {
         cmd.env("DISPLAY", normalize_x11_display(d));
     }
@@ -1295,7 +1308,15 @@ async fn install_recording_binding(
                     participant_source,
                     timeline_events,
                 } => {
-                    let decoded = BASE64.decode(data.as_bytes())?;
+                    // A single malformed chunk must not kill the writer task
+                    // (and with it the whole recording); skip and keep going.
+                    let decoded = match BASE64.decode(data.as_bytes()) {
+                        Ok(decoded) => decoded,
+                        Err(error) => {
+                            tracing::warn!(%error, "skipped undecodable recording chunk");
+                            continue;
+                        }
+                    };
                     if decoded.len() as u64 != size {
                         tracing::warn!(
                             decoded_bytes = decoded.len(),
@@ -1339,7 +1360,13 @@ async fn install_recording_binding(
                     );
                 }
                 RecordingBindingPayload::AudioChunk { size, data } => {
-                    let decoded = BASE64.decode(data.as_bytes())?;
+                    let decoded = match BASE64.decode(data.as_bytes()) {
+                        Ok(decoded) => decoded,
+                        Err(error) => {
+                            tracing::warn!(%error, "skipped undecodable recording audio chunk");
+                            continue;
+                        }
+                    };
                     if decoded.len() as u64 != size {
                         tracing::warn!(
                             decoded_bytes = decoded.len(),

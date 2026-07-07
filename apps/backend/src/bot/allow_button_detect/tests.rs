@@ -118,11 +118,16 @@ fn preview_all_local_tab_capture_screenshots() {
     if !data.is_dir() {
         return;
     }
-    let out_dir = preview_out_dir();
-    std::fs::create_dir_all(&out_dir).ok();
-
     let mut paths = Vec::new();
     collect_tab_capture_pngs(&data, &mut paths);
+    if paths.is_empty() {
+        // Local data/ is runtime state; machines without captured debug PNGs
+        // (fresh checkouts, CI) have nothing to preview — not a failure.
+        return;
+    }
+
+    let out_dir = preview_out_dir();
+    std::fs::create_dir_all(&out_dir).ok();
 
     let mut count = 0_u32;
     for path in paths {

@@ -79,6 +79,12 @@ pub async fn run_with_permit(
     }
 
     let stop_rx = active_recordings.register(run_id);
+    // RAII: unregister even if the recording future panics or is cancelled,
+    // so a dead run can't linger in ActiveRecordings and swallow stop requests.
+    let _unregister_guard = UnregisterGuard {
+        active: &active_recordings,
+        run_id,
+    };
 
     let result = run_with_permit_inner(
         &config,
@@ -91,8 +97,6 @@ pub async fn run_with_permit(
         &shutdown,
     )
     .await;
-
-    active_recordings.unregister(run_id);
 
     match result {
         Ok(raw_path) => match require_user_id(&pool, run_id).await {
@@ -164,6 +168,17 @@ pub async fn run_with_permit(
             }
             finalize_run_logged(&pool, run_id, BotRunStatus::Failed, Some(&message), None).await;
         }
+    }
+}
+
+struct UnregisterGuard<'a> {
+    active: &'a ActiveRecordings,
+    run_id: i64,
+}
+
+impl Drop for UnregisterGuard<'_> {
+    fn drop(&mut self) {
+        self.active.unregister(self.run_id);
     }
 }
 
