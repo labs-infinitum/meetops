@@ -9,6 +9,32 @@ few "would error" items are flagged for confirmation.
 
 ---
 
+## Status update — 2026-07-07
+
+Resolved since this audit was written:
+
+- **#1 Shutdown loses recordings** — fixed earlier: `AppShutdown` + `RecordingTasks::drain` await in-flight recordings with a bounded timeout; SIGTERM is handled (`main.rs`, `shutdown.rs`, `recording_tasks.rs`).
+- **#2 `MeetingSession` leak on cancellation** — `Drop` now aborts the CDP handler task; chromiumoxide's own `Drop` kills the Chrome child (`kill_on_drop`).
+- **#4 Secondary upload mismarks success** — audio/tab-capture uploads are best-effort after the main video upload (log + continue).
+- **#5 Root containers / RustDesk fallback** — backend entrypoint drops to `appuser` via `setpriv` (fixing `/data` ownership first); frontend Caddy runs as non-root on `:8080`; RustDesk refuses to start without a self-hosted server **and** password; `wget`/`gnupg` purged from the runtime image.
+- **#6 Mock data in shipped UI** — Notes/Todos/Dashboard are backed by `ListGeneratedNotes`/`GetDashboardSummary`; `mock-data.ts` deleted. Settings remains display-only (tracked in ROADMAP).
+- **#7 SQLite pool** — obsolete: the backend moved to PostgreSQL. The per-request `touch_session` write is now throttled (only when >60s stale).
+- **#8 Username enumeration (timing)** — missing-user login path burns a dummy argon2 verify. Rate limiting still open.
+- **#9 OAuth state TTL** — states carry `created_at`, expire after 10 minutes, and abandoned rows are swept hourly.
+- **#10 Lockout when backend unreachable** — network failures no longer clear a locally-valid session; only explicit auth-invalid errors log out.
+- **#11 Panic strands run** — RAII guard unregisters active recordings; startup reconciliation fails non-terminal `bot_runs` left by a previous process.
+- **#12 Recording poll stale closure** — resolved by an earlier refactor (interval effect keyed on `token`/`runId`/`isActive` with cleanup).
+- **#13 Internal error leakage** — `Internal` (and email-send) details are logged server-side; clients get a generic message across auth/calendar/meeting/recording services.
+- **Infra items** — `tower_http` log level reduced to `info` in the image; CI no longer pushes images on PRs; `debug.env` added to `.dockerignore`; frontend `tsconfig.app.json` has `"strict": true`; chunk writer survives malformed chunks; xdotool/ffmpeg children use `kill_on_drop`; `set_auto_join_for_user` alias bug already fixed.
+
+Still open (tracked in `docs/ROADMAP.md`):
+
+- **#3 Token in `localStorage`** — needs an httpOnly-cookie session design for grpc-web (architectural change).
+- Rate limiting on auth endpoints; distinct signup errors (username/email taken).
+- int64 → JS `Number` narrowing; queued (pre-permit) runs can't be stopped; staging dirs kept on failed runs (useful for debugging); single-part `PutObject` 5 GiB cap; `backend`/`backend-debug` shared Chrome profile; Turbo `proto:generate` cache.
+
+---
+
 ## 🔴 Critical / High
 
 ### 1. Graceful shutdown abandons in-flight recordings and orphans Chrome

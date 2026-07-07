@@ -9,7 +9,7 @@ Planned work: [docs/ROADMAP.md](docs/ROADMAP.md).
 ```
 .
 ├── apps/
-│   ├── backend/      # Rust API, bot, scheduler, SQLite
+│   ├── backend/      # Rust API, bot, scheduler (PostgreSQL via sqlx)
 │   └── frontend/     # React + Vite UI (grpc-web)
 ├── packages/
 │   └── proto/        # `.proto` sources + generated TS (`@ai-meeting-notetaker/proto`)
@@ -24,6 +24,7 @@ Planned work: [docs/ROADMAP.md](docs/ROADMAP.md).
 
 - [Bun](https://bun.sh) (workspace + Turbo)
 - Rust toolchain
+- PostgreSQL 16 (`DATABASE_URL`; Docker Compose provides it)
 - Google Chrome, Xvfb, xdotool (Linux bot recording)
 - S3 bucket + AWS credentials (recordings)
 
@@ -56,7 +57,7 @@ cd apps/frontend && bun dev
 | `bun run dev` | Start all `dev` tasks (backend + frontend) |
 | `bun run build` | Build frontend (runs `proto:generate` first) |
 | `bun run proto:generate` | Regenerate TS clients in `packages/proto` (`@ai-meeting-notetaker/proto`) |
-| `bun run db:reset` | Reset SQLite via backend CLI |
+| `bun run db:reset` | Reset the PostgreSQL schema via backend CLI |
 | `bun run test` | Run backend tests |
 
 ## Configuration
@@ -64,7 +65,7 @@ cd apps/frontend && bun dev
 - **`.env`** (`apps/backend/.env`) — secrets: Google OAuth, AWS/S3, Groq, optional `GMR_STORAGE__TOKEN_ENCRYPTION_KEY`
 - **`apps/backend/config.toml`** — server ports, bot paths, storage
 
-Paths in `apps/backend/config.toml` are relative to `apps/backend/`. Default `data_dir = "../../data"` keeps SQLite and Chrome profile at the monorepo root.
+Paths in `apps/backend/config.toml` are relative to `apps/backend/`. Default `data_dir = "../../data"` keeps the Chrome profile and recording staging at the monorepo root.
 
 ### OAuth and CORS
 

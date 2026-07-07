@@ -6,7 +6,7 @@ Planned work for the monorepo (`apps/backend`, `apps/frontend`, `packages/proto`
 
 **North star:** Full product loop (record → transcribe → summarize → notes/todos), settings persisted per user, and **N concurrent recordings** on one machine (isolated Xvfb displays + Chrome profiles).
 
-**Last reviewed:** 2026-05-31 — timeline collector, join/roster hardening, overlay dismiss, and proto workspace are in tree; AI pipeline, live preview, and Notes/Todos APIs still open.
+**Last reviewed:** 2026-07-07 — timeline collector, join/roster hardening, overlay dismiss, proto workspace, **AI pipeline (Groq transcribe → clean → notes)**, Notes/Todos pages on live data, email verification/password reset, and PostgreSQL migration are in tree. Live preview, Settings API, and todo-completion persistence still open.
 
 ---
 
@@ -44,7 +44,7 @@ Collect structured events during recording (join/leave, screen share, active spe
 
 ### Backend & bot
 
-- [x] SQLite `meeting_timeline_events` + `apps/backend/src/db/meeting_timeline.rs`
+- [x] `meeting_timeline_events` table + `apps/backend/src/db/meeting_timeline.rs`
 - [x] `RecordingService.ListMeetingTimelineEvents` (gRPC + grpc-web)
 - [x] In-tab collector in `install_recording_control.js` (person join/leave diffs, active speaker, snapshots)
 - [x] **Screen share events** — `screen_share_started` / `screen_share_stopped` for presentation listitems (not join/leave); `presenterParticipantId` + `presentationId` in payload; duplicate-name disambiguation (space prefix, avatar, roster order)
@@ -74,12 +74,11 @@ Collect structured events during recording (join/leave, screen share, active spe
 - [x] **Meetings, calendars, recordings list** — live gRPC (no mocks on those pages)
 - [x] **Recordings detail** — presigned playback when `completed` + live timeline poll while active; placeholder while recording (no live video yet — see [Recordings UI](#recordings-ui-playback--live-preview))
 - [x] **Proto clients** — generated TS in `packages/proto`, imported as `@ai-meeting-notetaker/proto` (Turbo `proto:generate` before frontend build)
-- [ ] **Dashboard** — `GetDashboardSummary` wired for upcoming meetings, calendar count, completed recordings; **open todos** still hardcoded `0`; no “Latest AI summary” yet
-- [ ] **Notes** — list/detail from `summaries` (+ meeting title); today uses `mock-data.ts`
-- [ ] **Todos** — action items from API; completion persists; today uses `mock-data.ts`
+- [x] **Dashboard** — `GetDashboardSummary` wired for upcoming meetings, calendar count, completed recordings; open-todos stat computed from `ListGeneratedNotes`; no “Latest AI summary” yet
+- [x] **Notes** — list/detail from generated notes (`ListGeneratedNotes` / `GetGeneratedNote`)
+- [x] **Todos** — action items from `ListGeneratedNotes`; **completion is still client-only** (persistence needs `TodoService`)
 - [ ] **Settings** — load/save profile and prefs via API (session profile + demo toasts only)
-- [ ] Remove or gate mocks behind `import.meta.env.DEV`
-- [ ] Delete `apps/frontend/src/lib/mock-data.ts` once Notes/Todos/Dashboard stats are API-backed
+- [x] Delete `apps/frontend/src/lib/mock-data.ts` (removed; all pages are API-backed)
 
 ---
 
@@ -105,27 +104,25 @@ Today: completed runs use `GetPlaybackUrl` (S3 presigned `raw.webm`). Active run
 
 ## AI pipeline (notes & todos)
 
-Schema exists (`transcripts`, `summaries`, `jobs`); workers and RPCs are not built. Groq model names are configured in `config.toml.example` / `config.rs` but unused at runtime.
+Implemented in `apps/backend/src/workers/ai_pipeline.rs` + `apps/backend/src/ai/groq.rs`.
 
 ### Groq
 
-- [ ] Implement client using `config.groq` (Whisper + summarization model)
-- [ ] Read `GROQ_API_KEY` from env
+- [x] Client using `config.groq` (Whisper transcription + LLM cleanup/notes)
+- [x] Read `GROQ_API_KEY` from env (`config.groq.api_key_env`)
 
 ### Job worker
 
-- [ ] Poll `jobs` where `status = pending` and `run_after <= now`
-- [ ] Job kinds:
-  - `transcribe` — `bot_run_id` → `transcripts`
-  - `summarize` — `transcript_id` → `summaries` (+ `action_items_json`)
-- [ ] Retry/backoff via `attempts`, `last_error`, `run_after`
-- [ ] On bot run `completed`: enqueue `transcribe` automatically
+- [x] Poll `jobs` where `status = pending` and `run_after <= now`
+- [x] Job kinds: `transcribe_recording` → `clean_transcript` (speaker attribution from timeline) → `generate_meeting_notes`
+- [x] Retry via `attempts` / `last_error` (max 3)
+- [x] On bot run `completed`: enqueue transcription automatically
 
 ### Product surfacing
 
 - [ ] Dashboard “Latest AI summary” from most recent user summary
-- [ ] Dashboard open-todos count from API
-- [ ] Notes/Todos pages backed by `summaries` / `action_items_json`
+- [x] Dashboard open-todos count (from `ListGeneratedNotes`; dedicated API later)
+- [x] Notes/Todos pages backed by generated notes
 
 ---
 
@@ -241,7 +238,7 @@ Tab-capture Allow automation, staging uploads, Meet overlay dismiss, and tab-cap
 - [ ] Optional: serve React without Docker (Axum static or CDN + API host)
 - [ ] HTTPS termination; grpc-web over HTTPS
 - [ ] Secrets management (Google, Groq, AWS, `GMR_STORAGE__TOKEN_ENCRYPTION_KEY`)
-- [ ] Optional: SQLite → Postgres when running multiple API instances
+- [x] SQLite → Postgres (sqlx + `DATABASE_URL` / RDS Secrets Manager)
 
 ### Testing
 
