@@ -74,7 +74,6 @@ RUN useradd --create-home --uid 1000 appuser \
     && mkdir -p /data /data/chrome-profile /data/recordings \
     && chown -R appuser:appuser /data \
     && chmod +x /usr/local/bin/docker-entrypoint.sh \
-    && apt-get purge -y --auto-remove gnupg wget \
     && rm -rf /var/lib/apt/lists/*
 
 # tower_http at debug would log OAuth callback URLs (codes/state) — keep it at info.
