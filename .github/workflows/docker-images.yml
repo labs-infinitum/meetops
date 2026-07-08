@@ -40,7 +40,7 @@ jobs:
   build:
     name: Build Docker images
     runs-on:
-      - codebuild-AI_Notetaker_RS_Builder-${{ github.run_id }}-${{ github.run_attempt }}
+      - codebuild-meetops_rs_build-${{ github.run_id }}-${{ github.run_attempt }}
     permissions:
       contents: read
     steps:
