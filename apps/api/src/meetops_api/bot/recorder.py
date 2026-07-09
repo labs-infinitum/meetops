@@ -313,9 +313,14 @@ class MeetRecorder:
                             target.flush()
                     except Exception:
                         logger.warning("Malformed recording chunk (%s); continuing", kind)
-            elif kind == "timeline":
+                # Join/leave/share diffs are piggy-backed on media chunks (same as Rust).
+                if kind == "chunk":
+                    embedded = payload.get("timelineEvents") or payload.get("timeline_events") or []
+                    if embedded:
+                        self._schedule_timeline_ingest(embedded)
+            elif kind in ("timeline_events", "timeline"):
                 events = payload.get("events") or []
-                asyncio.create_task(self._ingest_timeline(events))
+                self._schedule_timeline_ingest(events)
             elif kind == "done":
                 for fh in (self._chunk_file, getattr(self, "_audio_file", None)):
                     if fh:
@@ -329,6 +334,15 @@ class MeetRecorder:
                 )
         except Exception:
             logger.warning("Chunk handler error; continuing", exc_info=True)
+
+    def _schedule_timeline_ingest(self, events: list[Any]) -> None:
+        if not events:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._ingest_timeline(events))
+        except RuntimeError:
+            logger.warning("No event loop for timeline ingest; dropping %s events", len(events))
 
     async def _maybe_mux_audio(self) -> None:
         """If audio.webm has data and raw.webm may be silent, remux with ffmpeg."""
@@ -373,24 +387,75 @@ class MeetRecorder:
         except Exception:
             logger.exception("audio mux failed run=%s", self.bot_run_id)
 
-    async def _ingest_timeline(self, events: list[dict[str, Any]]) -> None:
+    async def _ingest_timeline(self, events: list[Any]) -> None:
         if not events:
             return
         async with self.session_factory() as session:
             try:
-                for ev in events:
+                for raw in events:
+                    if not isinstance(raw, dict):
+                        continue
+                    event_type = (
+                        raw.get("eventType")
+                        or raw.get("event_type")
+                        or raw.get("type")
+                        or "collector_warning"
+                    )
+                    occurred_at = _utcnow()
+                    occurred_raw = raw.get("occurredAt") or raw.get("occurred_at")
+                    if isinstance(occurred_raw, (int, float)) and occurred_raw > 0:
+                        occurred_at = datetime.fromtimestamp(float(occurred_raw), tz=UTC)
+                    relative_ms = raw.get("relativeMs")
+                    if relative_ms is None:
+                        relative_ms = raw.get("relative_ms") or raw.get("t")
+                    if relative_ms is not None:
+                        try:
+                            relative_ms = int(relative_ms)
+                        except (TypeError, ValueError):
+                            relative_ms = None
+                    payload = raw.get("payload")
+                    if payload is None:
+                        payload = {
+                            k: v
+                            for k, v in raw.items()
+                            if k
+                            not in {
+                                "eventType",
+                                "event_type",
+                                "type",
+                                "occurredAt",
+                                "occurred_at",
+                                "relativeMs",
+                                "relative_ms",
+                                "t",
+                                "participantId",
+                                "participant_id",
+                                "participantName",
+                                "participant_name",
+                                "name",
+                            }
+                        }
                     session.add(
                         MeetingTimelineEvent(
                             bot_run_id=self.bot_run_id,
-                            event_type=ev.get("type") or ev.get("event_type") or "collector_warning",
-                            occurred_at=_utcnow(),
-                            relative_ms=ev.get("relative_ms") or ev.get("t"),
-                            participant_id=ev.get("participant_id"),
-                            participant_name=ev.get("participant_name") or ev.get("name"),
-                            payload_json=ev,
+                            event_type=str(event_type),
+                            occurred_at=occurred_at,
+                            relative_ms=relative_ms,
+                            participant_id=raw.get("participantId") or raw.get("participant_id"),
+                            participant_name=(
+                                raw.get("participantName")
+                                or raw.get("participant_name")
+                                or raw.get("name")
+                            ),
+                            payload_json=payload if payload else None,
                         )
                     )
                 await session.commit()
+                logger.debug(
+                    "persisted %s timeline events for run=%s",
+                    len(events),
+                    self.bot_run_id,
+                )
             except Exception:
                 await session.rollback()
                 logger.exception("timeline ingest failed")
