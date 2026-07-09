@@ -1,9 +1,16 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Alert } from "../components/Alert";
-import { PageLoader, Spinner } from "../components/Spinner";
-import { ApiError, api } from "../lib/api";
-import type { Meeting } from "../types/api";
+import { ExternalLink, Loader2 } from "lucide-react";
+import { Alert } from "@/components/Alert";
+import { PageLoader } from "@/components/Spinner";
+import { PageHeader } from "@/components/shared/PageHeader";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { ApiError, api } from "@/lib/api";
+import type { Meeting } from "@/types/api";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString();
@@ -30,12 +37,13 @@ export function MeetingDetailPage() {
       });
   }, [id]);
 
-  async function toggleAutoRecord() {
+  async function toggleAutoRecord(checked: boolean) {
     if (!meeting) return;
     setSaving(true);
+    setError("");
     try {
       const updated = await api.patch<Meeting>(`/meetings/${meeting.id}`, {
-        auto_record: !meeting.auto_join,
+        auto_record: checked,
       });
       setMeeting(updated);
     } catch (err) {
@@ -49,79 +57,105 @@ export function MeetingDetailPage() {
 
   if (!meeting) {
     return (
-      <div>
+      <div className="space-y-4">
+        <PageHeader title="Meeting not found" />
         <Alert>{error || "Meeting not found"}</Alert>
-        <Link to="/app/meetings" className="btn-ghost mt-4">
-          ← Back to meetings
-        </Link>
+        <Button asChild variant="outline">
+          <Link to="/app/meetings">Back to meetings</Link>
+        </Button>
       </div>
     );
   }
 
+  const isPast = new Date(meeting.end_at).getTime() < Date.now();
+
   return (
-    <div>
-      <Link to="/app/meetings" className="text-sm text-brand-600 hover:underline">
-        ← Meetings
-      </Link>
-      <h1 className="mt-4 font-display text-2xl font-bold">{meeting.title}</h1>
+    <div className="space-y-8">
+      <PageHeader
+        title={meeting.title}
+        description={`${formatDate(meeting.start_at)} – ${formatDate(meeting.end_at)}`}
+        action={
+          meeting.meet_url ? (
+            <Button asChild>
+              <a href={meeting.meet_url} target="_blank" rel="noreferrer">
+                <ExternalLink className="size-4" />
+                Open in Meet
+              </a>
+            </Button>
+          ) : undefined
+        }
+      />
 
-      {error && (
-        <div className="mt-4">
-          <Alert>{error}</Alert>
-        </div>
-      )}
+      {error && <Alert>{error}</Alert>}
 
-      <div className="card mt-6 space-y-4">
-        <div>
-          <p className="text-sm text-surface-500">When</p>
-          <p className="font-medium">
-            {formatDate(meeting.start_at)} – {formatDate(meeting.end_at)}
-          </p>
-        </div>
-        {meeting.description && (
-          <div>
-            <p className="text-sm text-surface-500">Description</p>
-            <p className="whitespace-pre-wrap text-sm">{meeting.description}</p>
-          </div>
-        )}
-        {meeting.meet_url && (
-          <div>
-            <p className="text-sm text-surface-500">Meet link</p>
-            <a
-              href={meeting.meet_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-brand-600 hover:underline"
-            >
-              {meeting.meet_url}
-            </a>
-          </div>
-        )}
-        <div className="flex items-center justify-between border-t border-surface-200 pt-4 dark:border-surface-700">
-          <div>
-            <p className="font-medium">Auto-record</p>
-            <p className="text-sm text-surface-500">
-              MeetOps bot joins and records this meeting automatically
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => void toggleAutoRecord()}
-            disabled={saving}
-            className={`relative h-6 w-11 rounded-full transition-colors ${
-              meeting.auto_join ? "bg-brand-600" : "bg-surface-300 dark:bg-surface-600"
-            }`}
-            role="switch"
-            aria-checked={meeting.auto_join}
-          >
-            <span
-              className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                meeting.auto_join ? "translate-x-5" : ""
-              }`}
-            />
-            {saving && <Spinner className="absolute -right-8 h-4 w-4" />}
-          </button>
-        </div>
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardContent className="space-y-4 p-6">
+            {meeting.description && (
+              <div>
+                <h3 className="text-sm font-medium">Description</h3>
+                <p className="text-muted-foreground mt-1 whitespace-pre-wrap text-sm">
+                  {meeting.description}
+                </p>
+              </div>
+            )}
+            {meeting.meet_url && (
+              <div>
+                <h3 className="text-sm font-medium">Meet link</h3>
+                <a
+                  href={meeting.meet_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary mt-1 block text-sm hover:underline"
+                >
+                  {meeting.meet_url}
+                </a>
+              </div>
+            )}
+            {!meeting.description && !meeting.meet_url && (
+              <p className="text-muted-foreground text-sm">No additional details.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="space-y-4 p-6">
+            <div>
+              <p className="text-muted-foreground text-xs">Status</p>
+              <p className="text-sm font-medium">{isPast ? "Completed" : "Upcoming"}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground text-xs">Auto-record</p>
+              <div className="mt-1">
+                <Badge variant={meeting.auto_join ? "default" : "secondary"}>
+                  {meeting.auto_join ? "Enabled" : "Disabled"}
+                </Badge>
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-3 border-t pt-4">
+              <div className="space-y-0.5">
+                <Label htmlFor="auto-record">Auto-record</Label>
+                <p className="text-muted-foreground text-xs">
+                  Bot joins and records this meeting
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {saving && <Loader2 className="text-muted-foreground size-4 animate-spin" />}
+                <Switch
+                  id="auto-record"
+                  checked={meeting.auto_join}
+                  disabled={saving}
+                  onCheckedChange={(checked) => void toggleAutoRecord(checked)}
+                />
+              </div>
+            </div>
+            {isPast && (
+              <Button variant="outline" className="w-full" asChild>
+                <Link to="/app/notes">View notes</Link>
+              </Button>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

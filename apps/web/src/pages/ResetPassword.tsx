@@ -1,8 +1,11 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { Alert } from "../components/Alert";
-import { Spinner } from "../components/Spinner";
-import { ApiError, api } from "../lib/api";
+import { Loader2 } from "lucide-react";
+import { Alert } from "@/components/Alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { ApiError, api } from "@/lib/api";
 
 export function ResetPasswordPage() {
   const [searchParams] = useSearchParams();
@@ -40,20 +43,20 @@ export function ResetPasswordPage() {
   }
 
   return (
-    <div className="card">
-      <h1 className="font-display text-2xl font-bold">Set new password</h1>
-      <p className="mt-1 text-sm text-surface-500">Choose a strong password for your account</p>
+    <div className="space-y-6">
+      <div className="space-y-2 text-center">
+        <h1 className="text-2xl font-semibold tracking-tight">Choose a new password</h1>
+        <p className="text-muted-foreground text-sm">Enter a new password for your account.</p>
+      </div>
 
-      <form onSubmit={(e) => void handleSubmit(e)} className="mt-6 space-y-4">
+      <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
         {error && <Alert>{error}</Alert>}
-        <div>
-          <label htmlFor="password" className="label">
-            New password
-          </label>
-          <input
+        <div className="space-y-2">
+          <Label htmlFor="password">New password</Label>
+          <Input
             id="password"
             type="password"
-            className="input"
+            placeholder="Min. 8 characters"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
@@ -61,14 +64,12 @@ export function ResetPasswordPage() {
             autoComplete="new-password"
           />
         </div>
-        <div>
-          <label htmlFor="confirm" className="label">
-            Confirm password
-          </label>
-          <input
+        <div className="space-y-2">
+          <Label htmlFor="confirm">Confirm password</Label>
+          <Input
             id="confirm"
             type="password"
-            className="input"
+            placeholder="Min. 8 characters"
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
             required
@@ -76,13 +77,14 @@ export function ResetPasswordPage() {
             autoComplete="new-password"
           />
         </div>
-        <button type="submit" disabled={loading} className="btn-primary w-full">
-          {loading ? <Spinner /> : "Update password"}
-        </button>
+        <Button type="submit" className="w-full" disabled={loading || !token}>
+          {loading && <Loader2 className="animate-spin" />}
+          Update password
+        </Button>
       </form>
 
-      <p className="mt-6 text-center text-sm text-surface-500">
-        <Link to="/login" className="font-medium text-brand-600 hover:underline">
+      <p className="text-muted-foreground text-center text-sm">
+        <Link to="/login" className="text-foreground font-medium hover:underline">
           Back to sign in
         </Link>
       </p>

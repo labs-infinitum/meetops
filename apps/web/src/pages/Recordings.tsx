@@ -1,21 +1,29 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Alert } from "../components/Alert";
-import { EmptyState } from "../components/EmptyState";
-import { PageLoader, Spinner } from "../components/Spinner";
-import { api } from "../lib/api";
-import type { BotRun } from "../types/api";
+import { ChevronRight, Film, Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import { Alert } from "@/components/Alert";
+import { EmptyState } from "@/components/EmptyState";
+import { PageLoader } from "@/components/Spinner";
+import { PageHeader } from "@/components/shared/PageHeader";
+import { StatusBadge } from "@/components/shared/StatusBadge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { api } from "@/lib/api";
+import { formatDate, formatDateTime, formatDuration } from "@/lib/format";
+import type { BotRun } from "@/types/api";
 
-const STATUS_COLORS: Record<string, string> = {
-  completed: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300",
-  failed: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
-  cancelled: "bg-surface-100 text-surface-600 dark:bg-surface-800 dark:text-surface-400",
-  recording: "bg-brand-100 text-brand-800 dark:bg-brand-950 dark:text-brand-300",
-  queued: "bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-300",
-};
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleString();
+function recordingTitle(run: BotRun) {
+  return run.meeting_title || run.meet_url || `Recording #${run.id}`;
 }
 
 export function RecordingsPage() {
@@ -26,10 +34,11 @@ export function RecordingsPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    void api.get<BotRun[]>("/recordings/").then((data) => {
-      setRecordings(data);
-      setLoading(false);
-    });
+    void api
+      .get<BotRun[]>("/recordings/")
+      .then(setRecordings)
+      .catch(() => toast.error("Failed to load recordings"))
+      .finally(() => setLoading(false));
   }, []);
 
   async function startAdhoc(e: React.FormEvent) {
@@ -40,6 +49,7 @@ export function RecordingsPage() {
       const run = await api.post<BotRun>("/recordings/adhoc", { meet_url: meetUrl });
       setRecordings((prev) => [run, ...prev]);
       setMeetUrl("");
+      toast.success("Ad-hoc recording queued");
     } catch {
       setError("Failed to start recording. Check the Meet URL.");
     } finally {
@@ -50,69 +60,95 @@ export function RecordingsPage() {
   if (loading) return <PageLoader />;
 
   return (
-    <div>
-      <h1 className="font-display text-2xl font-bold">Recordings</h1>
-      <p className="mt-1 text-sm text-surface-500">Bot runs and meeting recordings</p>
+    <div className="space-y-8">
+      <PageHeader
+        title="Recordings"
+        description="Bot recording activity for your meetings."
+      />
 
-      <form onSubmit={(e) => void startAdhoc(e)} className="card mt-6">
-        <h2 className="font-medium">Record a Meet now</h2>
-        <p className="mt-1 text-sm text-surface-500">
-          Paste a Google Meet URL to start an ad-hoc recording
-        </p>
-        {error && (
-          <div className="mt-3">
-            <Alert>{error}</Alert>
-          </div>
-        )}
-        <div className="mt-4 flex gap-2">
-          <input
-            className="input"
-            placeholder="https://meet.google.com/abc-defg-hij"
-            value={meetUrl}
-            onChange={(e) => setMeetUrl(e.target.value)}
-            required
-          />
-          <button type="submit" disabled={starting} className="btn-primary shrink-0">
-            {starting ? <Spinner /> : "Start"}
-          </button>
-        </div>
-      </form>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Record a Meet now</CardTitle>
+          <CardDescription>
+            Paste a Google Meet URL to start an ad-hoc recording
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={(e) => void startAdhoc(e)} className="space-y-3">
+            {error && <Alert>{error}</Alert>}
+            <div className="flex gap-2">
+              <Input
+                placeholder="https://meet.google.com/abc-defg-hij"
+                value={meetUrl}
+                onChange={(e) => setMeetUrl(e.target.value)}
+                required
+              />
+              <Button type="submit" disabled={starting} className="shrink-0">
+                {starting && <Loader2 className="animate-spin" />}
+                Start
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
 
       {recordings.length === 0 ? (
-        <div className="mt-8">
-          <EmptyState
-            title="No recordings yet"
-            description="Start an ad-hoc recording or wait for a scheduled meeting to be recorded."
-          />
-        </div>
+        <EmptyState
+          icon={Film}
+          title="No recordings yet"
+          description="Start an ad-hoc recording or wait for a scheduled meeting to be recorded."
+          action={
+            <Button asChild>
+              <Link to="/app/meetings">View meetings</Link>
+            </Button>
+          }
+        />
       ) : (
-        <div className="mt-8 space-y-3">
-          {recordings.map((r) => (
-            <Link
-              key={r.id}
-              to={`/app/recordings/${r.id}`}
-              className="card block transition-shadow hover:shadow-md"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="font-medium">
-                    {r.meet_url ?? `Recording #${r.id}`}
-                  </p>
-                  <p className="mt-1 text-sm text-surface-500">
-                    {formatDate(r.created_at)} · {r.trigger}
-                  </p>
-                </div>
-                <span
-                  className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
-                    STATUS_COLORS[r.status] ?? "bg-surface-100 text-surface-600"
-                  }`}
-                >
-                  {r.status}
-                </span>
-              </div>
-            </Link>
-          ))}
-        </div>
+        <Card>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Meeting</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="hidden md:table-cell">Started</TableHead>
+                  <TableHead className="hidden sm:table-cell">Duration</TableHead>
+                  <TableHead className="w-10" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {recordings.map((r) => (
+                  <TableRow key={r.id}>
+                    <TableCell>
+                      <div>
+                        <p className="font-medium">{recordingTitle(r)}</p>
+                        <p className="text-muted-foreground text-xs">
+                          {formatDate(r.meeting_start_at || r.created_at)}
+                        </p>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={r.status} />
+                    </TableCell>
+                    <TableCell className="text-muted-foreground hidden text-sm md:table-cell">
+                      {r.started_at ? formatDateTime(r.started_at) : "—"}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground hidden text-sm sm:table-cell">
+                      {r.duration_secs != null ? formatDuration(r.duration_secs) : "—"}
+                    </TableCell>
+                    <TableCell>
+                      <Button variant="ghost" size="icon" asChild>
+                        <Link to={`/app/recordings/${r.id}`}>
+                          <ChevronRight className="size-4" />
+                        </Link>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

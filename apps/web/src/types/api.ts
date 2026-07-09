@@ -90,6 +90,9 @@ export interface BotRun {
   trigger: string;
   recording_path: string | null;
   meet_url: string | null;
+  meeting_title: string | null;
+  meeting_start_at: string | null;
+  duration_secs: number | null;
   started_at: string | null;
   ended_at: string | null;
   created_at: string;
@@ -115,9 +118,14 @@ export interface Note {
   transcript_id: string;
   bot_run_id: string;
   status: string;
+  transcript_status: string | null;
+  summary_status: string | null;
   tldr: string | null;
   summary_md: string | null;
+  raw_transcript: string | null;
+  cleaned_transcript: string | null;
   meeting_title: string | null;
+  error: string | null;
   created_at: string;
   action_items: Todo[];
 }

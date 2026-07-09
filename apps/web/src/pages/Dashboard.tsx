@@ -1,10 +1,28 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
-import { EmptyState } from "../components/EmptyState";
-import { PageLoader } from "../components/Spinner";
-import { api } from "../lib/api";
-import type { Dashboard } from "../types/api";
+import {
+  CalendarDays,
+  CheckSquare,
+  ChevronRight,
+  FileText,
+  Video,
+} from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
+import { PageLoader } from "@/components/Spinner";
+import { PageHeader } from "@/components/shared/PageHeader";
+import { StatCard } from "@/components/shared/StatCard";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { api } from "@/lib/api";
+import type { Dashboard } from "@/types/api";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString(undefined, {
@@ -30,94 +48,129 @@ export function DashboardPage() {
   if (loading) return <PageLoader />;
   if (!data) return null;
 
-  const stats = [
-    { label: "Upcoming meetings", value: data.upcoming_count, to: "/app/meetings" },
-    { label: "Recordings", value: data.recordings_count, to: "/app/recordings" },
-    { label: "Notes", value: data.notes_count, to: "/app/notes" },
-    { label: "Open todos", value: data.open_todos_count, to: "/app/todos" },
-  ];
-
   return (
-    <div>
-      <h1 className="font-display text-2xl font-bold">Dashboard</h1>
-      <p className="mt-1 text-sm text-surface-500">Overview of your meetings and notes</p>
+    <div className="space-y-8">
+      <PageHeader
+        title="Dashboard"
+        description="Overview of your meetings, recordings, and notes."
+        action={
+          <Button asChild>
+            <Link to="/app/calendars">Connect calendar</Link>
+          </Button>
+        }
+      />
 
-      <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {stats.map((s) => (
-          <Link key={s.label} to={s.to} className="card transition-shadow hover:shadow-md">
-            <p className="text-sm text-surface-500">{s.label}</p>
-            <p className="mt-1 font-display text-3xl font-bold text-brand-600">{s.value}</p>
-          </Link>
-        ))}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          title="Upcoming meetings"
+          value={data.upcoming_count}
+          icon={CalendarDays}
+          subtitle="Synced from calendars"
+        />
+        <StatCard
+          title="Recordings"
+          value={data.recordings_count}
+          icon={Video}
+          subtitle="Bot runs"
+        />
+        <StatCard
+          title="Notes"
+          value={data.notes_count}
+          icon={FileText}
+          subtitle="AI summaries"
+        />
+        <StatCard
+          title="Open todos"
+          value={data.open_todos_count}
+          icon={CheckSquare}
+          subtitle="From meeting notes"
+        />
       </div>
 
-      <section className="mt-10">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="font-display text-lg font-semibold">Upcoming meetings</h2>
-          <Link to="/app/meetings" className="text-sm text-brand-600 hover:underline">
-            View all
-          </Link>
-        </div>
-        {data.upcoming.length === 0 ? (
-          <EmptyState
-            title="No upcoming meetings"
-            description="Connect Google Calendar to sync your scheduled Meet calls."
-            action={
-              <Link to="/app/calendars" className="btn-primary">
-                Connect calendar
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-base">Upcoming meetings</CardTitle>
+              <CardDescription>Synced from your connected calendars</CardDescription>
+            </div>
+            <Button variant="ghost" size="sm" asChild>
+              <Link to="/app/meetings">
+                View all
+                <ChevronRight className="size-4" />
               </Link>
-            }
-          />
-        ) : (
-          <div className="space-y-3">
-            {data.upcoming.map((m) => (
-              <Link
-                key={m.id}
-                to={`/app/meetings/${m.id}`}
-                className="card block transition-shadow hover:shadow-md"
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <h3 className="font-medium">{m.title}</h3>
-                    <p className="mt-1 text-sm text-surface-500">{formatDate(m.start_at)}</p>
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {data.upcoming.length === 0 ? (
+              <EmptyState
+                title="No upcoming meetings"
+                description="Connect Google Calendar to sync your scheduled Meet calls."
+                action={
+                  <Button asChild>
+                    <Link to="/app/calendars">Connect calendar</Link>
+                  </Button>
+                }
+              />
+            ) : (
+              data.upcoming.map((m) => (
+                <Link
+                  key={m.id}
+                  to={`/app/meetings/${m.id}`}
+                  className="hover:bg-muted/50 flex items-center justify-between rounded-lg border p-3 transition-colors"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{m.title}</p>
+                    <p className="text-muted-foreground text-xs">{formatDate(m.start_at)}</p>
                   </div>
                   {m.auto_join && (
-                    <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700 dark:bg-brand-950 dark:text-brand-300">
-                      Auto-record
-                    </span>
+                    <Badge variant="secondary" className="ml-3 shrink-0 text-xs">
+                      Auto
+                    </Badge>
                   )}
-                </div>
-              </Link>
-            ))}
-          </div>
-        )}
-      </section>
+                </Link>
+              ))
+            )}
+          </CardContent>
+        </Card>
 
-      {data.latest_summary && (
-        <section className="mt-10">
-          <h2 className="font-display text-lg font-semibold">Latest notes</h2>
-          <div className="card mt-4">
-            <p className="text-sm text-surface-500">
-              {data.latest_summary.meeting_title ?? "Meeting"} ·{" "}
-              {formatDate(data.latest_summary.created_at)}
-            </p>
-            {data.latest_summary.tldr && (
-              <p className="mt-2 font-medium">{data.latest_summary.tldr}</p>
-            )}
-            {data.latest_summary.summary_md && (
-              <div className="prose-meetops mt-4 max-h-48 overflow-hidden text-sm">
-                <ReactMarkdown>{data.latest_summary.summary_md}</ReactMarkdown>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Latest notes</CardTitle>
+            <CardDescription>Most recent AI summary</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {data.latest_summary ? (
+              <div className="space-y-3">
+                <div>
+                  <p className="text-sm font-medium">
+                    {data.latest_summary.meeting_title ?? "Meeting"}
+                  </p>
+                  <p className="text-muted-foreground text-xs">
+                    {formatDate(data.latest_summary.created_at)}
+                  </p>
+                </div>
+                {data.latest_summary.tldr && (
+                  <p className="text-sm">{data.latest_summary.tldr}</p>
+                )}
+                {data.latest_summary.summary_md && (
+                  <div className="text-muted-foreground max-h-40 overflow-hidden text-sm">
+                    <ReactMarkdown>{data.latest_summary.summary_md}</ReactMarkdown>
+                  </div>
+                )}
+                <Button variant="ghost" size="sm" asChild className="px-0">
+                  <Link to={`/app/notes/${data.latest_summary.id}`}>
+                    Read full notes
+                    <ChevronRight className="size-4" />
+                  </Link>
+                </Button>
               </div>
+            ) : (
+              <p className="text-muted-foreground text-sm">No notes yet.</p>
             )}
-            <Link
-              to={`/app/notes/${data.latest_summary.id}`}
-              className="mt-4 inline-block text-sm text-brand-600 hover:underline"
-            >
-              Read full notes →
-            </Link>
-          </div>
-        </section>
-      )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

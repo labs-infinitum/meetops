@@ -1,8 +1,22 @@
 import { useEffect, useState } from "react";
-import { Alert } from "../components/Alert";
-import { PageLoader, Spinner } from "../components/Spinner";
-import { ApiError, api } from "../lib/api";
-import type { Settings } from "../types/api";
+import { Loader2 } from "lucide-react";
+import { Alert } from "@/components/Alert";
+import { PageLoader } from "@/components/Spinner";
+import { PageHeader } from "@/components/shared/PageHeader";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
+import { ApiError, api } from "@/lib/api";
+import type { Settings } from "@/types/api";
 
 export function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -80,33 +94,35 @@ export function SettingsPage() {
   if (loading || !settings) return <PageLoader />;
 
   return (
-    <div>
-      <h1 className="font-display text-2xl font-bold">Settings</h1>
-      <p className="mt-1 text-sm text-surface-500">Manage your account and preferences</p>
+    <div className="space-y-8">
+      <PageHeader
+        title="Settings"
+        description="Manage your account and recording preferences."
+      />
 
       {message && (
-        <div className="mt-4">
-          <Alert variant={message.type === "success" ? "success" : "error"}>{message.text}</Alert>
-        </div>
+        <Alert variant={message.type === "success" ? "success" : "error"}>{message.text}</Alert>
       )}
 
-      <ProfileSection
-        settings={settings}
-        saving={saving === "profile"}
-        onSave={(name) => void saveProfile(name)}
-      />
+      <div className="grid max-w-2xl gap-6">
+        <ProfileSection
+          settings={settings}
+          saving={saving === "profile"}
+          onSave={(name) => void saveProfile(name)}
+        />
 
-      <RecordingSection
-        settings={settings}
-        saving={saving === "recording"}
-        onSave={(data) => void saveRecording(data)}
-      />
+        <RecordingSection
+          settings={settings}
+          saving={saving === "recording"}
+          onSave={(data) => void saveRecording(data)}
+        />
 
-      <NotificationsSection
-        settings={settings}
-        saving={saving === "notifications"}
-        onSave={(data) => void saveNotifications(data)}
-      />
+        <NotificationsSection
+          settings={settings}
+          saving={saving === "notifications"}
+          onSave={(data) => void saveNotifications(data)}
+        />
+      </div>
     </div>
   );
 }
@@ -127,40 +143,45 @@ function ProfileSection({
   }, [settings.name]);
 
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        onSave(name);
-      }}
-      className="card mt-8"
-    >
-      <h2 className="font-display text-lg font-semibold">Profile</h2>
-      <div className="mt-4 space-y-4">
-        <div>
-          <label htmlFor="name" className="label">
-            Display name
-          </label>
-          <input
-            id="name"
-            className="input"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-          />
-        </div>
-        <div>
-          <label className="label">Email</label>
-          <input className="input" value={settings.email} disabled />
-        </div>
-        <div>
-          <label className="label">Username</label>
-          <input className="input" value={settings.username} disabled />
-        </div>
-      </div>
-      <button type="submit" disabled={saving} className="btn-primary mt-4">
-        {saving ? <Spinner /> : "Save profile"}
-      </button>
-    </form>
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Profile</CardTitle>
+        <CardDescription>Your account information</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            onSave(name);
+          }}
+          className="space-y-4"
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="name">Display name</Label>
+              <Input
+                id="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="username">Username</Label>
+              <Input id="username" value={settings.username} disabled />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="email">Email</Label>
+            <Input id="email" type="email" value={settings.email} disabled />
+          </div>
+          <Button type="submit" size="sm" disabled={saving}>
+            {saving && <Loader2 className="animate-spin" />}
+            Save profile
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -188,60 +209,65 @@ function RecordingSection({
   }, [settings]);
 
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        onSave({
-          auto_record_default: autoRecord,
-          join_lead_time_secs: parseInt(leadTime, 10),
-          bot_display_name: botName || null,
-        });
-      }}
-      className="card mt-6"
-    >
-      <h2 className="font-display text-lg font-semibold">Recording</h2>
-      <div className="mt-4 space-y-4">
-        <label className="flex items-center gap-3">
-          <input
-            type="checkbox"
-            checked={autoRecord}
-            onChange={(e) => setAutoRecord(e.target.checked)}
-            className="h-4 w-4 rounded border-surface-300 text-brand-600"
-          />
-          <span className="text-sm">Auto-record new synced meetings by default</span>
-        </label>
-        <div>
-          <label htmlFor="leadTime" className="label">
-            Join lead time (seconds before meeting start)
-          </label>
-          <input
-            id="leadTime"
-            type="number"
-            min={0}
-            max={3600}
-            className="input"
-            value={leadTime}
-            onChange={(e) => setLeadTime(e.target.value)}
-          />
-        </div>
-        <div>
-          <label htmlFor="botName" className="label">
-            Bot display name in Meet
-          </label>
-          <input
-            id="botName"
-            className="input"
-            value={botName}
-            onChange={(e) => setBotName(e.target.value)}
-            placeholder="MeetOps Notetaker"
-            maxLength={100}
-          />
-        </div>
-      </div>
-      <button type="submit" disabled={saving} className="btn-primary mt-4">
-        {saving ? <Spinner /> : "Save recording settings"}
-      </button>
-    </form>
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Recording</CardTitle>
+        <CardDescription>Bot behavior for auto-recorded meetings</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            onSave({
+              auto_record_default: autoRecord,
+              join_lead_time_secs: parseInt(leadTime, 10),
+              bot_display_name: botName || null,
+            });
+          }}
+          className="space-y-6"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Auto-record by default</p>
+              <p className="text-muted-foreground text-xs">
+                New synced meetings will have auto-record enabled
+              </p>
+            </div>
+            <Switch checked={autoRecord} onCheckedChange={setAutoRecord} />
+          </div>
+          <Separator />
+          <div className="space-y-2">
+            <Label htmlFor="leadTime">Join lead time (seconds)</Label>
+            <Input
+              id="leadTime"
+              type="number"
+              min={0}
+              max={3600}
+              value={leadTime}
+              onChange={(e) => setLeadTime(e.target.value)}
+              className="max-w-32"
+            />
+            <p className="text-muted-foreground text-xs">
+              How early the bot joins before meeting start
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="botName">Bot display name</Label>
+            <Input
+              id="botName"
+              value={botName}
+              onChange={(e) => setBotName(e.target.value)}
+              placeholder="AI Notetaker"
+              maxLength={100}
+            />
+          </div>
+          <Button type="submit" size="sm" disabled={saving}>
+            {saving && <Loader2 className="animate-spin" />}
+            Save recording settings
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -266,40 +292,44 @@ function NotificationsSection({
   }, [settings]);
 
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        onSave({
-          notify_email_on_notes_ready: notesReady,
-          notify_email_on_recording_failed: recFailed,
-        });
-      }}
-      className="card mt-6"
-    >
-      <h2 className="font-display text-lg font-semibold">Notifications</h2>
-      <div className="mt-4 space-y-3">
-        <label className="flex items-center gap-3">
-          <input
-            type="checkbox"
-            checked={notesReady}
-            onChange={(e) => setNotesReady(e.target.checked)}
-            className="h-4 w-4 rounded border-surface-300 text-brand-600"
-          />
-          <span className="text-sm">Email me when meeting notes are ready</span>
-        </label>
-        <label className="flex items-center gap-3">
-          <input
-            type="checkbox"
-            checked={recFailed}
-            onChange={(e) => setRecFailed(e.target.checked)}
-            className="h-4 w-4 rounded border-surface-300 text-brand-600"
-          />
-          <span className="text-sm">Email me when a recording fails</span>
-        </label>
-      </div>
-      <button type="submit" disabled={saving} className="btn-primary mt-4">
-        {saving ? <Spinner /> : "Save notification settings"}
-      </button>
-    </form>
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Notifications</CardTitle>
+        <CardDescription>When to notify you about recordings</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            onSave({
+              notify_email_on_notes_ready: notesReady,
+              notify_email_on_recording_failed: recFailed,
+            });
+          }}
+          className="space-y-4"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Summary ready</p>
+              <p className="text-muted-foreground text-xs">When AI notes are generated</p>
+            </div>
+            <Switch checked={notesReady} onCheckedChange={setNotesReady} />
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Recording failed</p>
+              <p className="text-muted-foreground text-xs">
+                When bot cannot join or record
+              </p>
+            </div>
+            <Switch checked={recFailed} onCheckedChange={setRecFailed} />
+          </div>
+          <Button type="submit" size="sm" disabled={saving}>
+            {saving && <Loader2 className="animate-spin" />}
+            Save notification settings
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
   );
 }

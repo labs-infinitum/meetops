@@ -1,10 +1,13 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Alert } from "../components/Alert";
-import { Spinner } from "../components/Spinner";
-import { useAuth } from "../context/AuthProvider";
-import { ApiError, api } from "../lib/api";
-import type { SignupResponse } from "../types/api";
+import { Loader2 } from "lucide-react";
+import { Alert } from "@/components/Alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useAuth } from "@/context/AuthProvider";
+import { ApiError, api } from "@/lib/api";
+import type { SignupResponse } from "@/types/api";
 
 export function SignupPage() {
   const [name, setName] = useState("");
@@ -45,45 +48,42 @@ export function SignupPage() {
   }
 
   return (
-    <div className="card">
-      <h1 className="font-display text-2xl font-bold">Create account</h1>
-      <p className="mt-1 text-sm text-surface-500">Start recording your Google Meet calls</p>
+    <div className="space-y-6">
+      <div className="space-y-2 text-center">
+        <h1 className="text-2xl font-semibold tracking-tight">Create an account</h1>
+        <p className="text-muted-foreground text-sm">Start capturing your meetings for free</p>
+      </div>
 
-      <form onSubmit={(e) => void handleSubmit(e)} className="mt-6 space-y-4">
+      <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
         {error && <Alert>{error}</Alert>}
-        <div>
-          <label htmlFor="name" className="label">
-            Full name
-          </label>
-          <input
+        <div className="space-y-2">
+          <Label htmlFor="name">Full name</Label>
+          <Input
             id="name"
-            className="input"
+            placeholder="Alex Chen"
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
+            autoComplete="name"
           />
         </div>
-        <div>
-          <label htmlFor="email" className="label">
-            Email
-          </label>
-          <input
+        <div className="space-y-2">
+          <Label htmlFor="email">Email</Label>
+          <Input
             id="email"
             type="email"
-            className="input"
+            placeholder="alex@company.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
             autoComplete="email"
           />
         </div>
-        <div>
-          <label htmlFor="username" className="label">
-            Username
-          </label>
-          <input
+        <div className="space-y-2">
+          <Label htmlFor="username">Username</Label>
+          <Input
             id="username"
-            className="input"
+            placeholder="alex"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             required
@@ -91,14 +91,12 @@ export function SignupPage() {
             autoComplete="username"
           />
         </div>
-        <div>
-          <label htmlFor="password" className="label">
-            Password
-          </label>
-          <input
+        <div className="space-y-2">
+          <Label htmlFor="password">Password</Label>
+          <Input
             id="password"
             type="password"
-            className="input"
+            placeholder="Min. 8 characters"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
@@ -106,14 +104,15 @@ export function SignupPage() {
             autoComplete="new-password"
           />
         </div>
-        <button type="submit" disabled={loading} className="btn-primary w-full">
-          {loading ? <Spinner /> : "Create account"}
-        </button>
+        <Button type="submit" className="w-full" disabled={loading}>
+          {loading && <Loader2 className="animate-spin" />}
+          Create account
+        </Button>
       </form>
 
-      <p className="mt-6 text-center text-sm text-surface-500">
+      <p className="text-muted-foreground text-center text-sm">
         Already have an account?{" "}
-        <Link to="/login" className="font-medium text-brand-600 hover:underline">
+        <Link to="/login" className="text-foreground font-medium hover:underline">
           Sign in
         </Link>
       </p>

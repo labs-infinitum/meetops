@@ -1,10 +1,13 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Alert } from "../components/Alert";
-import { Spinner } from "../components/Spinner";
-import { useAuth } from "../context/AuthProvider";
-import { ApiError, api } from "../lib/api";
-import type { LoginResponse } from "../types/api";
+import { Loader2 } from "lucide-react";
+import { Alert } from "@/components/Alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useAuth } from "@/context/AuthProvider";
+import { ApiError, api } from "@/lib/api";
+import type { LoginResponse } from "@/types/api";
 
 export function LoginPage() {
   const [username, setUsername] = useState("");
@@ -37,52 +40,54 @@ export function LoginPage() {
   }
 
   return (
-    <div className="card">
-      <h1 className="font-display text-2xl font-bold">Sign in</h1>
-      <p className="mt-1 text-sm text-surface-500">Welcome back to MeetOps</p>
+    <div className="space-y-6">
+      <div className="space-y-2 text-center">
+        <h1 className="text-2xl font-semibold tracking-tight">Welcome back</h1>
+        <p className="text-muted-foreground text-sm">Sign in to your Notetaker account</p>
+      </div>
 
-      <form onSubmit={(e) => void handleSubmit(e)} className="mt-6 space-y-4">
+      <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
         {error && <Alert>{error}</Alert>}
-        <div>
-          <label htmlFor="username" className="label">
-            Username
-          </label>
-          <input
+        <div className="space-y-2">
+          <Label htmlFor="username">Username</Label>
+          <Input
             id="username"
-            className="input"
+            placeholder="alex"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             required
             autoComplete="username"
           />
         </div>
-        <div>
-          <label htmlFor="password" className="label">
-            Password
-          </label>
-          <input
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="password">Password</Label>
+            <Link
+              to="/forgot-password"
+              className="text-muted-foreground hover:text-foreground text-xs transition-colors"
+            >
+              Forgot password?
+            </Link>
+          </div>
+          <Input
             id="password"
             type="password"
-            className="input"
+            placeholder="••••••••"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
             autoComplete="current-password"
           />
         </div>
-        <div className="text-right">
-          <Link to="/forgot-password" className="text-sm text-brand-600 hover:underline">
-            Forgot password?
-          </Link>
-        </div>
-        <button type="submit" disabled={loading} className="btn-primary w-full">
-          {loading ? <Spinner /> : "Sign in"}
-        </button>
+        <Button type="submit" className="w-full" disabled={loading}>
+          {loading && <Loader2 className="animate-spin" />}
+          Sign in
+        </Button>
       </form>
 
-      <p className="mt-6 text-center text-sm text-surface-500">
-        No account?{" "}
-        <Link to="/signup" className="font-medium text-brand-600 hover:underline">
+      <p className="text-muted-foreground text-center text-sm">
+        Don&apos;t have an account?{" "}
+        <Link to="/signup" className="text-foreground font-medium hover:underline">
           Sign up
         </Link>
       </p>
