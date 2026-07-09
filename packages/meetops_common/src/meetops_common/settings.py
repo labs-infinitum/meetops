@@ -84,10 +84,11 @@ class Settings(BaseSettings):
     meetops_bot_window_height: int = 1080
     meetops_use_tab_capture_auto_accept: bool = False
 
-    # AI
-    groq_api_key: str | None = None
-    meetops_groq_transcribe_model: str = "whisper-large-v3-turbo"
-    meetops_groq_llm_model: str = "qwen/qwen3-32b"
+    # AI (OpenAI)
+    openai_api_key: str | None = None
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_model: str = "gpt-4.1-mini"
+    openai_transcribe_model: str = "whisper-1"
 
     # Observability
     meetops_log_level: str = "INFO"

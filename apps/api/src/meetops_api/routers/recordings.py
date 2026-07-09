@@ -13,13 +13,22 @@ from meetops_api.errors import AppError
 from meetops_api.schemas import (
     AdHocRequest,
     BotRunOut,
+    NoteOut,
     PlaybackUrlOut,
     TimelineEventOut,
+    TodoOut,
 )
 from meetops_api.services.meet_url import normalize_meet_url
 from meetops_api.storage.s3 import S3Storage
 from meetops_common.constants import TERMINAL_BOT_STATUSES
-from meetops_common.models import BotRun, MeetingTimelineEvent
+from meetops_common.models import (
+    ActionItem,
+    BotRun,
+    Meeting,
+    MeetingTimelineEvent,
+    Summary,
+    Transcript,
+)
 
 router = APIRouter(prefix="/recordings", tags=["recordings"])
 
@@ -41,25 +50,42 @@ def signal_stop(run_id: int) -> None:
     get_stop_event(run_id).set()
 
 
+async def _meeting_title_map(db: DbSession, meeting_ids: list[str]) -> dict[str, str]:
+    ids = [mid for mid in meeting_ids if mid]
+    if not ids:
+        return {}
+    rows = await db.scalars(select(Meeting).where(Meeting.id.in_(ids)))
+    return {m.id: m.title for m in rows}
+
+
+def _to_out(run: BotRun, titles: dict[str, str]) -> BotRunOut:
+    title = titles.get(run.meeting_id) if run.meeting_id else None
+    return BotRunOut.from_orm_run(run, meeting_title=title)
+
+
 @router.get("/", response_model=list[BotRunOut])
 async def list_recordings(
     user: CurrentUser,
     db: DbSession,
     limit: int = Query(default=50, ge=1, le=200),
 ) -> list[BotRunOut]:
-    rows = await db.scalars(
-        select(BotRun)
-        .where(BotRun.user_id == user.id)
-        .order_by(BotRun.created_at.desc())
-        .limit(limit)
+    rows = list(
+        await db.scalars(
+            select(BotRun)
+            .where(BotRun.user_id == user.id)
+            .order_by(BotRun.created_at.desc())
+            .limit(limit)
+        )
     )
-    return [BotRunOut.from_orm_run(r) for r in rows]
+    titles = await _meeting_title_map(db, [r.meeting_id for r in rows if r.meeting_id])
+    return [_to_out(r, titles) for r in rows]
 
 
 @router.get("/{run_id}", response_model=BotRunOut)
 async def get_recording(run_id: str, user: CurrentUser, db: DbSession) -> BotRunOut:
     run = await _get_owned_run(db, user.id, run_id)
-    return BotRunOut.from_orm_run(run)
+    titles = await _meeting_title_map(db, [run.meeting_id] if run.meeting_id else [])
+    return _to_out(run, titles)
 
 
 @router.get("/{run_id}/playback-url", response_model=PlaybackUrlOut)
@@ -92,6 +118,42 @@ async def timeline(
     return [TimelineEventOut.from_orm(e) for e in rows]
 
 
+@router.get("/{run_id}/ai", response_model=NoteOut | None)
+async def recording_ai(run_id: str, user: CurrentUser, db: DbSession) -> NoteOut | None:
+    """Transcript + notes for a recording (null if AI pipeline has not started)."""
+    run = await _get_owned_run(db, user.id, run_id)
+    transcript = await db.scalar(select(Transcript).where(Transcript.bot_run_id == run.id))
+    if transcript is None:
+        return None
+    summary = await db.scalar(
+        select(Summary).where(Summary.transcript_id == transcript.id)
+    )
+    meeting = None
+    if run.meeting_id:
+        meeting = await db.get(Meeting, run.meeting_id)
+    items: list[ActionItem] = []
+    if summary is not None:
+        items = list(
+            await db.scalars(select(ActionItem).where(ActionItem.summary_id == summary.id))
+        )
+    return NoteOut(
+        id=str(summary.id) if summary else str(transcript.id),
+        transcript_id=str(transcript.id),
+        bot_run_id=str(run.id),
+        status=summary.status if summary else transcript.status,
+        transcript_status=transcript.status,
+        summary_status=summary.status if summary else None,
+        tldr=summary.tldr if summary else None,
+        summary_md=summary.summary_md if summary else None,
+        raw_transcript=transcript.raw_text,
+        cleaned_transcript=transcript.cleaned_text,
+        meeting_title=meeting.title if meeting else None,
+        error=(summary.error if summary else None) or transcript.error,
+        created_at=summary.created_at if summary else transcript.created_at,
+        action_items=[TodoOut.from_orm(i) for i in items],
+    )
+
+
 @router.post("/adhoc", response_model=BotRunOut)
 async def start_adhoc(
     body: AdHocRequest, user: CurrentUser, db: DbSession
@@ -108,14 +170,15 @@ async def start_adhoc(
     await db.flush()
     # Register stop channel at claim/create time
     get_stop_event(run.id)
-    return BotRunOut.from_orm_run(run)
+    return BotRunOut.from_orm_run(run, meeting_title=None)
 
 
 @router.post("/{run_id}/stop", response_model=BotRunOut)
 async def stop_recording(run_id: str, user: CurrentUser, db: DbSession) -> BotRunOut:
     run = await _get_owned_run(db, user.id, run_id)
     if run.status in TERMINAL_BOT_STATUSES:
-        return BotRunOut.from_orm_run(run)
+        titles = await _meeting_title_map(db, [run.meeting_id] if run.meeting_id else [])
+        return _to_out(run, titles)
     if run.status == "queued":
         run.status = "cancelled"
         run.error = "cancelled_by_user"
@@ -126,7 +189,8 @@ async def stop_recording(run_id: str, user: CurrentUser, db: DbSession) -> BotRu
         run.error = "stop_requested"
         signal_stop(run.id)
     await db.flush()
-    return BotRunOut.from_orm_run(run)
+    titles = await _meeting_title_map(db, [run.meeting_id] if run.meeting_id else [])
+    return _to_out(run, titles)
 
 
 async def _get_owned_run(db: object, user_id: str, run_id: str) -> BotRun:

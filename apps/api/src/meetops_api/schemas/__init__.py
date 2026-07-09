@@ -154,12 +154,25 @@ class BotRunOut(ORMModel):
     trigger: str
     recording_path: str | None
     meet_url: str | None = None
+    meeting_title: str | None = None
+    meeting_start_at: datetime | None = None
+    duration_secs: int | None = None
     started_at: datetime | None
     ended_at: datetime | None
     created_at: datetime
 
     @classmethod
-    def from_orm_run(cls, run: Any) -> BotRunOut:
+    def from_orm_run(
+        cls,
+        run: Any,
+        *,
+        meeting_title: str | None = None,
+    ) -> BotRunOut:
+        duration_secs: int | None = None
+        if run.started_at and run.ended_at:
+            duration_secs = max(
+                0, int((run.ended_at - run.started_at).total_seconds())
+            )
         return cls(
             id=str(run.id),
             meeting_id=run.meeting_id,
@@ -168,6 +181,9 @@ class BotRunOut(ORMModel):
             trigger=run.trigger,
             recording_path=run.recording_path,
             meet_url=getattr(run, "meet_url", None),
+            meeting_title=meeting_title,
+            meeting_start_at=getattr(run, "meeting_start_at", None),
+            duration_secs=duration_secs,
             started_at=run.started_at,
             ended_at=run.ended_at,
             created_at=run.created_at,
@@ -210,9 +226,14 @@ class NoteOut(BaseModel):
     transcript_id: str
     bot_run_id: str
     status: str
+    transcript_status: str | None = None
+    summary_status: str | None = None
     tldr: str | None
     summary_md: str | None
+    raw_transcript: str | None = None
+    cleaned_transcript: str | None = None
     meeting_title: str | None = None
+    error: str | None = None
     created_at: datetime
     action_items: list[TodoOut] = []
 

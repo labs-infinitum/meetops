@@ -8,6 +8,7 @@ Never bake `.env` into images. Required in production:
 - `S3_BUCKET` (+ AWS credentials or IAM role)
 - `MEETOPS_TOKEN_ENCRYPTION_KEY` (Fernet key)
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` for calendar
+- `OPENAI_API_KEY` for transcription/notes (optional; AI idle if unset)
 
 ## Bot bootstrap
 
