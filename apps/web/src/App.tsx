@@ -1,6 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
-import { AppLayout } from "./components/AppLayout";
-import { AuthLayout } from "./components/AuthLayout";
+import { AppLayout, AuthLayout } from "./components/AppLayout";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AuthProvider } from "./context/AuthProvider";
 import { CalendarsPage } from "./pages/Calendars";

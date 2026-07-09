@@ -1,13 +1,20 @@
 import { useEffect, useState } from "react";
-import { EmptyState } from "../components/EmptyState";
-import { PageLoader, Spinner } from "../components/Spinner";
-import { api } from "../lib/api";
-import type { Todo } from "../types/api";
+import { Link } from "react-router-dom";
+import { CheckSquare } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
+import { PageLoader } from "@/components/Spinner";
+import { PageHeader } from "@/components/shared/PageHeader";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { api } from "@/lib/api";
+import type { Todo } from "@/types/api";
 
 export function TodosPage() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<"all" | "open" | "done">("all");
   const [patching, setPatching] = useState<string | null>(null);
 
   useEffect(() => {
@@ -31,80 +38,99 @@ export function TodosPage() {
 
   if (loading) return <PageLoader />;
 
-  const filtered = todos.filter((t) => {
-    if (filter === "open") return !t.completed;
-    if (filter === "done") return t.completed;
-    return true;
-  });
-
-  const openCount = todos.filter((t) => !t.completed).length;
+  const open = todos.filter((t) => !t.completed);
+  const done = todos.filter((t) => t.completed);
 
   return (
-    <div>
-      <h1 className="font-display text-2xl font-bold">Todos</h1>
-      <p className="mt-1 text-sm text-surface-500">
-        Action items from your meeting notes · {openCount} open
-      </p>
+    <div className="space-y-8">
+      <PageHeader
+        title="Todos"
+        description="Action items extracted from your meeting notes."
+      />
 
-      <div className="mt-6 flex gap-2">
-        {(["all", "open", "done"] as const).map((f) => (
-          <button
-            key={f}
-            type="button"
-            onClick={() => setFilter(f)}
-            className={`rounded-lg px-3 py-1.5 text-sm font-medium capitalize ${
-              filter === f
-                ? "bg-brand-600 text-white"
-                : "bg-surface-100 text-surface-600 dark:bg-surface-800 dark:text-surface-400"
-            }`}
-          >
-            {f}
-          </button>
-        ))}
-      </div>
+      <Tabs defaultValue="open">
+        <TabsList>
+          <TabsTrigger value="open">Open ({open.length})</TabsTrigger>
+          <TabsTrigger value="done">Completed ({done.length})</TabsTrigger>
+        </TabsList>
 
-      {filtered.length === 0 ? (
-        <div className="mt-8">
-          <EmptyState
-            title={filter === "done" ? "No completed todos" : "No action items yet"}
-            description="Action items are extracted automatically from meeting notes."
-          />
-        </div>
-      ) : (
-        <ul className="mt-6 space-y-2">
-          {filtered.map((todo) => (
-            <li key={todo.id} className="card flex items-start gap-3">
-              <button
-                type="button"
-                onClick={() => void toggleTodo(todo)}
-                disabled={patching === todo.id}
-                className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors ${
-                  todo.completed
-                    ? "border-brand-600 bg-brand-600 text-white"
-                    : "border-surface-300 dark:border-surface-600"
-                }`}
-                aria-label={todo.completed ? "Mark incomplete" : "Mark complete"}
+        <TabsContent value="open" className="mt-4">
+          {open.length === 0 ? (
+            <EmptyState
+              icon={CheckSquare}
+              title="All caught up"
+              description="No open action items. Great work!"
+              action={
+                <Button variant="outline" asChild>
+                  <Link to="/app/notes">Browse notes</Link>
+                </Button>
+              }
+            />
+          ) : (
+            <TodoList items={open} patching={patching} onToggle={toggleTodo} />
+          )}
+        </TabsContent>
+
+        <TabsContent value="done" className="mt-4">
+          {done.length === 0 ? (
+            <p className="text-muted-foreground text-sm">No completed items yet.</p>
+          ) : (
+            <TodoList items={done} patching={patching} onToggle={toggleTodo} />
+          )}
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+function TodoList({
+  items,
+  patching,
+  onToggle,
+}: {
+  items: Todo[];
+  patching: string | null;
+  onToggle: (todo: Todo) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      {items.map((todo) => (
+        <Card key={todo.id}>
+          <CardContent className="flex items-start gap-4 p-4">
+            <Checkbox
+              checked={todo.completed}
+              disabled={patching === todo.id}
+              onCheckedChange={() => void onToggle(todo)}
+              className="mt-0.5"
+            />
+            <div className="min-w-0 flex-1">
+              <p
+                className={`text-sm font-medium ${todo.completed ? "text-muted-foreground line-through" : ""}`}
               >
-                {patching === todo.id ? (
-                  <Spinner className="h-3 w-3" />
-                ) : todo.completed ? (
-                  "✓"
-                ) : null}
-              </button>
-              <div className="flex-1">
-                <p className={todo.completed ? "text-surface-400 line-through" : ""}>
-                  {todo.text}
-                </p>
-                <p className="mt-1 text-xs text-surface-500">
-                  {todo.owner && <span>{todo.owner} · </span>}
-                  {todo.due && <span>Due {todo.due} · </span>}
+                {todo.text}
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <Link
+                  to={`/app/recordings/${todo.bot_run_id}`}
+                  className="text-muted-foreground hover:text-foreground text-xs hover:underline"
+                >
                   Recording #{todo.bot_run_id}
-                </p>
+                </Link>
+                {todo.owner && (
+                  <Badge variant="outline" className="text-xs">
+                    {todo.owner}
+                  </Badge>
+                )}
+                {todo.due && (
+                  <Badge variant="secondary" className="text-xs">
+                    Due {todo.due}
+                  </Badge>
+                )}
               </div>
-            </li>
-          ))}
-        </ul>
-      )}
+            </div>
+          </CardContent>
+        </Card>
+      ))}
     </div>
   );
 }
