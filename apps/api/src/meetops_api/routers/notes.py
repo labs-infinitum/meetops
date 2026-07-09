@@ -16,6 +16,32 @@ router_notes = APIRouter(prefix="/notes", tags=["notes"])
 router_todos = APIRouter(prefix="/todos", tags=["todos"])
 
 
+def _note_out(
+    summary: Summary,
+    transcript: Transcript,
+    run: BotRun,
+    meeting: Meeting | None,
+    items: list[ActionItem],
+) -> NoteOut:
+    error = summary.error or transcript.error
+    return NoteOut(
+        id=str(summary.id),
+        transcript_id=str(transcript.id),
+        bot_run_id=str(run.id),
+        status=summary.status,
+        transcript_status=transcript.status,
+        summary_status=summary.status,
+        tldr=summary.tldr,
+        summary_md=summary.summary_md,
+        raw_transcript=transcript.raw_text,
+        cleaned_transcript=transcript.cleaned_text,
+        meeting_title=meeting.title if meeting else None,
+        error=error,
+        created_at=summary.created_at,
+        action_items=[TodoOut.from_orm(i) for i in items],
+    )
+
+
 @router_notes.get("/", response_model=list[NoteOut])
 async def list_notes(user: CurrentUser, db: DbSession) -> list[NoteOut]:
     rows = await db.execute(
@@ -29,20 +55,10 @@ async def list_notes(user: CurrentUser, db: DbSession) -> list[NoteOut]:
     )
     out: list[NoteOut] = []
     for summary, transcript, run, meeting in rows:
-        items = await db.scalars(select(ActionItem).where(ActionItem.summary_id == summary.id))
-        out.append(
-            NoteOut(
-                id=str(summary.id),
-                transcript_id=str(transcript.id),
-                bot_run_id=str(run.id),
-                status=summary.status,
-                tldr=summary.tldr,
-                summary_md=summary.summary_md,
-                meeting_title=meeting.title if meeting else None,
-                created_at=summary.created_at,
-                action_items=[TodoOut.from_orm(i) for i in items],
-            )
+        items = list(
+            await db.scalars(select(ActionItem).where(ActionItem.summary_id == summary.id))
         )
+        out.append(_note_out(summary, transcript, run, meeting, items))
     return out
 
 
@@ -73,18 +89,8 @@ async def get_note(transcript_id: str, user: CurrentUser, db: DbSession) -> Note
     if not first:
         raise AppError("not_found", "Note not found", 404)
     summary, transcript, run, meeting = first
-    items = await db.scalars(select(ActionItem).where(ActionItem.summary_id == summary.id))
-    return NoteOut(
-        id=str(summary.id),
-        transcript_id=str(transcript.id),
-        bot_run_id=str(run.id),
-        status=summary.status,
-        tldr=summary.tldr,
-        summary_md=summary.summary_md,
-        meeting_title=meeting.title if meeting else None,
-        created_at=summary.created_at,
-        action_items=[TodoOut.from_orm(i) for i in items],
-    )
+    items = list(await db.scalars(select(ActionItem).where(ActionItem.summary_id == summary.id)))
+    return _note_out(summary, transcript, run, meeting, items)
 
 
 @router_todos.get("/", response_model=list[TodoOut])

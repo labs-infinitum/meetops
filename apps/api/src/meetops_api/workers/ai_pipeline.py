@@ -10,7 +10,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from meetops_api.ai.groq import GroqClient
+from meetops_api.ai.openai_client import OpenAIClient
 from meetops_api.services.jobs import claim_next_job, complete_job, enqueue_job, fail_job
 from meetops_api.storage.s3 import S3Storage
 from meetops_common.models import (
@@ -42,13 +42,13 @@ class AIPipeline:
         self.settings = settings
         self.session_factory = session_factory
         self.worker_id = worker_id
-        self.groq = GroqClient(settings)
+        self.ai = OpenAIClient(settings)
 
     async def tick(self) -> None:
         global _warned_no_key
-        if not self.groq.enabled:
+        if not self.ai.enabled:
             if not _warned_no_key:
-                logger.warning("GROQ_API_KEY missing; AI pipeline idle")
+                logger.warning("OPENAI_API_KEY missing; AI pipeline idle")
                 _warned_no_key = True
             return
 
@@ -109,7 +109,7 @@ class AIPipeline:
             else:
                 raise RuntimeError("Cannot locate recording for transcription")
 
-            result = await self.groq.transcribe(dest)
+            result = await self.ai.transcribe(dest)
 
         async with self.session_factory() as session:
             transcript = await session.scalar(
@@ -171,7 +171,7 @@ class AIPipeline:
             ]
             await session.commit()
 
-        cleaned = await self.groq.clean_transcript(
+        cleaned = await self.ai.clean_transcript(
             raw_text=raw, segments=segments if isinstance(segments, list) else None, timeline=timeline
         )
 
@@ -217,7 +217,7 @@ class AIPipeline:
                 title = meeting.title if meeting else None
             await session.commit()
 
-        notes = await self.groq.generate_notes(cleaned_text=text, title=title)
+        notes = await self.ai.generate_notes(cleaned_text=text, title=title)
 
         async with self.session_factory() as session:
             summary = await session.scalar(

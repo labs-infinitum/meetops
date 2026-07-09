@@ -1,3 +1,3 @@
-from meetops_api.ai.groq import GroqClient
+from meetops_api.ai.openai_client import OpenAIClient
 
-__all__ = ["GroqClient"]
+__all__ = ["OpenAIClient"]

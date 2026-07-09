@@ -72,6 +72,6 @@ uv run meetops-cli bot profile-bootstrap
 
 ## Stack
 
-Python 3.12 · FastAPI · PostgreSQL · patchright · S3 · Groq · React/Vite/bun · Docker Compose
+Python 3.12 · FastAPI · PostgreSQL · patchright · S3 · OpenAI · React/Vite/bun · Docker Compose
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/OPERATIONS.md](docs/OPERATIONS.md).

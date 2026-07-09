@@ -39,4 +39,4 @@ Opaque session tokens in DB; cookie stores only the token. Argon2id passwords. G
 
 ## AI pipeline
 
-`transcribe_recording` → `clean_transcript` → `generate_meeting_notes` via DB jobs (`FOR UPDATE SKIP LOCKED`). Action items stored in first-class `action_items` table.
+`transcribe_recording` → `clean_transcript` → `generate_meeting_notes` via DB jobs (`FOR UPDATE SKIP LOCKED`). Uses **OpenAI** (`/v1` audio transcriptions + chat completions). Action items stored in first-class `action_items` table.
