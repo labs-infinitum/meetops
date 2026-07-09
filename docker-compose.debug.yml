@@ -1,22 +1,36 @@
+# Debug / bootstrap: noVNC for Google bot sign-in on :6080
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.debug.yml --profile debug up --build
+#
+# Opens: web :3000, api :8000, noVNC :6080
+# Uses worker-debug instead of the regular worker.
+
 services:
-  backend:
+  worker:
+    profiles: ["disabled"]
+
+  worker-debug:
+    profiles: ["debug"]
     build:
-      target: debug
-    env_file:
-      - path: apps/backend/.env
-        required: false
-      - path: debug.env
-        required: false
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    env_file: .env
     environment:
-      GMR_BOT__X11_DISPLAY: ":99"
-      GMR_BOT__X11_AUTO_VIRTUAL: "false"
-      DEBUG_X11_DISPLAY: ":99"
-      DEBUG_RUN_SERVER_ON_NO_COMMAND: "true"
-    stdin_open: true
-    tty: true
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
-      interval: 30s
-      timeout: 5s
-      start_period: 20s
-      retries: 3
+      DATABASE_URL: postgresql+asyncpg://meetops:meetops@postgres:5432/meetops
+      MEETOPS_DATA_DIR: /data
+      MEETOPS_BOT_PROFILES_DIR: /data/chrome-profiles
+      MEETOPS_BOT_X11_DISPLAY: ":99"
+      MEETOPS_DEBUG_NOVNC: "1"
+      # Debug convenience: skip native Allow sheet (document detection tradeoff)
+      MEETOPS_USE_TAB_CAPTURE_AUTO_ACCEPT: "true"
+    volumes:
+      - ./data:/data
+    shm_size: "2gb"
+    ports:
+      - "6080:6080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    entrypoint: ["/app/scripts/entrypoint-worker-debug.sh"]

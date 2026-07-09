@@ -1,27 +1,18 @@
-# Turborepo
-.turbo
-node_modules
 
-# Backend (Rust)
-/apps/backend/target
-/apps/backend/config.toml
-/apps/backend/.env
-
-# Runtime data (Chrome profile, local recording staging)
-/data
-
-# Scratch tab-share window captures during local debugging
-/chrome-window-*.png
-
-# Frontend (Node)
-/apps/frontend/dist
-
-# Legacy paths from pre-turbo layout
-/backend
-/frontend
-/proto
-/target
-
-debug.env
-
+.env
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+data/
+!data/.gitkeep
+apps/web/node_modules/
+apps/web/dist/
+*.webm
 .DS_Store
+uv.lock.bak

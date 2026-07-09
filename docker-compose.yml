@@ -1,92 +1,71 @@
 services:
   postgres:
-    image: postgres:16
-    container_name: notetaker-postgres
+    image: postgres:16-alpine
     environment:
-      POSTGRES_USER: notetaker
-      POSTGRES_PASSWORD: notetaker
-      POSTGRES_DB: notetaker
+      POSTGRES_USER: meetops
+      POSTGRES_PASSWORD: meetops
+      POSTGRES_DB: meetops
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "5433:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U notetaker -d notetaker"]
+      test: ["CMD-SHELL", "pg_isready -U meetops -d meetops"]
       interval: 5s
       timeout: 5s
-      retries: 5
-    restart: unless-stopped
+      retries: 10
 
-  backend:
-    platform: linux/amd64
+  api:
     build:
       context: .
-      dockerfile: apps/backend/Dockerfile
-      target: runtime
-    container_name: notetaker-backend
-    env_file:
-      - path: apps/backend/.env
-        required: false
+      dockerfile: apps/api/Dockerfile
+    env_file: .env
     environment:
-      GMR_SERVER__HOST: 0.0.0.0
-      GMR_GRPC__HOST: 0.0.0.0
-      GMR_STORAGE__DATA_DIR: /data
-      GMR_BOT__CHROMIUM_PATH: /usr/bin/google-chrome-stable
-      GMR_BOT__CHROME_USER_DATA_DIR: /data/chrome-profile
-      GMR_GRPC__ALLOW_ORIGIN: ${PUBLIC_FRONTEND_URL:-http://localhost:3000}
-      GMR_GOOGLE__REDIRECT_URI: ${PUBLIC_OAUTH_CALLBACK_URL:-http://localhost:8080/auth/google/callback}
-      GMR_GOOGLE__FRONTEND_REDIRECT_URL: ${PUBLIC_FRONTEND_URL:-http://localhost:3000}/app/calendars
-      DATABASE_URL: ${DATABASE_URL:-postgres://notetaker:notetaker@postgres:5432/notetaker}
+      DATABASE_URL: postgresql+asyncpg://meetops:meetops@postgres:5432/meetops
+      MEETOPS_APP_BASE_URL: http://localhost:3000
+      MEETOPS_PUBLIC_API_URL: http://localhost:8000
+      MEETOPS_CORS_ORIGINS: http://localhost:3000,http://localhost:5173
+      GOOGLE_FRONTEND_REDIRECT_URL: http://localhost:3000/app/calendars
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data
     depends_on:
       postgres:
         condition: service_healthy
-    ports:
-      - "${BACKEND_HTTP_PORT:-8080}:8080"
-    volumes:
-      - ./data:/data
-    shm_size: "2gb"
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
-  frontend:
+  worker:
     build:
       context: .
-      dockerfile: apps/frontend/Dockerfile
-    container_name: notetaker-frontend
-    depends_on:
-      backend:
-        condition: service_healthy
-    ports:
-      - "${FRONTEND_PORT:-3000}:8080"
-    restart: unless-stopped
-
-  # Remote desktop into the bot's Xvfb display (:99) via RustDesk — for profile sign-in and debugging.
-  backend-debug:
-    platform: linux/amd64
-    profiles: ["debug"]
-    build:
-      context: .
-      dockerfile: apps/backend/Dockerfile
-      target: debug
-    container_name: notetaker-backend-debug
-    env_file:
-      - path: apps/backend/.env
-        required: false
-      - path: debug.env
-        required: false
+      dockerfile: apps/worker/Dockerfile
+    env_file: .env
     environment:
-      GMR_STORAGE__DATA_DIR: /data
-      GMR_BOT__CHROMIUM_PATH: /usr/bin/google-chrome-stable
-      GMR_BOT__CHROME_USER_DATA_DIR: /data/chrome-profile
-      GMR_BOT__X11_DISPLAY: ":99"
-      GMR_BOT__X11_AUTO_VIRTUAL: "false"
-      DEBUG_X11_DISPLAY: ":99"
-      # RUSTDESK_* and DEBUG_WAIT_SECS come from debug.env — do not override here with
-      # ${VAR:-} or Compose will blank them when the repo-root .env lacks those keys.
+      DATABASE_URL: postgresql+asyncpg://meetops:meetops@postgres:5432/meetops
+      MEETOPS_DATA_DIR: /data
+      MEETOPS_BOT_PROFILES_DIR: /data/chrome-profiles
+      MEETOPS_BOT_X11_DISPLAY: ":99"
     volumes:
       - ./data:/data
     shm_size: "2gb"
-    stdin_open: true
-    tty: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
 
 volumes:
-  postgres_data:
+  pgdata:
