@@ -1,0 +1,17 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+data/
+!data/.gitkeep
+apps/web/node_modules/
+apps/web/dist/
+*.webm
+.DS_Store
+uv.lock.bak

@@ -1,0 +1,24 @@
+[project]
+name = "meetops-worker"
+version = "0.1.0"
+description = "MeetOps background worker (bot, scheduler, AI)"
+requires-python = ">=3.12"
+dependencies = [
+    "meetops-common",
+    "meetops-api",
+    "uvicorn[standard]>=0.34.0",
+]
+
+[project.scripts]
+meetops-worker = "meetops_worker.main:run"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/meetops_worker"]
+
+[tool.uv.sources]
+meetops-common = { workspace = true }
+meetops-api = { workspace = true }

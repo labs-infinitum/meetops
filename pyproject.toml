@@ -1,0 +1,63 @@
+[project]
+name = "meetops-py"
+version = "0.1.0"
+description = "MeetOps — self-hosted meeting operations platform"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+dependencies = [
+    "meetops-common",
+    "meetops-api",
+    "meetops-worker",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["apps/api", "apps/worker", "packages/meetops_common"]
+
+[tool.uv.sources]
+meetops-common = { workspace = true }
+meetops-api = { workspace = true }
+meetops-worker = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "ruff>=0.9.0",
+    "mypy>=1.14.0",
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.25.0",
+    "httpx>=0.28.0",
+    "types-boto3>=1.0.2",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 110
+src = ["apps/api/src", "apps/worker/src", "packages/meetops_common/src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501", "SIM105", "SIM102"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["meetops_api", "meetops_worker", "meetops_common"]
+mypy_path = ["apps/api/src", "apps/worker/src", "packages/meetops_common/src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.alembic]
+script_location = "alembic"
+prepend_sys_path = ["."]
+
+[project.scripts]
+meetops-api = "meetops_api.main:run"
+meetops-worker = "meetops_worker.main:run"
+meetops-cli = "meetops_api.cli:main"

@@ -1,0 +1,71 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: meetops
+      POSTGRES_PASSWORD: meetops
+      POSTGRES_DB: meetops
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U meetops -d meetops"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://meetops:meetops@postgres:5432/meetops
+      MEETOPS_APP_BASE_URL: http://localhost:3000
+      MEETOPS_PUBLIC_API_URL: http://localhost:8000
+      MEETOPS_CORS_ORIGINS: http://localhost:3000,http://localhost:5173
+      GOOGLE_FRONTEND_REDIRECT_URL: http://localhost:3000/app/calendars
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://meetops:meetops@postgres:5432/meetops
+      MEETOPS_DATA_DIR: /data
+      MEETOPS_BOT_PROFILES_DIR: /data/chrome-profiles
+      MEETOPS_BOT_X11_DISPLAY: ":99"
+    volumes:
+      - ./data:/data
+    shm_size: "2gb"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
