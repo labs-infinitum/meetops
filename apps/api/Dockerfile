@@ -1,4 +1,5 @@
-FROM python:3.12-slim-bookworm
+ARG PYTHON_IMAGE=python:3.12-slim-bookworm
+FROM ${PYTHON_IMAGE}
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl build-essential libpq-dev \

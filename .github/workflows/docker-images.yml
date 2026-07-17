@@ -1,0 +1,186 @@
+# Builds api/worker/web images; PRs build-only, pushes to main (and manual
+# dispatch) push to ECR with :<12-char-sha> and :latest tags.
+# NOTE: runs-on references the existing CodeBuild project "meetops_rs_build" —
+# if that project is ever renamed, update the label here.
+name: Docker Images
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/docker-images.yml"
+      - "apps/api/**"
+      - "apps/worker/**"
+      - "apps/web/**"
+      - "packages/**"
+      - "alembic/**"
+      - "alembic.ini"
+      - "scripts/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".dockerignore"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/docker-images.yml"
+      - "apps/api/**"
+      - "apps/worker/**"
+      - "apps/web/**"
+      - "packages/**"
+      - "alembic/**"
+      - "alembic.ini"
+      - "scripts/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".dockerignore"
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
+  API_REPOSITORY: ${{ vars.ECR_API_REPOSITORY || 'meetops/api' }}
+  WORKER_REPOSITORY: ${{ vars.ECR_WORKER_REPOSITORY || 'meetops/worker' }}
+  WEB_REPOSITORY: ${{ vars.ECR_WEB_REPOSITORY || 'meetops/web' }}
+  ECR_PULL_THROUGH_PREFIX: ${{ vars.ECR_PULL_THROUGH_PREFIX || 'docker-hub' }}
+  BUILDX_CACHE_DIR: /tmp/.buildx-cache
+
+jobs:
+  build:
+    name: Build Docker images
+    runs-on:
+      - codebuild-meetops_rs_build-${{ github.run_id }}-${{ github.run_attempt }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Compute image metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          short_sha="${GITHUB_SHA::12}"
+          # PRs only build (validation); pushing to ECR is reserved for main
+          # and manual dispatch so unreviewed code never lands in the registry.
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            should_push=false
+          else
+            should_push=true
+          fi
+          echo "short_sha=${short_sha}" >> "${GITHUB_OUTPUT}"
+          echo "should_push=${should_push}" >> "${GITHUB_OUTPUT}"
+
+          emit_tags() {
+            local name="$1" repo="$2"
+            echo "${name}_tags<<EOF"
+            if [ "${should_push}" = "true" ]; then
+              echo "${ECR_REGISTRY}/${repo}:${short_sha}"
+              if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+                echo "${ECR_REGISTRY}/${repo}:latest"
+              fi
+            else
+              echo "meetops-${name}:${short_sha}"
+            fi
+            echo "EOF"
+          }
+
+          emit_cache() {
+            local name="$1" repo="$2"
+            echo "${name}_cache_from<<EOF"
+            echo "type=local,src=${BUILDX_CACHE_DIR}/${name}"
+            if [ -n "${ECR_REGISTRY}" ]; then
+              echo "type=registry,ref=${ECR_REGISTRY}/${repo}:buildcache"
+            fi
+            echo "EOF"
+
+            echo "${name}_cache_to<<EOF"
+            echo "type=local,dest=${BUILDX_CACHE_DIR}/${name}-new,mode=max"
+            if [ "${should_push}" = "true" ]; then
+              echo "type=registry,ref=${ECR_REGISTRY}/${repo}:buildcache,mode=max"
+            fi
+            echo "EOF"
+          }
+
+          {
+            emit_tags api "${API_REPOSITORY}"
+            emit_tags worker "${WORKER_REPOSITORY}"
+            emit_tags web "${WEB_REPOSITORY}"
+            emit_cache api "${API_REPOSITORY}"
+            emit_cache worker "${WORKER_REPOSITORY}"
+            emit_cache web "${WEB_REPOSITORY}"
+
+            # Without a registry, leave build-args empty so Dockerfile defaults apply
+            echo "python_build_args<<EOF"
+            if [ -n "${ECR_REGISTRY}" ]; then
+              echo "PYTHON_IMAGE=${ECR_REGISTRY}/${ECR_PULL_THROUGH_PREFIX}/library/python:3.12-slim-bookworm"
+            fi
+            echo "EOF"
+
+            echo "web_build_args<<EOF"
+            if [ -n "${ECR_REGISTRY}" ]; then
+              echo "BUN_IMAGE=${ECR_REGISTRY}/${ECR_PULL_THROUGH_PREFIX}/oven/bun:1"
+              echo "CADDY_IMAGE=${ECR_REGISTRY}/${ECR_PULL_THROUGH_PREFIX}/library/caddy:2-alpine"
+            fi
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Validate ECR configuration
+        if: ${{ steps.meta.outputs.should_push == 'true' && env.ECR_REGISTRY == '' }}
+        shell: bash
+        run: |
+          echo "ECR_REGISTRY repository variable is required when pushing images" >&2
+          exit 1
+
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+
+      - name: Build api image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: ${{ steps.meta.outputs.should_push }}
+          tags: ${{ steps.meta.outputs.api_tags }}
+          build-args: ${{ steps.meta.outputs.python_build_args }}
+          cache-from: ${{ steps.meta.outputs.api_cache_from }}
+          cache-to: ${{ steps.meta.outputs.api_cache_to }}
+
+      - name: Build worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/worker/Dockerfile
+          push: ${{ steps.meta.outputs.should_push }}
+          tags: ${{ steps.meta.outputs.worker_tags }}
+          build-args: ${{ steps.meta.outputs.python_build_args }}
+          cache-from: ${{ steps.meta.outputs.worker_cache_from }}
+          cache-to: ${{ steps.meta.outputs.worker_cache_to }}
+
+      - name: Build web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: ${{ steps.meta.outputs.should_push }}
+          tags: ${{ steps.meta.outputs.web_tags }}
+          build-args: ${{ steps.meta.outputs.web_build_args }}
+          cache-from: ${{ steps.meta.outputs.web_cache_from }}
+          cache-to: ${{ steps.meta.outputs.web_cache_to }}
+
+      - name: Rotate Buildx local cache
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in api worker web; do
+            rm -rf "${BUILDX_CACHE_DIR}/${name}"
+            if [ -d "${BUILDX_CACHE_DIR}/${name}-new" ]; then
+              mv "${BUILDX_CACHE_DIR}/${name}-new" "${BUILDX_CACHE_DIR}/${name}"
+            fi
+          done
