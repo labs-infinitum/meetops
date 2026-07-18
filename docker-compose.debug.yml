@@ -12,7 +12,7 @@ services:
 
   worker-debug:
     profiles: ["debug"]
-    image: ${ECR_REGISTRY}/${ECR_WORKER_REPOSITORY:-meetops/worker}:${IMAGE_TAG:-latest}
+    image: 656555178734.dkr.ecr.us-east-1.amazonaws.com/meetops/worker:latest
     env_file: .env
     environment:
       MEETOPS_DATA_DIR: /data
