@@ -83,3 +83,49 @@ def test_extract_meet_url() -> None:
     assert extract_meet_url(
         {"description": "Join https://meet.google.com/xxx-yyyy-zzz please"}
     )
+
+
+def test_database_url_from_secret(monkeypatch) -> None:
+    import meetops_common.settings as settings_mod
+
+    def fake_resolver(secret_arn: str, host: str, port: int, database: str) -> str:
+        assert secret_arn == "arn:aws:secretsmanager:us-east-1:1:secret:x"
+        return f"postgresql+asyncpg://u:p@{host}:{port}/{database}"
+
+    monkeypatch.setattr(settings_mod, "resolve_database_url_from_secret", fake_resolver)
+    clear_settings_cache()
+    settings = Settings(
+        meetops_env="development",
+        meetops_database_secret_arn="arn:aws:secretsmanager:us-east-1:1:secret:x",
+        meetops_database_host="db.example.com",
+        meetops_database_name="meetops",
+    )
+    assert settings.database_url == "postgresql+asyncpg://u:p@db.example.com:5432/meetops"
+
+
+def test_database_secret_requires_host() -> None:
+    import pytest
+
+    clear_settings_cache()
+    with pytest.raises(ValueError, match="MEETOPS_DATABASE_HOST"):
+        Settings(
+            meetops_env="development",
+            meetops_database_secret_arn="arn:aws:secretsmanager:us-east-1:1:secret:x",
+            meetops_database_host=None,
+        )
+
+
+def test_secret_url_encoding(monkeypatch) -> None:
+    from meetops_common.settings import resolve_database_url_from_secret
+
+    class FakeClient:
+        def get_secret_value(self, SecretId: str) -> dict:
+            return {"SecretString": '{"username": "admin", "password": "p@ss/w:rd"}'}
+
+    import boto3
+
+    monkeypatch.setattr(boto3, "client", lambda *a, **kw: FakeClient())
+    url = resolve_database_url_from_secret(
+        "arn:aws:secretsmanager:us-east-1:1:secret:x", "h", 5432, "meetops"
+    )
+    assert url == "postgresql+asyncpg://admin:p%40ss%2Fw%3Ard@h:5432/meetops"

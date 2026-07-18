@@ -10,6 +10,28 @@ from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def resolve_database_url_from_secret(
+    secret_arn: str, host: str, port: int, database: str
+) -> str:
+    """Build an asyncpg DATABASE_URL from a Secrets Manager secret.
+
+    The secret must contain {"username": ..., "password": ...} (the shape of
+    RDS-managed master secrets). Uses the ambient AWS identity (instance role
+    or env credentials); the region is taken from the ARN itself.
+    """
+    import json
+    from urllib.parse import quote
+
+    import boto3  # deferred: only needed when the secret ARN is configured
+
+    region = secret_arn.split(":")[3]
+    client = boto3.client("secretsmanager", region_name=region)
+    secret = json.loads(client.get_secret_value(SecretId=secret_arn)["SecretString"])
+    username = quote(secret["username"], safe="")
+    password = quote(secret["password"], safe="")
+    return f"postgresql+asyncpg://{username}:{password}@{host}:{port}/{database}"
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -30,6 +52,13 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://meetops:meetops@localhost:5432/meetops"
     database_pool_size: int = 10
     database_max_overflow: int = 10
+    # Alternative to DATABASE_URL: resolve credentials from an AWS Secrets Manager
+    # secret ({"username": ..., "password": ...}, e.g. an RDS-managed master secret).
+    # Requires host/name below; overrides DATABASE_URL when set.
+    meetops_database_secret_arn: str | None = None
+    meetops_database_host: str | None = None
+    meetops_database_port: int = 5432
+    meetops_database_name: str = "meetops"
 
     # Auth
     meetops_session_ttl_secs: int = 2_592_000
@@ -106,6 +135,17 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _defaults_and_validate(self) -> Settings:
+        if self.meetops_database_secret_arn:
+            if not self.meetops_database_host:
+                raise ValueError(
+                    "MEETOPS_DATABASE_HOST is required when MEETOPS_DATABASE_SECRET_ARN is set"
+                )
+            self.database_url = resolve_database_url_from_secret(
+                self.meetops_database_secret_arn,
+                self.meetops_database_host,
+                self.meetops_database_port,
+                self.meetops_database_name,
+            )
         if self.meetops_session_cookie_secure is None:
             self.meetops_session_cookie_secure = self.meetops_env == "production"
         if self.meetops_enable_openapi is None:
