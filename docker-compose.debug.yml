@@ -1,0 +1,33 @@
+# Debug / bootstrap overlay: noVNC for the one-time Google bot sign-in.
+# Uses the same worker image with the debug entrypoint; replaces the regular worker.
+#
+# Usage: scripts/debug-up.sh / scripts/debug-down.sh
+# noVNC binds to 127.0.0.1:6080 — reach it via:
+#   ssh -L 6080:localhost:6080 ubuntu@aws-meetops-vps
+#   open http://localhost:6080
+
+services:
+  worker:
+    profiles: ["disabled"]
+
+  worker-debug:
+    profiles: ["debug"]
+    image: ${ECR_REGISTRY}/${ECR_WORKER_REPOSITORY:-meetops/worker}:${IMAGE_TAG:-latest}
+    env_file: .env
+    environment:
+      MEETOPS_DATA_DIR: /data
+      MEETOPS_BOT_PROFILES_DIR: /data/chrome-profiles
+      MEETOPS_BOT_X11_DISPLAY: ":99"
+      MEETOPS_DEBUG_NOVNC: "1"
+      # Debug convenience: skip native Allow sheet (detection tradeoff)
+      MEETOPS_USE_TAB_CAPTURE_AUTO_ACCEPT: "true"
+    restart: "no"
+    volumes:
+      - ./data:/data
+    shm_size: "2gb"
+    ports:
+      - "127.0.0.1:6080:6080"
+    depends_on:
+      api:
+        condition: service_healthy
+    entrypoint: ["/app/scripts/entrypoint-worker-debug.sh"]

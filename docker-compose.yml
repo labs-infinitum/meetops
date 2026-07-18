@@ -1,0 +1,51 @@
+# MeetOps production compose — pulls prebuilt images from ECR.
+# Postgres runs on AWS RDS (DATABASE_URL in .env); Tailscale serve fronts web on :3000.
+#
+# Usage: scripts/deploy.sh (login + pull + up), or scripts/prod-up.sh / prod-down.sh
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  api:
+    image: ${ECR_REGISTRY}/${ECR_API_REPOSITORY:-meetops/api}:${IMAGE_TAG:-latest}
+    env_file: .env
+    restart: unless-stopped
+    logging: *default-logging
+    volumes:
+      - ./data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  worker:
+    image: ${ECR_REGISTRY}/${ECR_WORKER_REPOSITORY:-meetops/worker}:${IMAGE_TAG:-latest}
+    env_file: .env
+    environment:
+      MEETOPS_DATA_DIR: /data
+      MEETOPS_BOT_PROFILES_DIR: /data/chrome-profiles
+      MEETOPS_BOT_X11_DISPLAY: ":99"
+    restart: unless-stopped
+    logging: *default-logging
+    volumes:
+      - ./data:/data
+    shm_size: "2gb"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  web:
+    image: ${ECR_REGISTRY}/${ECR_WEB_REPOSITORY:-meetops/web}:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    logging: *default-logging
+    # Loopback only — exposed on the tailnet via: tailscale serve --bg --https=443 http://127.0.0.1:3000
+    ports:
+      - "127.0.0.1:3000:80"
+    depends_on:
+      api:
+        condition: service_healthy
