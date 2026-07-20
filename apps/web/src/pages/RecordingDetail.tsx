@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   AlertCircle,
@@ -177,14 +177,18 @@ function renderMarkdownLite(markdown: string) {
   });
 }
 
-async function fetchRecordingDetail(id: string) {
+async function fetchRecordingDetail(
+  id: string,
+  options: { fetchPlayback?: boolean } = {},
+) {
+  const fetchPlayback = options.fetchPlayback !== false;
   const [loaded, timelineEvents, generatedNote] = await Promise.all([
     api.get<BotRun>(`/recordings/${id}`),
     api.get<TimelineEvent[]>(`/recordings/${id}/timeline`),
     api.get<Note | null>(`/recordings/${id}/ai`).catch(() => null),
   ]);
   let playbackUrl: string | null = null;
-  if (loaded.status === "completed" && loaded.recording_path) {
+  if (fetchPlayback && loaded.status === "completed" && loaded.recording_path) {
     try {
       const playback = await api.get<PlaybackUrl>(`/recordings/${id}/playback-url`);
       playbackUrl = playback.url;
@@ -199,6 +203,7 @@ export function RecordingDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [run, setRun] = useState<BotRun | null>(null);
   const [playbackUrl, setPlaybackUrl] = useState<string | null>(null);
+  const playbackUrlRef = useRef<string | null>(null);
   const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]);
   const [generatedNote, setGeneratedNote] = useState<Note | null>(null);
   const [loading, setLoading] = useState(true);
@@ -217,12 +222,23 @@ export function RecordingDetailPage() {
 
   const refresh = useCallback(async () => {
     if (!id) return;
-    const detail = await fetchRecordingDetail(id);
+    const detail = await fetchRecordingDetail(id, {
+      // Keep the first presigned URL so the <video> element does not reload on polls.
+      fetchPlayback: !playbackUrlRef.current,
+    });
     setRun(detail.loaded);
     setNotFound(false);
     setTimelineEvents(detail.timelineEvents);
     setGeneratedNote(detail.generatedNote);
-    setPlaybackUrl(detail.playbackUrl);
+    if (detail.playbackUrl) {
+      playbackUrlRef.current = detail.playbackUrl;
+      setPlaybackUrl(detail.playbackUrl);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    playbackUrlRef.current = null;
+    setPlaybackUrl(null);
   }, [id]);
 
   useEffect(() => {
