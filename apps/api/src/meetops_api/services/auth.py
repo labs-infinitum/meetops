@@ -86,6 +86,7 @@ class AuthService:
                 auto_record_default=True,
                 join_lead_time_secs=self.settings.meetops_bot_join_lead_time_secs,
                 bot_display_name=self.settings.meetops_bot_display_name,
+                languages_json=["en"],
             )
         )
         await self.db.flush()

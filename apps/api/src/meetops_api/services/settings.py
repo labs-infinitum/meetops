@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from meetops_api.ai.languages import DEFAULT_LANGUAGES, normalize_languages
 from meetops_api.errors import AppError
 from meetops_api.schemas import (
+    LanguagesSettingsPatch,
     NotificationSettingsPatch,
     ProfilePatch,
     RecordingSettingsPatch,
@@ -21,10 +23,16 @@ class SettingsService:
     async def get_or_create(self, user: User) -> UserSettings:
         settings = await self.db.get(UserSettings, user.id)
         if settings is None:
-            settings = UserSettings(user_id=user.id)
+            settings = UserSettings(user_id=user.id, languages_json=list(DEFAULT_LANGUAGES))
             self.db.add(settings)
             await self.db.flush()
         return settings
+
+    def _languages(self, s: UserSettings) -> list[str]:
+        try:
+            return normalize_languages(s.languages_json)
+        except ValueError:
+            return list(DEFAULT_LANGUAGES)
 
     async def get_out(self, user: User) -> SettingsOut:
         s = await self.get_or_create(user)
@@ -37,6 +45,7 @@ class SettingsService:
             bot_display_name=s.bot_display_name,
             notify_email_on_notes_ready=s.notify_email_on_notes_ready,
             notify_email_on_recording_failed=s.notify_email_on_recording_failed,
+            languages=self._languages(s),
         )
 
     async def patch_profile(self, user: User, patch: ProfilePatch) -> SettingsOut:
@@ -64,5 +73,14 @@ class SettingsService:
             s.notify_email_on_notes_ready = patch.notify_email_on_notes_ready
         if patch.notify_email_on_recording_failed is not None:
             s.notify_email_on_recording_failed = patch.notify_email_on_recording_failed
+        await self.db.flush()
+        return await self.get_out(user)
+
+    async def patch_languages(self, user: User, patch: LanguagesSettingsPatch) -> SettingsOut:
+        s = await self.get_or_create(user)
+        try:
+            s.languages_json = normalize_languages(patch.languages)
+        except ValueError as exc:
+            raise AppError("invalid_request", str(exc), 400) from exc
         await self.db.flush()
         return await self.get_out(user)

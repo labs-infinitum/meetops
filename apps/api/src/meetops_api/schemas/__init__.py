@@ -76,6 +76,7 @@ class SettingsOut(BaseModel):
     bot_display_name: str | None
     notify_email_on_notes_ready: bool
     notify_email_on_recording_failed: bool
+    languages: list[str] = Field(default_factory=lambda: ["en"])
 
 
 class ProfilePatch(BaseModel):
@@ -91,6 +92,10 @@ class RecordingSettingsPatch(BaseModel):
 class NotificationSettingsPatch(BaseModel):
     notify_email_on_notes_ready: bool | None = None
     notify_email_on_recording_failed: bool | None = None
+
+
+class LanguagesSettingsPatch(BaseModel):
+    languages: list[str] = Field(default_factory=list, max_length=8)
 
 
 class CalendarConnectionOut(ORMModel):

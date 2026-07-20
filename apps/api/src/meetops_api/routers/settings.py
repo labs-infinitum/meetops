@@ -6,6 +6,7 @@ from fastapi import APIRouter
 
 from meetops_api.deps import CurrentUser, DbSession
 from meetops_api.schemas import (
+    LanguagesSettingsPatch,
     NotificationSettingsPatch,
     ProfilePatch,
     RecordingSettingsPatch,
@@ -40,3 +41,10 @@ async def patch_notifications(
     body: NotificationSettingsPatch, user: CurrentUser, db: DbSession
 ) -> SettingsOut:
     return await SettingsService(db).patch_notifications(user, body)
+
+
+@router.patch("/languages", response_model=SettingsOut)
+async def patch_languages(
+    body: LanguagesSettingsPatch, user: CurrentUser, db: DbSession
+) -> SettingsOut:
+    return await SettingsService(db).patch_languages(user, body)

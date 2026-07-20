@@ -126,7 +126,12 @@ class DeepgramClient:
     def enabled(self) -> bool:
         return bool(self.api_key)
 
-    async def transcribe(self, audio_path: Path) -> dict[str, Any]:
+    async def transcribe(
+        self,
+        audio_path: Path,
+        *,
+        languages: list[str] | None = None,
+    ) -> dict[str, Any]:
         if not self.enabled:
             raise RuntimeError("DEEPGRAM_API_KEY not configured")
         size = audio_path.stat().st_size
@@ -137,13 +142,18 @@ class DeepgramClient:
         if size == 0:
             raise RuntimeError("Audio file is empty")
 
-        params = {
+        from meetops_api.ai.languages import deepgram_language_param
+
+        params: dict[str, str] = {
             "model": self.model,
             "smart_format": "true",
             "punctuate": "true",
             "utterances": "true",
             "diarize_model": self.diarize_model,
         }
+        language = deepgram_language_param(languages)
+        if language:
+            params["language"] = language
         headers = {
             "Authorization": f"Token {self.api_key}",
             "Content-Type": _audio_content_type(audio_path),

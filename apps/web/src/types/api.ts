@@ -40,6 +40,7 @@ export interface Settings {
   bot_display_name: string | null;
   notify_email_on_notes_ready: boolean;
   notify_email_on_recording_failed: boolean;
+  languages: string[];
 }
 
 export interface CalendarConnection {

@@ -119,6 +119,9 @@ class UserSettings(Base):
     notify_email_on_recording_failed: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True
     )
+    languages_json: Mapped[Any] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[\"en\"]'::jsonb")
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )

@@ -80,7 +80,12 @@ class OpenAIClient:
             return ["verbose_json", "json"]
         return ["json"]
 
-    async def transcribe(self, audio_path: Path) -> dict[str, Any]:
+    async def transcribe(
+        self,
+        audio_path: Path,
+        *,
+        languages: list[str] | None = None,
+    ) -> dict[str, Any]:
         if not self.enabled:
             raise RuntimeError("OPENAI_API_KEY not configured")
         size = audio_path.stat().st_size
@@ -90,16 +95,21 @@ class OpenAIClient:
             )
         if size == 0:
             raise RuntimeError("Audio file is empty")
+        from meetops_api.ai.languages import openai_transcription_language
+
         content_type = _audio_content_type(audio_path)
+        language = openai_transcription_language(languages)
         async with httpx.AsyncClient(timeout=300) as client:
             last_error = ""
             for response_format in self._transcribe_formats():
                 with audio_path.open("rb") as f:
                     files = {"file": (audio_path.name, f, content_type)}
-                    data = {
+                    data: dict[str, str] = {
                         "model": self.transcribe_model,
                         "response_format": response_format,
                     }
+                    if language:
+                        data["language"] = language
                     resp = await client.post(
                         f"{self.base_url}/audio/transcriptions",
                         headers=self._headers(),
@@ -133,13 +143,19 @@ class OpenAIClient:
         raw_text: str,
         segments: list[dict[str, Any]] | None,
         timeline: list[dict[str, Any]] | None,
+        languages: list[str] | None = None,
     ) -> CleanedTranscript:
+        from meetops_api.ai.languages import language_prompt_hint
+
         prompt = {
             "raw_text": _truncate(raw_text or "", 12_000),
             "segments": _truncate(json.dumps(segments or [])[:4000], 4000),
             "active_speaker_timeline": _truncate(json.dumps(timeline or [])[:4000], 4000),
+            "languages": languages or [],
+            "language_hint": language_prompt_hint(languages),
             "instructions": (
                 "Clean the transcript, attribute speakers using the timeline when possible. "
+                "Preserve wording in the expected languages when provided. "
                 "Return JSON: {cleaned_text: string, speaker_turns: [{speaker, text, start, end}]}"
             ),
         }
@@ -154,12 +170,19 @@ class OpenAIClient:
         *,
         cleaned_text: str,
         title: str | None = None,
+        languages: list[str] | None = None,
     ) -> NotesDraft:
+        from meetops_api.ai.languages import language_prompt_hint
+
         prompt = {
             "title": title or "Meeting",
             "transcript": _truncate(cleaned_text or "", 14_000),
+            "languages": languages or [],
+            "language_hint": language_prompt_hint(languages),
             "instructions": (
-                "Produce meeting notes. Return JSON: "
+                "Produce meeting notes. Write the TL;DR and summary in the primary expected "
+                "language when provided (first in languages), keeping proper nouns intact. "
+                "Return JSON: "
                 "{tldr: string, summary_md: string, action_items: [{text, owner, due}]}"
             ),
         }

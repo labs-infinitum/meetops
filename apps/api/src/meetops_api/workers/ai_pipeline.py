@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from meetops_api.ai.deepgram_client import DeepgramClient
+from meetops_api.ai.languages import DEFAULT_LANGUAGES, normalize_languages
 from meetops_api.ai.openai_client import CleanedTranscript, OpenAIClient
 from meetops_api.ai.speaker_attribution import (
     extract_diarized_utterances,
@@ -32,6 +33,7 @@ from meetops_common.models import (
     MeetingTimelineEvent,
     Summary,
     Transcript,
+    UserSettings,
 )
 from meetops_common.settings import Settings
 
@@ -86,6 +88,22 @@ class AIPipeline:
         if self.ai.enabled:
             return "openai"
         raise RuntimeError("No transcription provider configured (set DEEPGRAM_API_KEY or OPENAI_API_KEY)")
+
+    async def _languages_for_bot_run(self, bot_run_id: int | None) -> list[str]:
+        if bot_run_id is None:
+            return list(DEFAULT_LANGUAGES)
+        async with self.session_factory() as session:
+            run = await session.get(BotRun, bot_run_id)
+            if run is None:
+                return list(DEFAULT_LANGUAGES)
+            settings_row = await session.get(UserSettings, run.user_id)
+            await session.commit()
+        if settings_row is None:
+            return list(DEFAULT_LANGUAGES)
+        try:
+            return normalize_languages(settings_row.languages_json)
+        except ValueError:
+            return list(DEFAULT_LANGUAGES)
 
     async def tick(self) -> None:
         global _warned_idle
@@ -142,6 +160,8 @@ class AIPipeline:
         if not path_key:
             raise RuntimeError("No recording path for transcription")
 
+        languages = await self._languages_for_bot_run(bot_run_id)
+
         with tempfile.TemporaryDirectory() as tmp:
             dest = Path(tmp) / "audio.webm"
             if Path(path_key).exists():
@@ -155,9 +175,9 @@ class AIPipeline:
 
             provider = self._select_transcriber()
             if provider == "deepgram":
-                result = await self.deepgram.transcribe(dest)
+                result = await self.deepgram.transcribe(dest, languages=languages)
             else:
-                result = await self.ai.transcribe(dest)
+                result = await self.ai.transcribe(dest, languages=languages)
 
         async with self.session_factory() as session:
             if await is_job_cancelled(session, job_id):
@@ -228,6 +248,7 @@ class AIPipeline:
             ]
             await session.commit()
 
+        languages = await self._languages_for_bot_run(brid)
         diarized = extract_diarized_utterances(segments)
         if diarized is not None:
             speaker_turns = map_diarized_speakers(diarized, timeline)
@@ -244,6 +265,7 @@ class AIPipeline:
                 raw_text=raw,
                 segments=segments if isinstance(segments, list) else None,
                 timeline=timeline,
+                languages=languages,
             )
 
         async with self.session_factory() as session:
@@ -295,7 +317,10 @@ class AIPipeline:
                 title = meeting.title if meeting else None
             await session.commit()
 
-        notes = await self.ai.generate_notes(cleaned_text=text, title=title)
+        languages = await self._languages_for_bot_run(brid)
+        notes = await self.ai.generate_notes(
+            cleaned_text=text, title=title, languages=languages
+        )
 
         async with self.session_factory() as session:
             if await is_job_cancelled(session, job_id):

@@ -3,6 +3,7 @@ import { Loader2 } from "lucide-react";
 import { Alert } from "@/components/Alert";
 import { PageLoader } from "@/components/Spinner";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -16,7 +17,39 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { ApiError, api } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import type { Settings } from "@/types/api";
+
+const LANGUAGE_OPTIONS: { code: string; label: string }[] = [
+  { code: "en", label: "English" },
+  { code: "es", label: "Spanish" },
+  { code: "fr", label: "French" },
+  { code: "de", label: "German" },
+  { code: "it", label: "Italian" },
+  { code: "pt", label: "Portuguese" },
+  { code: "nl", label: "Dutch" },
+  { code: "pl", label: "Polish" },
+  { code: "uk", label: "Ukrainian" },
+  { code: "ru", label: "Russian" },
+  { code: "hi", label: "Hindi" },
+  { code: "ja", label: "Japanese" },
+  { code: "ko", label: "Korean" },
+  { code: "zh", label: "Chinese" },
+  { code: "ar", label: "Arabic" },
+  { code: "tr", label: "Turkish" },
+  { code: "sv", label: "Swedish" },
+  { code: "da", label: "Danish" },
+  { code: "no", label: "Norwegian" },
+  { code: "fi", label: "Finnish" },
+  { code: "cs", label: "Czech" },
+  { code: "el", label: "Greek" },
+  { code: "he", label: "Hebrew" },
+  { code: "th", label: "Thai" },
+  { code: "vi", label: "Vietnamese" },
+  { code: "id", label: "Indonesian" },
+  { code: "ro", label: "Romanian" },
+  { code: "hu", label: "Hungarian" },
+];
 
 export function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -91,6 +124,23 @@ export function SettingsPage() {
     }
   }
 
+  async function saveLanguages(languages: string[]) {
+    setSaving("languages");
+    setMessage(null);
+    try {
+      const updated = await api.patch<Settings>("/settings/languages", { languages });
+      setSettings(updated);
+      setMessage({ type: "success", text: "Language settings updated." });
+    } catch (err) {
+      setMessage({
+        type: "error",
+        text: err instanceof ApiError ? err.message : "Failed to save.",
+      });
+    } finally {
+      setSaving(null);
+    }
+  }
+
   if (loading || !settings) return <PageLoader />;
 
   return (
@@ -115,6 +165,12 @@ export function SettingsPage() {
           settings={settings}
           saving={saving === "recording"}
           onSave={(data) => void saveRecording(data)}
+        />
+
+        <LanguagesSection
+          settings={settings}
+          saving={saving === "languages"}
+          onSave={(languages) => void saveLanguages(languages)}
         />
 
         <NotificationsSection
@@ -327,6 +383,88 @@ function NotificationsSection({
           <Button type="submit" size="sm" disabled={saving}>
             {saving && <Loader2 className="animate-spin" />}
             Save notification settings
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+function LanguagesSection({
+  settings,
+  saving,
+  onSave,
+}: {
+  settings: Settings;
+  saving: boolean;
+  onSave: (languages: string[]) => void;
+}) {
+  const [selected, setSelected] = useState<string[]>(settings.languages ?? ["en"]);
+
+  useEffect(() => {
+    setSelected(settings.languages?.length ? settings.languages : ["en"]);
+  }, [settings.languages]);
+
+  function toggle(code: string) {
+    setSelected((prev) => {
+      if (prev.includes(code)) {
+        const next = prev.filter((c) => c !== code);
+        return next.length === 0 ? prev : next;
+      }
+      if (prev.length >= 8) return prev;
+      return [...prev, code];
+    });
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Languages</CardTitle>
+        <CardDescription>
+          Languages spoken in your meetings. Used to improve transcription accuracy and notes.
+          Select one for a fixed language, or several for multilingual meetings.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            onSave(selected);
+          }}
+          className="space-y-4"
+        >
+          <div className="flex flex-wrap gap-2">
+            {LANGUAGE_OPTIONS.map((opt) => {
+              const active = selected.includes(opt.code);
+              return (
+                <button
+                  key={opt.code}
+                  type="button"
+                  onClick={() => toggle(opt.code)}
+                  className="rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-pressed={active}
+                >
+                  <Badge
+                    variant={active ? "default" : "outline"}
+                    className={cn(
+                      "h-7 cursor-pointer px-2.5 text-xs",
+                      !active && "bg-background",
+                    )}
+                  >
+                    {opt.label}
+                  </Badge>
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-muted-foreground text-xs">
+            {selected.length === 1
+              ? "Transcription will target this language."
+              : "Transcription will use multilingual mode; notes prefer the first selected language."}
+          </p>
+          <Button type="submit" size="sm" disabled={saving}>
+            {saving && <Loader2 className="animate-spin" />}
+            Save languages
           </Button>
         </form>
       </CardContent>
