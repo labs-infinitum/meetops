@@ -30,10 +30,11 @@ def timeline_to_intervals(
         if not name:
             continue
         start = float(event.get("relative_ms") or 0) / 1000.0
-        if i + 1 < len(events):
-            end = float(events[i + 1].get("relative_ms") or 0) / 1000.0
-        else:
-            end = float("inf")
+        end = (
+            float(events[i + 1].get("relative_ms") or 0) / 1000.0
+            if i + 1 < len(events)
+            else float("inf")
+        )
         if end < start:
             end = start
         intervals.append((start, end, name))
