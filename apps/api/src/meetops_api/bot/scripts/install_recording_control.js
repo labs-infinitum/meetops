@@ -353,7 +353,48 @@ async function() {
     return false;
   }
 
-  /** Active speaker from Meet tile visual state. Meet exposes at most one tile with this effect. */
+  function gmrTileHasSpeakingBorder(tile) {
+    const style = getComputedStyle(tile);
+    const outline = `${style.outlineColor || ''} ${style.boxShadow || ''} ${style.borderColor || ''}`;
+    // Meet speaking ring is typically a saturated blue/green glow or outline.
+    if (/rgb\(\s*(26|66|26)\s*,\s*(115|170|115)/i.test(outline)) {
+      return true;
+    }
+    if (/rgba?\(\s*26\s*,\s*115\s*,\s*232/i.test(outline)) {
+      return true;
+    }
+    if (Number(style.outlineWidth || '0') >= 2 && style.outlineStyle !== 'none') {
+      return true;
+    }
+    return false;
+  }
+
+  function gmrTileHasSpeakingAria(tile) {
+    const labels = [
+      tile.getAttribute('aria-label') || '',
+      ...[...tile.querySelectorAll('[aria-label]')].map((el) => el.getAttribute('aria-label') || '')
+    ]
+      .join(' ')
+      .toLowerCase();
+    if (!labels) {
+      return false;
+    }
+    return (
+      labels.includes('speaking') ||
+      labels.includes('is talking') ||
+      labels.includes('currently speaking')
+    );
+  }
+
+  function gmrTileLooksLikeSpeaking(tile) {
+    return (
+      gmrTileHasVisibleSpeakingEffect(tile) ||
+      gmrTileHasSpeakingBorder(tile) ||
+      gmrTileHasSpeakingAria(tile)
+    );
+  }
+
+  /** Active speaker from Meet tile visual state. Prefer named roster matches. */
   function gmrExtractActiveSpeaker(participants) {
     const tileIds = [
       ...document.querySelectorAll('[data-participant-id][data-tile-media-id]')
@@ -361,15 +402,20 @@ async function() {
     for (const tileId of tileIds) {
       const id = tileId.getAttribute('data-participant-id');
       const tile = tileId.parentElement;
-      if (!id || !tile || !gmrTileHasVisibleSpeakingEffect(tile)) {
+      if (!id || !tile || !gmrTileLooksLikeSpeaking(tile)) {
         continue;
       }
       const participant = gmrFindParticipantById(participants, id);
-      if (participant) {
-        return { id: participant.id, name: participant.name, source: 'tile_visual_effect' };
+      const tileName = gmrTileName(tile);
+      const name = (participant && participant.name) || tileName;
+      if (!name) {
+        continue;
       }
-      const name = gmrTileName(tile);
-      return { id, name, source: 'tile_visual_effect' };
+      return {
+        id: (participant && participant.id) || id,
+        name,
+        source: participant ? 'tile_visual_effect' : 'tile_name_only'
+      };
     }
     return null;
   }
@@ -379,16 +425,22 @@ async function() {
       previousParticipants: new Map(),
       previousPresentations: new Map(),
       activeSpeakerId: null,
+      activeSpeakerName: null,
+      lastSampleAtMs: 0,
       snapshotCounter: 0
     };
     const makeEvent = (eventType, participant, payload) => {
       const nowMs = Date.now();
+      const name =
+        participant && participant.name
+          ? String(participant.name).trim()
+          : null;
       return {
         eventType,
         occurredAt: Math.floor(nowMs / 1000),
         relativeMs: Math.max(0, nowMs - recordingStartedAtMs),
         participantId: participant && participant.id ? String(participant.id) : null,
-        participantName: participant && participant.name ? String(participant.name) : null,
+        participantName: name || null,
         payload: payload || {}
       };
     };
@@ -415,10 +467,29 @@ async function() {
           const { people } = gmrParseMeetRoster();
           const activeSpeaker = gmrExtractActiveSpeaker(people);
           const activeSpeakerId = activeSpeaker ? activeSpeaker.id : null;
+          const nowMs = Date.now();
           if (activeSpeakerId && activeSpeakerId !== state.activeSpeakerId) {
-            events.push(makeEvent('active_speaker_changed', activeSpeaker, { source: activeSpeaker.source }));
+            events.push(
+              makeEvent('active_speaker_changed', activeSpeaker, {
+                source: activeSpeaker.source
+              })
+            );
+            state.lastSampleAtMs = nowMs;
+          } else if (
+            activeSpeakerId &&
+            activeSpeaker.name &&
+            nowMs - state.lastSampleAtMs >= 1000
+          ) {
+            // Dense samples while the same person keeps speaking (helps overlap mapping).
+            events.push(
+              makeEvent('active_speaker_sample', activeSpeaker, {
+                source: activeSpeaker.source
+              })
+            );
+            state.lastSampleAtMs = nowMs;
           }
           state.activeSpeakerId = activeSpeakerId;
+          state.activeSpeakerName = activeSpeaker ? activeSpeaker.name : null;
         } catch (error) {
           events.push(makeEvent('collector_warning', null, {
             message: String(error && error.message ? error.message : error)
@@ -449,7 +520,8 @@ async function() {
                 presenterParticipantId: presentation.presenterParticipantId || null,
                 source: presentation.source
               })),
-              activeSpeakerId: state.activeSpeakerId
+              activeSpeakerId: state.activeSpeakerId,
+              activeSpeakerName: state.activeSpeakerName
             }));
           }
         } catch (error) {
@@ -695,7 +767,7 @@ async function() {
     gmrSendTimelineEvents(window.__gmrTimelineCollector.collectActiveSpeaker());
     window.__gmrActiveSpeakerInterval = window.setInterval(() => {
       gmrSendTimelineEvents(window.__gmrTimelineCollector.collectActiveSpeaker());
-    }, 1000);
+    }, 300);
     window.__gmrTimelineInterval = window.setInterval(() => {
       gmrSendTimelineEvents(window.__gmrTimelineCollector.collect());
     }, 5000);

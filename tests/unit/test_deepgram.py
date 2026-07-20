@@ -109,7 +109,8 @@ def test_map_diarized_speakers_uses_timeline_overlap() -> None:
         {"relative_ms": 2400, "participant_name": "Blake"},
         {"relative_ms": 4300, "participant_name": "Alex"},
     ]
-    turns = map_diarized_speakers(utterances, timeline)
+    result = map_diarized_speakers(utterances, timeline)
+    turns = result.turns
     assert [t["speaker"] for t in turns] == ["Alex", "Blake", "Alex"]
     assert turns[0]["speaker_id"] == 0
     text = format_speaker_transcript(turns)
@@ -122,7 +123,8 @@ def test_map_diarized_speakers_fallback_labels() -> None:
         {"speaker": 0, "text": "Hello", "start": 0.0, "end": 1.0},
         {"speaker": 2, "text": "World", "start": 1.0, "end": 2.0},
     ]
-    turns = map_diarized_speakers(utterances, timeline=None)
+    result = map_diarized_speakers(utterances, timeline=None)
+    turns = result.turns
     assert turns[0]["speaker"] == "Speaker 0"
     assert turns[1]["speaker"] == "Speaker 2"
 
@@ -132,7 +134,8 @@ def test_timeline_to_intervals() -> None:
         [
             {"relative_ms": 1000, "participant_name": "A"},
             {"relative_ms": 3000, "participant_name": "B"},
-        ]
+        ],
+        lag_seconds=0.0,
     )
     assert intervals[0] == (1.0, 3.0, "A")
     assert intervals[1][0] == 3.0

@@ -72,6 +72,8 @@ function eventTitle(event: TimelineEvent): string {
       return `${event.participant_name || "Someone"} stopped presenting`;
     case "active_speaker_changed":
       return `${event.participant_name || "Unknown speaker"} started speaking`;
+    case "active_speaker_sample":
+      return `${event.participant_name || "Unknown speaker"} speaking`;
     case "participant_snapshot": {
       const count = snapshotParticipantCount(event.payload_json);
       return count === undefined ? "Participant snapshot" : `${count} participants in meeting`;
@@ -94,6 +96,7 @@ function eventIcon(eventType: string): LucideIcon {
     case "screen_share_stopped":
       return MonitorOff;
     case "active_speaker_changed":
+    case "active_speaker_sample":
       return Mic2;
     default:
       return Users;
@@ -101,10 +104,12 @@ function eventIcon(eventType: string): LucideIcon {
 }
 
 function timelineEventsToShow(events: TimelineEvent[]): TimelineEvent[] {
-  const withoutFrequentSnapshots = events.filter(
-    (event) => event.event_type !== "participant_snapshot",
+  const withoutNoise = events.filter(
+    (event) =>
+      event.event_type !== "participant_snapshot" &&
+      event.event_type !== "active_speaker_sample",
   );
-  return (withoutFrequentSnapshots.length > 0 ? withoutFrequentSnapshots : events).slice(0, 100);
+  return (withoutNoise.length > 0 ? withoutNoise : events).slice(0, 100);
 }
 
 function latestActiveSpeakerEvent(events: TimelineEvent[]): TimelineEvent | undefined {

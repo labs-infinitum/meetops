@@ -154,10 +154,16 @@ class OpenAIClient:
             "languages": languages or [],
             "language_hint": language_prompt_hint(languages),
             "instructions": (
-                "Clean the transcript, attribute speakers using the timeline when possible. "
+                "Clean the transcript, attribute speakers using the timeline and roster when possible. "
+                "Prefer roster display names over Speakers N. "
                 "Preserve wording in the expected languages when provided. "
                 "Return JSON: {cleaned_text: string, speaker_turns: [{speaker, text, start, end}]}"
             ),
+            "roster": [
+                e.get("participant_name")
+                for e in (timeline or [])
+                if isinstance(e.get("participant_name"), str) and e.get("participant_name")
+            ],
         }
         data = await self._chat_json(
             system="You clean meeting transcripts. Respond with JSON only.",
@@ -191,6 +197,55 @@ class OpenAIClient:
             user=json.dumps(prompt),
         )
         return NotesDraft.model_validate(data)
+
+    async def rename_speakers(
+        self,
+        *,
+        turns: list[dict[str, Any]],
+        roster: list[str],
+        timeline: list[dict[str, Any]] | None = None,
+        languages: list[str] | None = None,
+    ) -> dict[str, str]:
+        """Map anonymous Speaker N ids onto roster display names via LLM."""
+        from meetops_api.ai.languages import language_prompt_hint
+
+        compact_turns = [
+            {
+                "speaker_id": t.get("speaker_id"),
+                "speaker": t.get("speaker"),
+                "text": _truncate(str(t.get("text") or ""), 240),
+                "start": t.get("start"),
+                "end": t.get("end"),
+            }
+            for t in turns[:80]
+        ]
+        prompt = {
+            "roster": roster,
+            "turns": compact_turns,
+            "timeline_hint": _truncate(json.dumps(timeline or [])[:3000], 3000),
+            "language_hint": language_prompt_hint(languages),
+            "instructions": (
+                "Assign each numeric speaker_id to a display name from roster when confident. "
+                "Do not invent names outside roster. Omit speaker_ids you cannot map. "
+                "Return JSON: {renames: {\"0\": \"Name\", \"1\": \"Name\"}}"
+            ),
+        }
+        data = await self._chat_json(
+            system=(
+                "You map diarized speaker ids to meeting participant names. "
+                "Respond with JSON only."
+            ),
+            user=json.dumps(prompt),
+        )
+        renames = data.get("renames") if isinstance(data, dict) else None
+        if not isinstance(renames, dict):
+            return {}
+        out: dict[str, str] = {}
+        for key, value in renames.items():
+            if value is None:
+                continue
+            out[str(key)] = str(value).strip()
+        return out
 
     async def _chat_json(self, *, system: str, user: str) -> dict[str, Any]:
         if not self.enabled:

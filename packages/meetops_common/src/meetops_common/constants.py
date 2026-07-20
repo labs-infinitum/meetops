@@ -32,6 +32,7 @@ TIMELINE_EVENT_TYPES = (
     "screen_share_started",
     "screen_share_stopped",
     "active_speaker_changed",
+    "active_speaker_sample",
     "participant_snapshot",
     "collector_warning",
 )

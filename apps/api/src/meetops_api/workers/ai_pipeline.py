@@ -14,7 +14,9 @@ from meetops_api.ai.deepgram_client import DeepgramClient
 from meetops_api.ai.languages import DEFAULT_LANGUAGES, normalize_languages
 from meetops_api.ai.openai_client import CleanedTranscript, OpenAIClient
 from meetops_api.ai.speaker_attribution import (
+    apply_speaker_renames,
     extract_diarized_utterances,
+    extract_roster_names,
     format_speaker_transcript,
     map_diarized_speakers,
 )
@@ -234,7 +236,14 @@ class AIPipeline:
             events = await session.scalars(
                 select(MeetingTimelineEvent).where(
                     MeetingTimelineEvent.bot_run_id == brid,
-                    MeetingTimelineEvent.event_type == "active_speaker_changed",
+                    MeetingTimelineEvent.event_type.in_(
+                        (
+                            "active_speaker_changed",
+                            "active_speaker_sample",
+                            "participant_snapshot",
+                            "participant_joined",
+                        )
+                    ),
                 )
             )
             timeline = [
@@ -251,7 +260,34 @@ class AIPipeline:
         languages = await self._languages_for_bot_run(brid)
         diarized = extract_diarized_utterances(segments)
         if diarized is not None:
-            speaker_turns = map_diarized_speakers(diarized, timeline)
+            attribution = map_diarized_speakers(diarized, timeline)
+            speaker_turns = attribution.turns
+            roster = attribution.roster or extract_roster_names(timeline)
+            if attribution.needs_llm_fallback and self.ai.enabled and roster:
+                try:
+                    renames = await self.ai.rename_speakers(
+                        turns=speaker_turns,
+                        roster=roster,
+                        timeline=timeline,
+                        languages=languages,
+                    )
+                    if renames:
+                        speaker_turns = apply_speaker_renames(
+                            speaker_turns, renames, roster=roster
+                        )
+                        attribution.method = "overlap+llm"
+                except Exception:
+                    logger.exception(
+                        "speaker rename fallback failed bot_run=%s", brid
+                    )
+            logger.info(
+                "speaker attribution bot_run=%s mapped=%s unmapped=%s method=%s roster=%s",
+                brid,
+                attribution.mapped,
+                attribution.unmapped,
+                attribution.method,
+                len(roster),
+            )
             cleaned = CleanedTranscript(
                 cleaned_text=format_speaker_transcript(speaker_turns),
                 speaker_turns=speaker_turns,
