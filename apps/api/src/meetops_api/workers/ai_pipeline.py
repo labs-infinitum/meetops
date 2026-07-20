@@ -10,7 +10,13 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from meetops_api.ai.openai_client import OpenAIClient
+from meetops_api.ai.deepgram_client import DeepgramClient
+from meetops_api.ai.openai_client import CleanedTranscript, OpenAIClient
+from meetops_api.ai.speaker_attribution import (
+    extract_diarized_utterances,
+    format_speaker_transcript,
+    map_diarized_speakers,
+)
 from meetops_api.services.jobs import claim_next_job, complete_job, enqueue_job, fail_job
 from meetops_api.storage.s3 import S3Storage
 from meetops_common.models import (
@@ -25,7 +31,7 @@ from meetops_common.settings import Settings
 
 logger = logging.getLogger(__name__)
 
-_warned_no_key = False
+_warned_idle = False
 
 
 def _utcnow() -> datetime:
@@ -43,13 +49,46 @@ class AIPipeline:
         self.session_factory = session_factory
         self.worker_id = worker_id
         self.ai = OpenAIClient(settings)
+        self.deepgram = DeepgramClient(settings)
+
+    @property
+    def transcription_enabled(self) -> bool:
+        provider = self.settings.meetops_transcribe_provider
+        if provider == "deepgram":
+            return self.deepgram.enabled
+        if provider == "openai":
+            return self.ai.enabled
+        return self.deepgram.enabled or self.ai.enabled
+
+    @property
+    def pipeline_enabled(self) -> bool:
+        # Notes still need OpenAI; transcription can be Deepgram-only for diarized clean.
+        return self.transcription_enabled or self.ai.enabled
+
+    def _select_transcriber(self) -> str:
+        provider = self.settings.meetops_transcribe_provider
+        if provider == "deepgram":
+            if not self.deepgram.enabled:
+                raise RuntimeError("MEETOPS_TRANSCRIBE_PROVIDER=deepgram but DEEPGRAM_API_KEY unset")
+            return "deepgram"
+        if provider == "openai":
+            if not self.ai.enabled:
+                raise RuntimeError("MEETOPS_TRANSCRIBE_PROVIDER=openai but OPENAI_API_KEY unset")
+            return "openai"
+        if self.deepgram.enabled:
+            return "deepgram"
+        if self.ai.enabled:
+            return "openai"
+        raise RuntimeError("No transcription provider configured (set DEEPGRAM_API_KEY or OPENAI_API_KEY)")
 
     async def tick(self) -> None:
-        global _warned_no_key
-        if not self.ai.enabled:
-            if not _warned_no_key:
-                logger.warning("OPENAI_API_KEY missing; AI pipeline idle")
-                _warned_no_key = True
+        global _warned_idle
+        if not self.pipeline_enabled:
+            if not _warned_idle:
+                logger.warning(
+                    "No DEEPGRAM_API_KEY / OPENAI_API_KEY; AI pipeline idle"
+                )
+                _warned_idle = True
             return
 
         async with self.session_factory() as session:
@@ -75,7 +114,6 @@ class AIPipeline:
         except Exception as exc:
             logger.exception("AI job failed id=%s kind=%s", job_id, kind)
             async with self.session_factory() as session:
-                job = await session.get(type(job), job_id) if False else None
                 from meetops_common.models import Job
 
                 job = await session.get(Job, job_id)
@@ -109,7 +147,11 @@ class AIPipeline:
             else:
                 raise RuntimeError("Cannot locate recording for transcription")
 
-            result = await self.ai.transcribe(dest)
+            provider = self._select_transcriber()
+            if provider == "deepgram":
+                result = await self.deepgram.transcribe(dest)
+            else:
+                result = await self.ai.transcribe(dest)
 
         async with self.session_factory() as session:
             transcript = await session.scalar(
@@ -133,6 +175,11 @@ class AIPipeline:
             if job:
                 await complete_job(session, job)
             await session.commit()
+            logger.info(
+                "transcribed bot_run=%s provider=%s",
+                bot_run_id,
+                provider,
+            )
 
     async def _clean(
         self, job_id: int, transcript_id: int | None, bot_run_id: int | None
@@ -171,9 +218,23 @@ class AIPipeline:
             ]
             await session.commit()
 
-        cleaned = await self.ai.clean_transcript(
-            raw_text=raw, segments=segments if isinstance(segments, list) else None, timeline=timeline
-        )
+        diarized = extract_diarized_utterances(segments)
+        if diarized is not None:
+            speaker_turns = map_diarized_speakers(diarized, timeline)
+            cleaned = CleanedTranscript(
+                cleaned_text=format_speaker_transcript(speaker_turns),
+                speaker_turns=speaker_turns,
+            )
+        else:
+            if not self.ai.enabled:
+                raise RuntimeError(
+                    "Non-diarized transcript requires OPENAI_API_KEY for clean_transcript"
+                )
+            cleaned = await self.ai.clean_transcript(
+                raw_text=raw,
+                segments=segments if isinstance(segments, list) else None,
+                timeline=timeline,
+            )
 
         async with self.session_factory() as session:
             transcript = await session.get(Transcript, tid)
@@ -196,6 +257,9 @@ class AIPipeline:
         self, job_id: int, transcript_id: int | None, bot_run_id: int | None
     ) -> None:
         from meetops_common.models import Job
+
+        if not self.ai.enabled:
+            raise RuntimeError("OPENAI_API_KEY required for generate_meeting_notes")
 
         async with self.session_factory() as session:
             if transcript_id:

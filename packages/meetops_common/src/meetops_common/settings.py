@@ -113,11 +113,20 @@ class Settings(BaseSettings):
     meetops_bot_window_height: int = 1080
     meetops_use_tab_capture_auto_accept: bool = False
 
-    # AI (OpenAI)
+    # AI (OpenAI) — notes / LLM cleanup; also Whisper fallback when Deepgram unset
     openai_api_key: str | None = None
     openai_base_url: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-4.1-mini"
     openai_transcribe_model: str = "whisper-1"
+
+    # Transcription provider: auto prefers Deepgram when DEEPGRAM_API_KEY is set
+    meetops_transcribe_provider: Literal["auto", "deepgram", "openai"] = "auto"
+
+    # Deepgram (preferred for speaker-diarized transcripts)
+    deepgram_api_key: str | None = None
+    deepgram_base_url: str = "https://api.deepgram.com/v1"
+    deepgram_model: str = "nova-3"
+    deepgram_diarize_model: str = "latest"
 
     # Observability
     meetops_log_level: str = "INFO"

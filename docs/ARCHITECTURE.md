@@ -39,4 +39,8 @@ Opaque session tokens in DB; cookie stores only the token. Argon2id passwords. G
 
 ## AI pipeline
 
-`transcribe_recording` → `clean_transcript` → `generate_meeting_notes` via DB jobs (`FOR UPDATE SKIP LOCKED`). Uses **OpenAI** (`/v1` audio transcriptions + chat completions). Action items stored in first-class `action_items` table.
+`transcribe_recording` → `clean_transcript` → `generate_meeting_notes` via DB jobs (`FOR UPDATE SKIP LOCKED`).
+
+- **Transcription:** Deepgram (`nova-3` + `diarize_model`) when `DEEPGRAM_API_KEY` is set (`MEETOPS_TRANSCRIBE_PROVIDER=auto|deepgram|openai`); otherwise OpenAI Whisper.
+- **Speaker segregation:** Deepgram utterances are mapped onto Meet `active_speaker_changed` timeline names (overlap), then formatted as `Name: …` turns. Non-diarized (Whisper) paths still use an LLM to attribute speakers from the timeline.
+- **Notes:** OpenAI chat completions. Action items stored in first-class `action_items` table.
