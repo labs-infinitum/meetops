@@ -17,7 +17,13 @@ from meetops_api.ai.speaker_attribution import (
     format_speaker_transcript,
     map_diarized_speakers,
 )
-from meetops_api.services.jobs import claim_next_job, complete_job, enqueue_job, fail_job
+from meetops_api.services.jobs import (
+    claim_next_job,
+    complete_job,
+    enqueue_job,
+    fail_job,
+    is_job_cancelled,
+)
 from meetops_api.storage.s3 import S3Storage
 from meetops_common.models import (
     ActionItem,
@@ -117,7 +123,7 @@ class AIPipeline:
                 from meetops_common.models import Job
 
                 job = await session.get(Job, job_id)
-                if job:
+                if job and job.status != "cancelled":
                     await fail_job(session, job, str(exc))
                 await session.commit()
 
@@ -154,6 +160,10 @@ class AIPipeline:
                 result = await self.ai.transcribe(dest)
 
         async with self.session_factory() as session:
+            if await is_job_cancelled(session, job_id):
+                await session.commit()
+                logger.info("transcribe abandoned (cancelled) bot_run=%s", bot_run_id)
+                return
             transcript = await session.scalar(
                 select(Transcript).where(Transcript.bot_run_id == bot_run_id)
             )
@@ -237,6 +247,10 @@ class AIPipeline:
             )
 
         async with self.session_factory() as session:
+            if await is_job_cancelled(session, job_id):
+                await session.commit()
+                logger.info("clean abandoned (cancelled) transcript=%s", tid)
+                return
             transcript = await session.get(Transcript, tid)
             if transcript:
                 transcript.cleaned_text = cleaned.cleaned_text
@@ -284,6 +298,10 @@ class AIPipeline:
         notes = await self.ai.generate_notes(cleaned_text=text, title=title)
 
         async with self.session_factory() as session:
+            if await is_job_cancelled(session, job_id):
+                await session.commit()
+                logger.info("notes abandoned (cancelled) transcript=%s", tid)
+                return
             summary = await session.scalar(
                 select(Summary).where(Summary.transcript_id == tid)
             )

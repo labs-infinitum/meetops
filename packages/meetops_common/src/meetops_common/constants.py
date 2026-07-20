@@ -21,7 +21,7 @@ JOB_KINDS = (
     "generate_meeting_notes",
 )
 
-JOB_STATUSES = ("queued", "running", "completed", "failed")
+JOB_STATUSES = ("queued", "running", "completed", "failed", "cancelled")
 
 TRANSCRIPT_STATUSES = ("processing", "transcribed", "cleaned", "failed")
 SUMMARY_STATUSES = ("processing", "completed", "failed")

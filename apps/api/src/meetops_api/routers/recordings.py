@@ -122,6 +122,33 @@ async def timeline(
 async def recording_ai(run_id: str, user: CurrentUser, db: DbSession) -> NoteOut | None:
     """Transcript + notes for a recording (null if AI pipeline has not started)."""
     run = await _get_owned_run(db, user.id, run_id)
+    return await _note_for_run(db, run)
+
+
+@router.post("/{run_id}/ai/rerun", response_model=NoteOut)
+async def rerun_recording_ai(run_id: str, user: CurrentUser, db: DbSession) -> NoteOut:
+    """Re-run transcribe → clean → notes for a completed recording."""
+    from meetops_api.services.jobs import requeue_ai_pipeline
+
+    run = await _get_owned_run(db, user.id, run_id)
+    if run.status != "completed":
+        raise AppError(
+            "not_ready",
+            "AI can only be re-run after the recording has completed",
+            409,
+        )
+    if not (run.audio_path or run.recording_path):
+        raise AppError("not_ready", "Recording media is not available", 409)
+
+    await requeue_ai_pipeline(db, run.id)
+    await db.flush()
+    note = await _note_for_run(db, run)
+    if note is None:
+        raise AppError("internal_error", "Failed to start AI pipeline", 500)
+    return note
+
+
+async def _note_for_run(db: DbSession, run: BotRun) -> NoteOut | None:
     transcript = await db.scalar(select(Transcript).where(Transcript.bot_run_id == run.id))
     if transcript is None:
         return None

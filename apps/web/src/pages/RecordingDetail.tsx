@@ -11,6 +11,7 @@ import {
   Mic2,
   MonitorOff,
   MonitorUp,
+  RefreshCw,
   Sparkles,
   Square,
   Users,
@@ -127,6 +128,16 @@ function aiStatusVariant(status?: string | null): "default" | "secondary" | "des
   }
 }
 
+function isAiBusy(note: Note | null): boolean {
+  if (!note) return false;
+  const transcript = note.transcript_status;
+  const summary = note.summary_status;
+  if (transcript === "failed" || summary === "failed") return false;
+  if (transcript === "processing" || transcript === "transcribed") return true;
+  if (transcript === "cleaned" && summary !== "completed") return true;
+  return summary === "processing";
+}
+
 function renderMarkdownLite(markdown: string) {
   return markdown.split("\n").map((line, i) => {
     if (line.startsWith("## ")) {
@@ -193,9 +204,12 @@ export function RecordingDetailPage() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const [rerunningAi, setRerunningAi] = useState(false);
   const [error, setError] = useState("");
 
   const isActive = run ? isActiveStatus(run.status) : false;
+  const aiBusy = isAiBusy(generatedNote);
+  const canRerunAi = Boolean(run?.status === "completed" && run.recording_path);
   const activeSpeakerEvent = latestActiveSpeakerEvent(timelineEvents);
   const noteLink = generatedNote
     ? `/app/notes/${generatedNote.transcript_id}`
@@ -225,14 +239,14 @@ export function RecordingDetailPage() {
   }, [id, refresh]);
 
   useEffect(() => {
-    if (!id || !isActive) return;
+    if (!id || (!isActive && !aiBusy)) return;
     const interval = window.setInterval(() => {
       void refresh().catch(() => {
         /* keep last good state while polling */
       });
     }, 3000);
     return () => window.clearInterval(interval);
-  }, [id, isActive, refresh]);
+  }, [id, isActive, aiBusy, refresh]);
 
   async function stopRecording() {
     if (!run) return;
@@ -247,6 +261,24 @@ export function RecordingDetailPage() {
       toast.error(message);
     } finally {
       setStopping(false);
+    }
+  }
+
+  async function rerunAi() {
+    if (!run) return;
+    setRerunningAi(true);
+    setError("");
+    try {
+      const note = await api.post<Note>(`/recordings/${run.id}/ai/rerun`);
+      setGeneratedNote(note);
+      toast.success("AI pipeline queued — transcript and notes will refresh shortly");
+      await refresh();
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Failed to re-run AI";
+      setError(message);
+      toast.error(message);
+    } finally {
+      setRerunningAi(false);
     }
   }
 
@@ -275,10 +307,24 @@ export function RecordingDetailPage() {
               {stopping ? <Loader2 className="animate-spin" /> : <Square className="size-4" />}
               Stop bot
             </Button>
-          ) : run.status === "completed" ? (
-            <Button asChild>
-              <Link to={noteLink}>View AI notes</Link>
-            </Button>
+          ) : canRerunAi ? (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={() => void rerunAi()}
+                disabled={rerunningAi || aiBusy}
+              >
+                {rerunningAi || aiBusy ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <RefreshCw className="size-4" />
+                )}
+                {aiBusy ? "AI running…" : "Re-run AI"}
+              </Button>
+              <Button asChild>
+                <Link to={noteLink}>View AI notes</Link>
+              </Button>
+            </div>
           ) : undefined
         }
       />
@@ -379,29 +425,53 @@ export function RecordingDetailPage() {
                 recording.
               </CardDescription>
             </div>
-            {generatedNote ? (
-              <div className="flex flex-wrap gap-1.5">
-                <Badge variant={aiStatusVariant(generatedNote.transcript_status)}>
-                  Transcript {generatedNote.transcript_status}
-                </Badge>
-                <Badge variant={aiStatusVariant(generatedNote.summary_status)}>
-                  Notes {generatedNote.summary_status || "pending"}
-                </Badge>
-              </div>
-            ) : (
-              <Badge variant="outline">Awaiting AI pipeline</Badge>
-            )}
+            <div className="flex flex-wrap items-center gap-2">
+              {generatedNote ? (
+                <div className="flex flex-wrap gap-1.5">
+                  <Badge variant={aiStatusVariant(generatedNote.transcript_status)}>
+                    Transcript {generatedNote.transcript_status}
+                  </Badge>
+                  <Badge variant={aiStatusVariant(generatedNote.summary_status)}>
+                    Notes {generatedNote.summary_status || "pending"}
+                  </Badge>
+                </div>
+              ) : (
+                <Badge variant="outline">Awaiting AI pipeline</Badge>
+              )}
+              {canRerunAi && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void rerunAi()}
+                  disabled={rerunningAi || aiBusy}
+                >
+                  {rerunningAi || aiBusy ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="size-3.5" />
+                  )}
+                  {aiBusy ? "Running…" : "Re-run AI"}
+                </Button>
+              )}
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
           {!generatedNote ? (
             <p className="text-muted-foreground text-sm">
               {run.status === "completed"
-                ? "The recording is complete, but transcript data has not been created yet."
+                ? "The recording is complete, but transcript data has not been created yet. Use Re-run AI to start the pipeline."
                 : "Transcript data will appear here once the recording completes and the AI pipeline starts."}
             </p>
           ) : (
             <>
+              {aiBusy && (
+                <div className="text-muted-foreground flex items-center gap-2 text-sm">
+                  <Loader2 className="size-4 animate-spin" />
+                  AI pipeline in progress — this page refreshes automatically.
+                </div>
+              )}
+
               {generatedNote.error && (
                 <div className="border-destructive/30 bg-destructive/5 flex gap-3 rounded-lg border p-3">
                   <AlertCircle className="text-destructive mt-0.5 size-4 shrink-0" />
