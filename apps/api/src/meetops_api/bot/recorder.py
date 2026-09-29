@@ -15,6 +15,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from meetops_api.bot.audio_health import AudioHealthTracker
 from meetops_api.bot.browser import BrowserSession, load_script
 from meetops_api.bot.slots import BotSlot
 from meetops_common.models import MeetingTimelineEvent
@@ -63,6 +64,7 @@ class MeetRecorder:
         self._audio_file = None
         self._started_at: datetime | None = None
         self._solo_since: datetime | None = None
+        self.audio_health = AudioHealthTracker()
 
     async def _set_status(self, status: str) -> None:
         if self.on_status:
@@ -88,6 +90,7 @@ class MeetRecorder:
             self._started_at = _utcnow()
             await self._recording_loop()
             await self._stop_recording()
+            await self._report_audio_health()
         finally:
             try:
                 await self.browser.stop()
@@ -284,6 +287,56 @@ class MeetRecorder:
         except Exception:
             allow_task.cancel()
             raise
+        await self._log_recording_status()
+
+    async def _log_recording_status(self) -> None:
+        """Log which audio source the page picked, once capture has started."""
+        status: Any = None
+        for _ in range(10):
+            try:
+                status = await self._eval_script("recording_runtime_status.js")
+            except Exception:
+                logger.debug("recording status probe failed", exc_info=True)
+            if isinstance(status, dict) and status.get("status") in ("recording", "failed"):
+                break
+            await asyncio.sleep(1)
+        if not isinstance(status, dict) or status.get("status") != "recording":
+            logger.warning("recording not confirmed run=%s status=%s", self.bot_run_id, status)
+            return
+        stream_info = status.get("streamInfo") or {}
+        mixer = stream_info.get("mixer") or {}
+        logger.info(
+            "recording started run=%s audioSource=%s activeBus=%s meetTracks=%s tabTracks=%s "
+            "videoTracks=%s mimeType=%s errors=%s",
+            self.bot_run_id,
+            status.get("audioSource"),
+            mixer.get("active"),
+            len(mixer.get("meetTracks") or []),
+            len(mixer.get("tabTracks") or []),
+            status.get("videoTrackCount"),
+            status.get("mimeType"),
+            status.get("uploadErrors") or [],
+        )
+
+    async def _report_audio_health(self) -> None:
+        summary = self.audio_health.summary()
+        if not self.audio_health.looks_silent():
+            logger.info("audio health summary run=%s %s", self.bot_run_id, summary)
+            return
+        logger.warning(
+            "recording audio looks silent run=%s %s last=%s",
+            self.bot_run_id,
+            summary,
+            self.audio_health.last,
+        )
+        await self._ingest_timeline(
+            [
+                {
+                    "eventType": "collector_warning",
+                    "payload": {"message": "audio_silent", **summary},
+                }
+            ]
+        )
 
     async def _accept_tab_capture_loop(self) -> None:
         from meetops_api.bot.tab_capture_allow import accept_tab_capture_loop
@@ -325,6 +378,16 @@ class MeetRecorder:
                 for fh in (self._chunk_file, getattr(self, "_audio_file", None)):
                     if fh:
                         fh.flush()
+            elif kind == "audio_health":
+                self.audio_health.add(payload)
+                logger.info(
+                    "audio health run=%s active=%s switches=%s meet=%s tab=%s",
+                    self.bot_run_id,
+                    payload.get("active"),
+                    payload.get("switches"),
+                    payload.get("meet"),
+                    payload.get("tab"),
+                )
             elif kind == "status":
                 logger.info(
                     "recording status run=%s audioTracks=%s source=%s",
@@ -459,22 +522,6 @@ class MeetRecorder:
             except Exception:
                 await session.rollback()
                 logger.exception("timeline ingest failed")
-
-    async def _xdotool_click_ask_to_join(self) -> None:
-        display = self.slot.display
-        env = {**os.environ, "DISPLAY": display}
-        # Approximate center-right of 1280x720 prejoin (Ask to join button)
-        for x, y in ((980, 420), (1000, 450), (920, 400)):
-            try:
-                subprocess.run(
-                    ["xdotool", "mousemove", str(x), str(y), "click", "1"],
-                    env=env,
-                    timeout=2,
-                    check=False,
-                    capture_output=True,
-                )
-            except (FileNotFoundError, subprocess.TimeoutExpired):
-                return
 
     async def _recording_loop(self) -> None:
         while True:

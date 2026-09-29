@@ -15,6 +15,12 @@ async function() {
   await stopRecorder(window.__gmrAudioRecorder);
   await stopRecorder(recorder);
 
+  if (window.__gmrAudioMixer) {
+    // Final audio_health report; Meet's own remote tracks are left untouched.
+    window.__gmrAudioMixer.stop();
+    window.__gmrAudioMixer = null;
+  }
+
   if (window.__gmrRecorderStream) {
     window.__gmrRecorderStream.getTracks().forEach((track) => track.stop());
   }

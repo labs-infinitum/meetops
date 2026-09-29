@@ -546,6 +546,235 @@ async function() {
   }
   window.__gmrSendTimelineEvents = gmrSendTimelineEvents;
 
+  // Audio levels (dBFS) used to pick the live source and to report capture health.
+  const GMR_AUDIO_SIGNAL_DB = -55;
+  const GMR_AUDIO_SILENT_DB = -70;
+  // Seconds of "other bus has signal, active bus is silent" before switching.
+  const GMR_AUDIO_SWITCH_EVIDENCE_SECS = 5;
+  const GMR_AUDIO_HEALTH_REPORT_SECS = 15;
+
+  function gmrToDb(value) {
+    return value > 0 ? Math.max(-120, 20 * Math.log10(value)) : -120;
+  }
+
+  /**
+   * Mixes candidate audio sources into `destination` with exactly one bus audible:
+   * - `meet`: remote WebRTC tracks taken from Meet's <audio>/<video> srcObject. These carry
+   *   participant audio at full level regardless of tab playback volume or output device.
+   * - `tab`: getDisplayMedia tab audio (fallback; can arrive heavily attenuated).
+   * Meet swaps tracks during a call, so the meet bus is re-synced every second.
+   */
+  function gmrCreateAudioMixer(audioContext, destination, excludedTrackIds) {
+    const makeBus = (name) => {
+      const input = audioContext.createGain();
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 2048;
+      const output = audioContext.createGain();
+      output.gain.value = 0;
+      input.connect(analyser);
+      input.connect(output);
+      output.connect(destination);
+      return {
+        name,
+        input,
+        analyser,
+        output,
+        sources: new Map(),
+        buffer: new Float32Array(analyser.fftSize),
+        secondMaxDb: -120,
+        window: { sumPower: 0, samples: 0, maxDb: -120, signalSecs: 0 }
+      };
+    };
+    const buses = { meet: makeBus('meet'), tab: makeBus('tab') };
+    let active = null;
+    let evidence = 0;
+    let switches = 0;
+    let lastSwitchReason = null;
+    let ticks = 0;
+    let windowSecs = 0;
+    let intervalId = null;
+
+    const removeTrack = (bus, trackId) => {
+      const entry = bus.sources.get(trackId);
+      if (!entry) return;
+      try {
+        entry.source.disconnect();
+      } catch (error) {
+        // already disconnected
+      }
+      bus.sources.delete(trackId);
+    };
+
+    const addTrack = (bus, track, label) => {
+      if (!track || track.kind !== 'audio' || track.readyState !== 'live') return false;
+      if (excludedTrackIds.has(track.id) || bus.sources.has(track.id)) return false;
+      const source = audioContext.createMediaStreamSource(new MediaStream([track]));
+      source.connect(bus.input);
+      bus.sources.set(track.id, { source, track, label });
+      track.addEventListener('ended', () => removeTrack(bus, track.id), { once: true });
+      return true;
+    };
+
+    const setActive = (key, reason) => {
+      if (active === key) return;
+      const now = audioContext.currentTime;
+      for (const [busKey, bus] of Object.entries(buses)) {
+        bus.output.gain.setTargetAtTime(busKey === key ? 1 : 0, now, 0.05);
+      }
+      if (active !== null) switches += 1;
+      active = key;
+      lastSwitchReason = reason;
+      evidence = 0;
+    };
+
+    const syncMeetTracks = () => {
+      let added = 0;
+      for (const [elementIndex, element] of Array.from(document.querySelectorAll('audio,video')).entries()) {
+        const stream = element.srcObject;
+        if (!stream || typeof stream.getAudioTracks !== 'function') continue;
+        for (const track of stream.getAudioTracks()) {
+          if (addTrack(buses.meet, track, `meetElement:${elementIndex}`)) added += 1;
+        }
+      }
+      for (const [trackId, entry] of buses.meet.sources) {
+        if (entry.track.readyState === 'ended') removeTrack(buses.meet, trackId);
+      }
+      return added;
+    };
+
+    const liveCount = (bus) => {
+      let count = 0;
+      for (const entry of bus.sources.values()) {
+        if (entry.track.readyState === 'live') count += 1;
+      }
+      return count;
+    };
+
+    const sampleBus = (bus) => {
+      bus.analyser.getFloatTimeDomainData(bus.buffer);
+      let sumSquares = 0;
+      for (let i = 0; i < bus.buffer.length; i += 1) {
+        sumSquares += bus.buffer[i] * bus.buffer[i];
+      }
+      const power = sumSquares / bus.buffer.length;
+      const db = gmrToDb(Math.sqrt(power));
+      bus.secondMaxDb = Math.max(bus.secondMaxDb, db);
+      bus.window.sumPower += power;
+      bus.window.samples += 1;
+      bus.window.maxDb = Math.max(bus.window.maxDb, db);
+    };
+
+    const busReport = (bus) => ({
+      tracks: liveCount(bus),
+      avgDb: Math.round(gmrToDb(Math.sqrt(bus.window.samples ? bus.window.sumPower / bus.window.samples : 0))),
+      maxDb: Math.round(bus.window.maxDb),
+      signalSecs: bus.window.signalSecs
+    });
+
+    const report = (final) => {
+      const payload = {
+        kind: 'audio_health',
+        final: !!final,
+        active,
+        switches,
+        lastSwitchReason,
+        windowSecs,
+        meet: busReport(buses.meet),
+        tab: busReport(buses.tab)
+      };
+      window.__gmrAudioHealth = payload;
+      for (const bus of Object.values(buses)) {
+        bus.window = { sumPower: 0, samples: 0, maxDb: -120, signalSecs: 0 };
+      }
+      windowSecs = 0;
+      try {
+        if (typeof window.__gmrRecordChunk === 'function') {
+          window.__gmrRecordChunk(JSON.stringify(payload));
+        }
+      } catch (error) {
+        window.__gmrUploadErrors.push(`audio health report failed: ${error && error.message ? error.message : error}`);
+      }
+    };
+
+    const evaluateSecond = () => {
+      for (const bus of Object.values(buses)) {
+        if (bus.secondMaxDb >= GMR_AUDIO_SIGNAL_DB) bus.window.signalSecs += 1;
+      }
+      const meetLive = liveCount(buses.meet);
+      const tabLive = liveCount(buses.tab);
+      if (active === 'meet' && meetLive === 0 && tabLive > 0) {
+        setActive('tab', 'meet_tracks_gone');
+      } else if (active === 'tab' && tabLive === 0 && meetLive > 0) {
+        setActive('meet', 'tab_audio_gone');
+      } else {
+        const other = active === 'meet' ? 'tab' : 'meet';
+        const otherLive = other === 'meet' ? meetLive : tabLive;
+        if (
+          otherLive > 0 &&
+          buses[other].secondMaxDb >= GMR_AUDIO_SIGNAL_DB &&
+          buses[active].secondMaxDb <= GMR_AUDIO_SILENT_DB
+        ) {
+          evidence += 1;
+        } else {
+          evidence = Math.max(0, evidence - 1);
+        }
+        if (evidence >= GMR_AUDIO_SWITCH_EVIDENCE_SECS) {
+          setActive(other, `${active}_silent_while_${other}_has_signal`);
+        }
+      }
+      for (const bus of Object.values(buses)) {
+        bus.secondMaxDb = -120;
+      }
+      windowSecs += 1;
+    };
+
+    return {
+      setTabTracks(tracks) {
+        tracks.forEach((track, index) => addTrack(buses.tab, track, `displayMedia:${index}`));
+      },
+      start() {
+        syncMeetTracks();
+        if (liveCount(buses.meet) > 0) {
+          setActive('meet', 'initial_meet_tracks');
+        } else if (liveCount(buses.tab) > 0) {
+          setActive('tab', 'initial_no_meet_tracks');
+        } else {
+          setActive('meet', 'initial_no_sources');
+        }
+        // Sample 4x per second: the analyser only sees ~43ms per read.
+        intervalId = window.setInterval(() => {
+          try {
+            ticks += 1;
+            sampleBus(buses.meet);
+            sampleBus(buses.tab);
+            if (ticks % 4 === 0) {
+              syncMeetTracks();
+              evaluateSecond();
+              if (windowSecs >= GMR_AUDIO_HEALTH_REPORT_SECS) report(false);
+            }
+          } catch (error) {
+            window.__gmrUploadErrors.push(`audio mixer tick failed: ${error && error.message ? error.message : error}`);
+          }
+        }, 250);
+      },
+      stop() {
+        if (intervalId !== null) {
+          window.clearInterval(intervalId);
+          intervalId = null;
+        }
+        report(true);
+      },
+      describe() {
+        return {
+          active,
+          lastSwitchReason,
+          meetTracks: [...buses.meet.sources.values()].map(({ track, label }) => ({ label, trackLabel: track.label, readyState: track.readyState })),
+          tabTracks: [...buses.tab.sources.values()].map(({ track, label }) => ({ label, trackLabel: track.label, readyState: track.readyState }))
+        };
+      }
+    };
+  }
+
   window.__gmrRecordingStatus = { status: 'waiting_for_click' };
   if (window.__gmrRecorder && window.__gmrRecorder.state === 'recording') {
     window.__gmrRecordingStatus = {
@@ -654,51 +883,32 @@ async function() {
     }
     const displayAudioTracks = stream.getAudioTracks().filter((track) => track.readyState === 'live');
     const audioWarnings = [];
-    const meetElementAudioTracks = [];
-    try {
-      for (const [elementIndex, element] of Array.from(document.querySelectorAll('audio,video')).entries()) {
-        const streamLike = element.srcObject && typeof element.srcObject.getAudioTracks === 'function'
-          ? element.srcObject
-          : (typeof element.captureStream === 'function' ? element.captureStream() : null);
-        if (!streamLike || typeof streamLike.getAudioTracks !== 'function') {
-          continue;
-        }
-        for (const [trackIndex, track] of streamLike.getAudioTracks().entries()) {
-          if (track.readyState === 'live') {
-            meetElementAudioTracks.push({ track, label: `meetElement:${elementIndex}:${trackIndex}` });
-          }
-        }
-      }
-    } catch (elementAudioError) {
-      audioWarnings.push(`Meet element audio unavailable: ${elementAudioError && elementAudioError.message ? elementAudioError.message : String(elementAudioError)}`);
-    }
+    window.__gmrUploadErrors = [];
 
-    // Prefer Chrome tab-share audio; fall back to Meet <audio>/<video> element tracks
-    const audioInputs = displayAudioTracks.length > 0
-      ? displayAudioTracks.map((track, index) => ({ track, label: `displayMedia:${index}` }))
-      : meetElementAudioTracks;
-    const audioInputTracks = audioInputs.map((input) => input.track);
-    let audioTracks = audioInputTracks;
-    const audioSource = displayAudioTracks.length > 0
-      ? 'display_media_tab_audio'
-      : (audioInputs.length > 0 ? 'meet_element_audio' : 'none');
+    // Everything goes through the mixer so tracks Meet adds mid-call are still recorded.
+    // Without WebAudio, fall back to raw tab audio.
+    let audioTracks = displayAudioTracks;
+    let audioSource = displayAudioTracks.length > 0 ? 'display_media_tab_audio' : 'none';
     let audioContext = null;
     let audioMixDestination = null;
-    let audioMixSources = [];
-    if (audioInputTracks.length > 0) {
-      const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
-      if (AudioContextCtor) {
-        audioContext = new AudioContextCtor();
+    let audioMixer = null;
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (AudioContextCtor) {
+      try {
+        audioContext = new AudioContextCtor({ sampleRate: 48000 });
         if (audioContext.state === 'suspended') {
           await audioContext.resume();
         }
         audioMixDestination = audioContext.createMediaStreamDestination();
-        audioMixSources = audioInputs.map((input) => {
-          const source = audioContext.createMediaStreamSource(new MediaStream([input.track]));
-          source.connect(audioMixDestination);
-          return source;
-        });
+        const captureTrackIds = new Set(stream.getTracks().map((track) => track.id));
+        audioMixer = gmrCreateAudioMixer(audioContext, audioMixDestination, captureTrackIds);
+        audioMixer.setTabTracks(displayAudioTracks);
+        audioMixer.start();
         audioTracks = audioMixDestination.stream.getAudioTracks();
+        audioSource = 'mixer';
+      } catch (mixerError) {
+        audioWarnings.push(`Audio mixer unavailable, using raw tab audio: ${mixerError && mixerError.message ? mixerError.message : String(mixerError)}`);
+        audioMixer = null;
       }
     }
     const recordingStream = new MediaStream([...videoTracks, ...audioTracks]);
@@ -716,7 +926,8 @@ async function() {
     const mimeType = mimeTypes.find((candidate) => MediaRecorder.isTypeSupported(candidate)) || '';
     const streamInfo = {
       audioSource,
-      meetElementAudioTracks: meetElementAudioTracks.map(({ track, label }) => ({ label, trackLabel: track.label, settings: track.getSettings ? track.getSettings() : {} })),
+      mixer: audioMixer ? audioMixer.describe() : null,
+      displayAudioTracks: displayAudioTracks.map((track) => ({ label: track.label, settings: track.getSettings ? track.getSettings() : {} })),
       audioTracks: audioTracks.map((track) => ({ label: track.label, settings: track.getSettings ? track.getSettings() : {} })),
       videoTracks: videoTracks.map((track) => ({ label: track.label, settings: track.getSettings ? track.getSettings() : {} }))
     };
@@ -742,11 +953,10 @@ async function() {
     window.__gmrCaptureStreams = [stream];
     window.__gmrAudioContext = audioContext;
     window.__gmrAudioMixDestination = audioMixDestination;
-    window.__gmrAudioMixSources = audioMixSources;
+    window.__gmrAudioMixer = audioMixer;
     window.__gmrStreamInfo = streamInfo;
     window.__gmrAudioSource = audioSource;
     window.__gmrUploads = [];
-    window.__gmrUploadErrors = [];
     for (const warning of audioWarnings) {
       window.__gmrUploadErrors.push(warning);
     }
@@ -758,7 +968,7 @@ async function() {
     window.__gmrTimelinePending = Promise.resolve();
     window.__gmrChunkBindingAvailable = typeof window.__gmrRecordChunk === 'function';
     if (audioTracks.length === 0) {
-      window.__gmrUploadErrors.push('Meet media elements exposed no live audio tracks; recording video only');
+      window.__gmrUploadErrors.push('No audio source available (no tab audio, no WebAudio mixer); recording video only');
     }
 
     window.__gmrRecordingStartedAtMs = Date.now();

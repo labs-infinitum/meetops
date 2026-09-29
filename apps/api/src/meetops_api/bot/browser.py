@@ -70,8 +70,8 @@ class BrowserSession:
         ensure_profile_seed(self.slot.profile_dir, seed)
         clear_singleton_locks(self.slot.profile_dir)
 
+        # Per-launch env only: concurrent slots must not share a process-wide DISPLAY.
         env = {**os.environ, "DISPLAY": self.slot.display}
-        os.environ["DISPLAY"] = self.slot.display
 
         self._pw = await async_playwright().start()
         proxy = (

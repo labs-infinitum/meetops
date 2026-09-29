@@ -15,7 +15,7 @@ Never bake `.env` into images. Required in production:
 
 1. Start debug worker with noVNC:  
    `docker compose -f docker-compose.yml -f docker-compose.debug.yml --profile debug up worker-debug`
-2. Open `http://localhost:6080`
+2. Open `http://localhost:6080` (password: `MEETOPS_VNC_PASSWORD` from `.env`; without it noVNC is unauthenticated)
 3. `uv run meetops-cli bot profile-bootstrap --profile default`
 4. Sign into the dedicated Meet bot Google account
 5. Profiles persist under `./data/chrome-profiles`
@@ -41,6 +41,8 @@ Allow your app origin to GET objects (or use only presigned URLs which work cros
 Worker on SIGTERM/SIGINT: stop scheduling → signal active runs → wait up to 120s for finalize/upload → exit.
 
 ## Health
+
+Audio: every recording logs `recording started … audioSource=… activeBus=…`, periodic `audio health` lines, and an `audio health summary` (or a `recording audio looks silent` warning) at the end.
 
 - API: `GET /healthz`
 - Postgres: `pg_isready`

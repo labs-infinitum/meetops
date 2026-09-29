@@ -7,5 +7,6 @@ if ! pgrep -x Xvfb >/dev/null 2>&1; then
   sleep 1
   DISPLAY=:99 openbox &
 fi
+. /app/scripts/start-audio.sh
 echo "Starting worker…"
 exec uv run meetops-worker

@@ -29,13 +29,24 @@ Default: **no** `--use-fake-ui-for-media-stream` / auto-accept flags. Prefer CDP
 
 Set `MEETOPS_USE_TAB_CAPTURE_AUTO_ACCEPT=true` only if join success requires it; this increases detectability.
 
+## Audio capture
+
+The page records a WebAudio mix with one audible bus:
+
+- **`meet`** (preferred): Meet's remote WebRTC audio tracks, taken from `<audio>/<video>` `srcObject` and re-synced every second (Meet swaps tracks mid-call). Independent of tab playback volume and of the audio output device.
+- **`tab`**: `getDisplayMedia` tab audio. Chrome provides none when `--auto-accept-this-tab-capture` is used.
+
+The mixer switches bus only when the active one stays silent while the other has signal (5s). Every 15s it posts an `audio_health` report (per-bus level, seconds with signal, active bus); the worker logs these and, for recordings with essentially no audible signal, logs a warning and stores a `collector_warning` timeline event (`message: audio_silent`).
+
+The worker image runs PulseAudio with a null sink so Chrome has a real audio output.
+
 ## Auth
 
 Opaque session tokens in DB; cookie stores only the token. Argon2id passwords. Generic signup errors. Rate limits on auth endpoints. Token encryption required in production (`MEETOPS_TOKEN_ENCRYPTION_KEY`).
 
 ## Recording concurrency
 
-`SlotAllocator` with `MEETOPS_BOT_CONCURRENCY` (default 2): each slot has its own `DISPLAY` and profile directory. Stop events registered when a run is claimed/created (queued cancel works).
+`SlotAllocator` with `MEETOPS_BOT_CONCURRENCY` (default 2): each slot has its own `DISPLAY` and profile directory. Slot 0 uses `MEETOPS_BOT_X11_DISPLAY` (started by the entrypoint); slot *n* uses the next display number and starts its own Xvfb. Stop events registered when a run is claimed/created (queued cancel works).
 
 ## AI pipeline
 

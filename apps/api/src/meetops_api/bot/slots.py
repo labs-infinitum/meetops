@@ -7,6 +7,7 @@ import logging
 import os
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,18 +16,33 @@ from meetops_common.settings import Settings
 logger = logging.getLogger(__name__)
 
 
+def slot_displays(configured: str | None, count: int) -> list[tuple[str, bool]]:
+    """X display per slot as (display, owned).
+
+    Every slot needs its own display: xdotool (Allow sheet, join fallback) targets
+    "the Chrome window" on a display, so two bots sharing one would click each
+    other's windows. The configured display (started by the container entrypoint)
+    goes to slot 0; later slots get the following display numbers and start their
+    own Xvfb (owned=True).
+    """
+    if configured:
+        base = int(configured.lstrip(":").split(".")[0])
+        return [(configured, False)] + [(f":{base + i}", True) for i in range(1, count)]
+    return [(f":{10 + i}", True) for i in range(count)]
+
+
 @dataclass
 class BotSlot:
     index: int
     display: str
     profile_dir: Path
+    owns_display: bool = True
     _xvfb_proc: subprocess.Popen[bytes] | None = None
     _openbox_proc: subprocess.Popen[bytes] | None = None
 
     def start_display(self) -> None:
-        if os.environ.get("DISPLAY") and not self.display:
+        if not self.owns_display:
             return
-        # Start Xvfb if not already running for this display
         try:
             self._xvfb_proc = subprocess.Popen(
                 [
@@ -42,6 +58,7 @@ class BotSlot:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
+            self._wait_for_x_socket()
             self._openbox_proc = subprocess.Popen(
                 ["openbox"],
                 env={**os.environ, "DISPLAY": self.display},
@@ -50,6 +67,18 @@ class BotSlot:
             )
         except FileNotFoundError:
             logger.warning("Xvfb/openbox not available; using existing DISPLAY")
+
+    def _wait_for_x_socket(self, timeout: float = 5.0) -> None:
+        socket_path = Path(f"/tmp/.X11-unix/X{self.display.lstrip(':').split('.')[0]}")
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if socket_path.exists():
+                return
+            if self._xvfb_proc and self._xvfb_proc.poll() is not None:
+                logger.warning("Xvfb exited early for display %s", self.display)
+                return
+            time.sleep(0.05)
+        logger.warning("Xvfb socket for display %s not ready after %.0fs", self.display, timeout)
 
     def stop_display(self) -> None:
         for proc in (self._openbox_proc, self._xvfb_proc):
@@ -71,12 +100,12 @@ class SlotAllocator:
         profiles = Path(settings.meetops_bot_profiles_dir or settings.meetops_data_dir / "chrome-profiles")
         profiles.mkdir(parents=True, exist_ok=True)
         self._free: list[BotSlot] = []
-        for i in range(n):
-            display = settings.meetops_bot_x11_display or f":{10 + i}"
+        for i, (display, owned) in enumerate(slot_displays(settings.meetops_bot_x11_display, n)):
             slot = BotSlot(
                 index=i,
-                display=display if n > 1 or not settings.meetops_bot_x11_display else settings.meetops_bot_x11_display,
+                display=display,
                 profile_dir=profiles / f"slot-{i}",
+                owns_display=owned,
             )
             slot.profile_dir.mkdir(parents=True, exist_ok=True)
             self._free.append(slot)
