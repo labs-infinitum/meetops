@@ -1,7 +1,8 @@
 # MeetOps on a home server (e.g. a Proxmox VM): everything runs on this machine and is reachable
 # only on your tailnet (tailscale serve -> web on 127.0.0.1:3000).
 #   - images are built from this checkout (no registry)
-#   - Postgres runs here (volume pgdata; nightly dumps in data/backups)
+#   - Postgres: bundled container (COMPOSE_PROFILES=db, volume pgdata) or an external server via
+#     DATABASE_URL (e.g. a shared Postgres on the Proxmox host's internal network)
 #   - recordings stay on disk under data/recordings/store (MEETOPS_STORAGE_BACKEND=local)
 # Run from this folder via scripts/deploy.sh; see README.md.
 name: meetops
@@ -13,18 +14,19 @@ x-logging: &default-logging
     max-file: "3"
 
 x-app-env: &app-env
-  DATABASE_URL: postgresql+asyncpg://meetops:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/meetops
+  DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
   MEETOPS_DATA_DIR: /data
   MEETOPS_BOT_PROFILES_DIR: /data/chrome-profiles
 
 services:
-  postgres:
+  postgres:   # only with COMPOSE_PROFILES=db (the default from setup.sh)
     image: postgres:16-alpine
+    profiles: ["db"]
     restart: unless-stopped
     logging: *default-logging
     environment:
       POSTGRES_USER: meetops
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
       POSTGRES_DB: meetops
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -49,6 +51,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+        required: false   # absent when DATABASE_URL points elsewhere
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
       interval: 10s

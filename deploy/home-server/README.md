@@ -6,7 +6,7 @@ only on your tailnet. Compared with the AWS deployment (`deployment` branch):
 | | AWS | Home server |
 |---|---|---|
 | Images | CI → ECR, VPS pulls | built on the server from this checkout |
-| Database | RDS | `postgres` container, nightly `pg_dump` to `data/backups` |
+| Database | RDS | bundled `postgres` container, or an external/shared server via `DATABASE_URL` |
 | Recordings | S3, presigned playback | `data/recordings/store`, streamed by the API to the owner (`MEETOPS_STORAGE_BACKEND=local`) |
 | Ingress | `tailscale serve` | `tailscale serve` (same) |
 
@@ -34,6 +34,19 @@ In Google Cloud console add the redirect URI from `.env` (`GOOGLE_REDIRECT_URI`,
 
 Open `https://<name>.<tailnet>.ts.net` and sign up. Without Resend, leave
 `MEETOPS_REQUIRE_EMAIL_VERIFICATION=false` (emails are skipped, so verification links never arrive).
+
+## Using an external Postgres
+
+The bundled container is on by default (`COMPOSE_PROFILES=db`). To use a shared server instead,
+create a UTF8 database and role there, then in `.env`:
+
+```bash
+COMPOSE_PROFILES=
+DATABASE_URL=postgresql+asyncpg://meetops:<password>@<host>:5432/meetops
+```
+
+and run `scripts/deploy.sh`; the api creates the tables on start. `scripts/backup.sh` dumps through
+`DATABASE_URL` in that case (the shared server can also run its own backups).
 
 ## Bot sign-in (one time)
 

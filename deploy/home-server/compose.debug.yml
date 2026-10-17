@@ -9,7 +9,7 @@ services:
     image: meetops/worker:local
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://meetops:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/meetops
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
       MEETOPS_DATA_DIR: /data
       MEETOPS_BOT_PROFILES_DIR: /data/chrome-profiles
       MEETOPS_BOT_X11_DISPLAY: ":99"

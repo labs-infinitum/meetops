@@ -19,9 +19,11 @@ TS_NAME="$(tailscale status --json 2>/dev/null | python3 -c 'import json,sys; pr
 if [ ! -f .env ]; then
   [ -n "$TS_NAME" ] || { echo "join the tailnet first (sudo tailscale up)" >&2; exit 1; }
   rand() { python3 -c 'import secrets; print(secrets.token_urlsafe(24))'; }
+  dbpw="$(rand)"
   fernet="$(python3 -c 'import base64,os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())')"
   sed -e "s|meetops.<tailnet>.ts.net|$TS_NAME|g" \
-      -e "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$(rand)|" \
+      -e "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$dbpw|" \
+      -e "s|<POSTGRES_PASSWORD>|$dbpw|" \
       -e "s|^MEETOPS_TOKEN_ENCRYPTION_KEY=.*|MEETOPS_TOKEN_ENCRYPTION_KEY=$fernet|" \
       -e "s|^MEETOPS_VNC_PASSWORD=.*|MEETOPS_VNC_PASSWORD=$(rand)|" .env.example > .env
   chmod 600 .env
