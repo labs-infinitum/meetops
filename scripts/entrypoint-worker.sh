@@ -9,4 +9,4 @@ if ! pgrep -x Xvfb >/dev/null 2>&1; then
 fi
 . /app/scripts/start-audio.sh
 echo "Starting worker…"
-exec uv run meetops-worker
+exec uv run --no-sync meetops-worker

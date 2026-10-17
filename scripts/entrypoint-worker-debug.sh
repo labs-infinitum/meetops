@@ -17,4 +17,4 @@ fi
 x11vnc -display :99 -forever -shared -localhost $VNC_AUTH -rfbport 5900 &
 websockify --web /usr/share/novnc 6080 localhost:5900 &
 echo "noVNC available on :6080 — run: uv run meetops-cli bot profile-bootstrap"
-exec uv run meetops-worker
+exec uv run --no-sync meetops-worker
