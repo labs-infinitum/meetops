@@ -85,6 +85,49 @@ async function() {
     }
   }
 
+  // Non-modal notices anchored to the toolbar (the bot has no camera/mic), e.g. "Camera not
+  // found / Make sure that your camera is plugged in". They cover the recorded video. Close only
+  // the notice itself: walk up from its text to the nearest container holding a close button.
+  const NOTICE_HINTS = [
+    'camera not found',
+    'microphone not found',
+    'make sure that your camera is plugged in',
+    'make sure that your microphone is plugged in',
+    'your camera is off',
+    'your microphone is off',
+    'camera is blocked',
+    'microphone is blocked'
+  ];
+  const closeWord = (label) =>
+    label === 'close' || label.startsWith('close ') || label === 'dismiss' || DISMISS_LABELS.has(label);
+  const isCloseControl = (el) =>
+    // accessible name on its own (icon buttons often render a glyph as their text) or combined
+    ['aria-label', 'data-tooltip', 'title'].some((attr) => closeWord(norm(el.getAttribute(attr)))) ||
+    closeWord(controlLabel(el));
+  if (document.body) {
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    const done = new Set();
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const text = norm(node.nodeValue);
+      if (!text || !NOTICE_HINTS.some((hint) => text.includes(hint))) continue;
+      let el = node.parentElement;
+      for (let depth = 0; el && depth < 6; depth += 1, el = el.parentElement) {
+        if (done.has(el) || !visible(el)) continue;
+        const close = [...el.querySelectorAll('button, [role="button"]')].find(
+          (c) => visible(c) && isCloseControl(c)
+        );
+        if (close) {
+          close.click();
+          done.add(el);
+          result.dismissed = true;
+          result.clicked.push({ buttonText: controlLabel(close), scope: 'notice', reason: text.slice(0, 60) });
+          await sleep(250);
+          break;
+        }
+      }
+    }
+  }
+
   const bodyText = norm(document.body ? document.body.innerText : '');
   const hintedOverlay = OVERLAY_BODY_HINTS.some((hint) => bodyText.includes(hint));
   if (hintedOverlay && tryDismissIn(document, 'page', 'body_hint')) {
