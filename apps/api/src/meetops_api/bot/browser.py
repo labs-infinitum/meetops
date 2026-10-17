@@ -32,6 +32,8 @@ def chrome_args(settings: Settings) -> list[str]:
         "--hide-crash-restore-bubble",
         "--disable-infobars",
         "--test-type",
+        f"--lang={settings.meetops_bot_locale}",
+        f"--accept-lang={settings.meetops_bot_locale},en",
     ]
     if settings.meetops_use_tab_capture_auto_accept:
         args.append("--auto-accept-this-tab-capture")
@@ -86,10 +88,13 @@ class BrowserSession:
             "viewport": None,
             "no_viewport": True,
             "env": env,
+            "locale": self.settings.meetops_bot_locale,  # Accept-Language + navigator.language
         }
         if proxy:
             launch_kwargs["proxy"] = proxy
         self._context = await self._pw.chromium.launch_persistent_context(**launch_kwargs)
+        # Before Meet loads: expose participants' audio tracks to the recorder's mixer.
+        await self._context.add_init_script(f"({load_script('capture_remote_audio.js')})()")
         self._page = (
             self._context.pages[0] if self._context.pages else await self._context.new_page()
         )

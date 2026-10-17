@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Query
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 
 from meetops_api.deps import AppSettings, CurrentUser, DbSession
@@ -19,7 +20,7 @@ from meetops_api.schemas import (
     TodoOut,
 )
 from meetops_api.services.meet_url import normalize_meet_url
-from meetops_api.storage.s3 import S3Storage
+from meetops_api.storage import LocalStorage, get_storage
 from meetops_common.constants import TERMINAL_BOT_STATUSES
 from meetops_common.models import (
     ActionItem,
@@ -95,10 +96,33 @@ async def playback_url(
     run = await _get_owned_run(db, user.id, run_id)
     if not run.recording_path:
         raise AppError("not_ready", "Recording not available", 404)
-    if not settings.s3_bucket:
-        raise AppError("storage_not_configured", "S3 is not configured", 503)
-    url, expires = S3Storage(settings).presign_get(run.recording_path)
+    storage = get_storage(settings)
+    if storage is None:
+        raise AppError("storage_not_configured", "Recording storage is not configured", 503)
+    if isinstance(storage, LocalStorage):
+        # Streamed by /media below (same origin, session cookie); the expiry is nominal.
+        url = f"{settings.meetops_public_api_url.rstrip('/')}/api/v1/recordings/{run_id}/media"
+        expires = datetime.now(UTC) + timedelta(seconds=settings.meetops_presigned_url_ttl_secs)
+        return PlaybackUrlOut(url=url, expires_at=expires)
+    url, expires = storage.presign_get(run.recording_path)
     return PlaybackUrlOut(url=url, expires_at=expires)
+
+
+@router.get("/{run_id}/media", response_class=FileResponse)
+async def recording_media(
+    run_id: str, user: CurrentUser, db: DbSession, settings: AppSettings
+) -> FileResponse:
+    """The recording file itself, for MEETOPS_STORAGE_BACKEND=local (supports Range for seeking)."""
+    run = await _get_owned_run(db, user.id, run_id)
+    if settings.meetops_storage_backend != "local" or not run.recording_path:
+        raise AppError("not_found", "Recording not available", 404)
+    try:
+        path = LocalStorage(settings).path_for(run.recording_path)
+    except ValueError:
+        raise AppError("not_found", "Recording not available", 404) from None
+    if not path.is_file():
+        raise AppError("not_found", "Recording not available", 404)
+    return FileResponse(path, media_type="video/webm")
 
 
 @router.get("/{run_id}/timeline", response_model=list[TimelineEventOut])

@@ -15,7 +15,7 @@ from meetops_api.bot.recorder import MeetRecorder
 from meetops_api.bot.slots import SlotAllocator
 from meetops_api.routers.recordings import clear_stop_event, get_stop_event
 from meetops_api.services.jobs import enqueue_job
-from meetops_api.storage.s3 import S3Storage
+from meetops_api.storage import get_storage
 from meetops_common.constants import TERMINAL_BOT_STATUSES
 from meetops_common.models import BotRun, Meeting, UserSettings
 from meetops_common.settings import Settings
@@ -195,8 +195,9 @@ class BotRunner:
     async def _upload_and_complete(
         self, run_id: int, user_id: str, raw_path: Path, staging: Path
     ) -> None:
-        if not self.settings.s3_bucket:
-            # Local-only success for dev without S3
+        storage = get_storage(self.settings)
+        if storage is None:
+            # Local-only success for dev without any storage configured
             key = f"{self.settings.s3_prefix}/{user_id}/{run_id}/raw.webm"
             async with self.session_factory() as session:
                 run = await session.get(BotRun, run_id)
@@ -208,10 +209,9 @@ class BotRunner:
                         session, kind="transcribe_recording", bot_run_id=run_id
                     )
                 await session.commit()
-            logger.warning("S3_BUCKET unset; kept local recording at %s", raw_path)
+            logger.warning("No recording storage configured; kept local recording at %s", raw_path)
             return
 
-        storage = S3Storage(self.settings)
         key = storage.recording_key(user_id, run_id, "raw.webm")
         await asyncio.to_thread(storage.upload_file, raw_path, key)
 

@@ -73,3 +73,20 @@ def test_recorder_collects_audio_health_reports(tmp_path) -> None:  # type: igno
     recorder._on_chunk(json.dumps(_report("meet", 12)))
     assert recorder.audio_health.reports == 1
     assert recorder.audio_health.active_signal_secs == 12
+
+
+def test_chrome_args_pin_meet_language() -> None:
+    from meetops_api.bot.browser import chrome_args
+    from meetops_common.settings import Settings
+
+    args = chrome_args(Settings(_env_file=None))  # type: ignore[call-arg]
+    assert "--lang=en-US" in args
+    assert "--accept-lang=en-US,en" in args
+
+
+def test_remote_audio_hook_script_is_guarded() -> None:
+    from meetops_api.bot.browser import load_script
+
+    src = load_script("capture_remote_audio.js")
+    assert "window.__gmrRtcHooked" in src  # idempotent: init scripts can run twice
+    assert "data-gmr-remote-audio" in src

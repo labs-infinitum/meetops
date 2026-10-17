@@ -144,6 +144,8 @@ class MeetRecorder:
 
     async def _join_loop(self) -> bool:
         deadline = asyncio.get_event_loop().time() + self.settings.meetops_bot_admission_timeout_secs
+        asked = False  # once in the lobby, never click blindly again (it can hit Cancel/Leave)
+        last_seen: tuple[Any, ...] | None = None
         while asyncio.get_event_loop().time() < deadline:
             if await self._stop_requested():
                 raise RuntimeError("cancelled_by_user")
@@ -169,8 +171,28 @@ class MeetRecorder:
                 return True
             if state == "denied":
                 return False
-            # If still on pre-join, force a real pointer click on Ask to join
+            if state in ("asked_to_join", "waiting_for_host"):
+                asked = True
+            url = self.browser.page.url
             if state in ("needs_action", None):
+                # Log what an unrecognised page shows (once per distinct page) so new Meet wording
+                # can be added to attempt_join.js.
+                seen = (
+                    url,
+                    (result or {}).get("title") if isinstance(result, dict) else None,
+                    tuple((result or {}).get("controls") or [])[:12] if isinstance(result, dict) else (),
+                )
+                if seen != last_seen:
+                    logger.info(
+                        "join page run=%s asked=%s url=%s title=%r controls=%s",
+                        self.bot_run_id, asked, seen[0], seen[1], list(seen[2]),
+                    )
+                    last_seen = seen
+            if asked and "meet.google.com/" not in url:
+                logger.warning("left the meeting page while waiting run=%s url=%s", self.bot_run_id, url)
+                return False
+            # Still on pre-join: force a real pointer click on Ask to join. After asking, only wait.
+            if state in ("needs_action", None) and not asked:
                 await self._click_ask_to_join()
             await asyncio.sleep(2)
         return False

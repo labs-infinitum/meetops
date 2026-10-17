@@ -86,7 +86,9 @@ class Settings(BaseSettings):
     meetops_token_encryption_key: str | None = None
     meetops_allow_plaintext_tokens: bool = False
 
-    # Storage
+    # Storage: "s3" (AWS S3 or an S3-compatible service) or "local" (recordings kept under
+    # MEETOPS_DATA_DIR/recordings/store and streamed by the API to their owner)
+    meetops_storage_backend: Literal["s3", "local"] = "s3"
     s3_bucket: str | None = None
     s3_prefix: str = "recordings"
     aws_region: str = "us-east-1"
@@ -112,6 +114,9 @@ class Settings(BaseSettings):
     meetops_bot_window_width: int = 1920
     meetops_bot_window_height: int = 1080
     meetops_use_tab_capture_auto_accept: bool = False
+    # Meet's UI language for the bot. The join/lobby detection matches English text, and Google
+    # otherwise localises Meet by the server's location (e.g. German from a server in Germany).
+    meetops_bot_locale: str = "en-US"
 
     # AI (OpenAI) — notes / LLM cleanup; also Whisper fallback when Deepgram unset
     openai_api_key: str | None = None
@@ -165,8 +170,8 @@ class Settings(BaseSettings):
             missing: list[str] = []
             if not self.database_url:
                 missing.append("DATABASE_URL")
-            if not self.s3_bucket:
-                missing.append("S3_BUCKET")
+            if self.meetops_storage_backend == "s3" and not self.s3_bucket:
+                missing.append("S3_BUCKET (or MEETOPS_STORAGE_BACKEND=local)")
             if not self.meetops_token_encryption_key and not self.meetops_allow_plaintext_tokens:
                 missing.append("MEETOPS_TOKEN_ENCRYPTION_KEY")
             if missing:
@@ -199,6 +204,11 @@ class Settings(BaseSettings):
     @property
     def staging_dir(self) -> Path:
         return self.meetops_data_dir / "recordings" / "staging"
+
+    @property
+    def recordings_store_dir(self) -> Path:
+        """Finished recordings when MEETOPS_STORAGE_BACKEND=local (never cleaned up automatically)."""
+        return self.meetops_data_dir / "recordings" / "store"
 
 
 @lru_cache
