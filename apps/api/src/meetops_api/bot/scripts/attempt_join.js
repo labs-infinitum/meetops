@@ -94,7 +94,10 @@ async function() {
   }
 
   if (bodyText.includes('asking to be let in') ||
+      bodyText.includes('asking to join') ||
       bodyText.includes('waiting to be let in') ||
+      bodyText.includes('when someone lets you in') ||
+      bodyText.includes('someone in the call will let you in') ||
       bodyText.includes('you’ll join when someone lets you in') ||
       bodyText.includes("you'll join when someone lets you in")) {
     return { state: 'asked_to_join', message: 'Waiting for host admission', title: document.title || '', controls: visibleControls };
