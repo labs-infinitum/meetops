@@ -27,7 +27,7 @@ from meetops_api.services.jobs import (
     fail_job,
     is_job_cancelled,
 )
-from meetops_api.storage.s3 import S3Storage
+from meetops_api.storage import get_storage
 from meetops_common.models import (
     ActionItem,
     BotRun,
@@ -166,12 +166,11 @@ class AIPipeline:
 
         with tempfile.TemporaryDirectory() as tmp:
             dest = Path(tmp) / "audio.webm"
+            storage = get_storage(self.settings)
             if Path(path_key).exists():
                 dest.write_bytes(Path(path_key).read_bytes())
-            elif self.settings.s3_bucket:
-                await __import__("asyncio").to_thread(
-                    S3Storage(self.settings).download_file, path_key, dest
-                )
+            elif storage is not None:
+                await __import__("asyncio").to_thread(storage.download_file, path_key, dest)
             else:
                 raise RuntimeError("Cannot locate recording for transcription")
 

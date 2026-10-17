@@ -1,0 +1,91 @@
+# MeetOps on a home server (e.g. a Proxmox VM): everything runs on this machine and is reachable
+# only on your tailnet (tailscale serve -> web on 127.0.0.1:3000).
+#   - images are built from this checkout (no registry)
+#   - Postgres runs here (volume pgdata; nightly dumps in data/backups)
+#   - recordings stay on disk under data/recordings/store (MEETOPS_STORAGE_BACKEND=local)
+# Run from this folder via scripts/deploy.sh; see README.md.
+name: meetops
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-app-env: &app-env
+  DATABASE_URL: postgresql+asyncpg://meetops:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/meetops
+  MEETOPS_DATA_DIR: /data
+  MEETOPS_BOT_PROFILES_DIR: /data/chrome-profiles
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      POSTGRES_USER: meetops
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: meetops
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U meetops -d meetops"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    image: meetops/api:local
+    env_file: .env
+    environment:
+      <<: *app-env
+    restart: unless-stopped
+    logging: *default-logging
+    volumes:
+      - ./data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: apps/worker/Dockerfile
+    image: meetops/worker:local
+    env_file: .env
+    environment:
+      <<: *app-env
+      MEETOPS_BOT_X11_DISPLAY: ":99"
+    restart: unless-stopped
+    logging: *default-logging
+    stop_grace_period: 150s   # finishes uploads/finalising on SIGTERM (up to 120s)
+    volumes:
+      - ./data:/data
+    shm_size: "2gb"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+    image: meetops/web:local
+    restart: unless-stopped
+    logging: *default-logging
+    ports:
+      - "127.0.0.1:3000:80"   # loopback only; tailscale serve publishes it on the tailnet
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  pgdata:
