@@ -32,6 +32,8 @@ def chrome_args(settings: Settings) -> list[str]:
         "--hide-crash-restore-bubble",
         "--disable-infobars",
         "--test-type",
+        f"--lang={settings.meetops_bot_locale}",
+        f"--accept-lang={settings.meetops_bot_locale},en",
     ]
     if settings.meetops_use_tab_capture_auto_accept:
         args.append("--auto-accept-this-tab-capture")
@@ -86,6 +88,7 @@ class BrowserSession:
             "viewport": None,
             "no_viewport": True,
             "env": env,
+            "locale": self.settings.meetops_bot_locale,  # Accept-Language + navigator.language
         }
         if proxy:
             launch_kwargs["proxy"] = proxy

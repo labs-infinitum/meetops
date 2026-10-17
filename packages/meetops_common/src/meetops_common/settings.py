@@ -114,6 +114,9 @@ class Settings(BaseSettings):
     meetops_bot_window_width: int = 1920
     meetops_bot_window_height: int = 1080
     meetops_use_tab_capture_auto_accept: bool = False
+    # Meet's UI language for the bot. The join/lobby detection matches English text, and Google
+    # otherwise localises Meet by the server's location (e.g. German from a server in Germany).
+    meetops_bot_locale: str = "en-US"
 
     # AI (OpenAI) — notes / LLM cleanup; also Whisper fallback when Deepgram unset
     openai_api_key: str | None = None
