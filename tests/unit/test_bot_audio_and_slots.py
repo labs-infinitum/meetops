@@ -82,3 +82,11 @@ def test_chrome_args_pin_meet_language() -> None:
     args = chrome_args(Settings(_env_file=None))  # type: ignore[call-arg]
     assert "--lang=en-US" in args
     assert "--accept-lang=en-US,en" in args
+
+
+def test_remote_audio_hook_script_is_guarded() -> None:
+    from meetops_api.bot.browser import load_script
+
+    src = load_script("capture_remote_audio.js")
+    assert "window.__gmrRtcHooked" in src  # idempotent: init scripts can run twice
+    assert "data-gmr-remote-audio" in src

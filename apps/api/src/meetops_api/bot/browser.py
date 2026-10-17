@@ -93,6 +93,8 @@ class BrowserSession:
         if proxy:
             launch_kwargs["proxy"] = proxy
         self._context = await self._pw.chromium.launch_persistent_context(**launch_kwargs)
+        # Before Meet loads: expose participants' audio tracks to the recorder's mixer.
+        await self._context.add_init_script(f"({load_script('capture_remote_audio.js')})()")
         self._page = (
             self._context.pages[0] if self._context.pages else await self._context.new_page()
         )

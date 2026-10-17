@@ -4,6 +4,8 @@
 # unreliable. Sourced by the worker entrypoints; never fails the container.
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/runtime-$(id -u)}"
 mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
+# A restarted container keeps /tmp: a stale pid file there makes the daemon refuse to start.
+rm -rf "$XDG_RUNTIME_DIR/pulse"
 if command -v pulseaudio >/dev/null 2>&1; then
   if pulseaudio --daemonize=yes --exit-idle-time=-1 --log-target=stderr \
     && pactl load-module module-null-sink sink_name=meetops_null >/dev/null \
