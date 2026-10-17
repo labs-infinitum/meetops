@@ -41,6 +41,10 @@ async function() {
   ];
 
   if (bodyText.includes('you cannot join this video call') ||
+      bodyText.includes("you can't join this video call") ||
+      bodyText.includes("you can't join this call") ||
+      bodyText.includes('denied your request to join') ||
+      bodyText.includes('you have been removed from the meeting') ||
       bodyText.includes('you were denied') ||
       bodyText.includes('no longer in the meeting') ||
       bodyText.includes('meeting is full')) {
