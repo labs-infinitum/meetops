@@ -1,6 +1,7 @@
 #!/bin/sh
 set -e
 mkdir -p /data/chrome-profiles /data/recordings/staging
+rm -f /tmp/.X*-lock /tmp/.X11-unix/X*   # stale locks from a previous run of this container
 Xvfb :99 -screen 0 1920x1080x24 -ac +extension RANDR &
 sleep 1
 DISPLAY=:99 openbox &
